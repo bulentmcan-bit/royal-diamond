@@ -39,12 +39,15 @@
       _fbDb.ref('rdns_main_v1').on('value',snap=>{
         if(_isSyncing)return;
         const val=snap.val();if(!val)return;
-        const remote=typeof val==='string'?JSON.parse(val):val;
-        const localRaw=localStorage.getItem('rdns_main_v1');
-        const local=localRaw?JSON.parse(localRaw):null;
-        if(!local||(remote._ts&&(!local._ts||remote._ts>local._ts))){
+        try{
+          const remote=typeof val==='string'?JSON.parse(val):val;
+          if(!remote||!remote.appointments)return;
+          _isSyncing=true;
+          clients=remote.clients||[];
+          appointments=remote.appointments||[];
+          payments=remote.payments||[];
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
-          if(typeof dbLoad==='function'){const d=dbLoad();if(d){clients=d.clients||[];appointments=d.appointments||[];payments=d.payments||[];}}
+          setTimeout(()=>{_isSyncing=false;},800);
           const pg=document.querySelector('.page.active');
           if(pg){const id=pg.id.replace('page-','');
             if(id==='dashboard')try{renderDash();}catch(e){}
@@ -53,37 +56,31 @@
             if(id==='payments')try{renderPayments();}catch(e){}
           }
           showSyncStatus('synced');
-        }
+        }catch(e){console.warn('Sync read error:',e);}
       });
       _fbDb.ref('rdns_takings_v3').on('value',snap=>{
         if(_isSyncing)return;
         const val=snap.val();if(!val)return;
         try{
           const rObj=typeof val==='string'?JSON.parse(val):val;
-          const lRaw=localStorage.getItem('rdns_takings_v3');
-          const lObj=lRaw?JSON.parse(lRaw):null;
-          if(!lObj||(rObj._ts&&(!lObj._ts||rObj._ts>lObj._ts))){
-            localStorage.setItem('rdns_takings_v3',JSON.stringify(rObj));
-            syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
-            const pg=document.querySelector('.page.active');
-            if(pg&&pg.id==='page-takings')try{dtInit();}catch(e){}
-          }
+          _isSyncing=true;
+          localStorage.setItem('rdns_takings_v3',JSON.stringify(rObj));
+          setTimeout(()=>{_isSyncing=false;},800);
+          const pg=document.querySelector('.page.active');
+          if(pg&&pg.id==='page-takings')try{dtInit();}catch(e){}
+          showSyncStatus('synced');
         }catch(e){}
-        showSyncStatus('synced');
       });
       _fbDb.ref('rdns_monthly_costs_v3').on('value',snap=>{
         if(_isSyncing)return;
         const val=snap.val();if(!val)return;
         try{
           const rObj=typeof val==='string'?JSON.parse(val):val;
-          const lRaw=localStorage.getItem('rdns_monthly_costs_v3');
-          const lObj=lRaw?JSON.parse(lRaw):null;
-          if(!lObj||(rObj._ts&&(!lObj._ts||rObj._ts>lObj._ts))){
-            localStorage.setItem('rdns_monthly_costs_v3',JSON.stringify(rObj));
-            syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem('rdns_monthly_costs_v3')||'{}'));
-            const pg=document.querySelector('.page.active');
-            if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
-          }
+          _isSyncing=true;
+          localStorage.setItem('rdns_monthly_costs_v3',JSON.stringify(rObj));
+          setTimeout(()=>{_isSyncing=false;},800);
+          const pg=document.querySelector('.page.active');
+          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
         }catch(e){}
       });
       showSyncStatus('synced');
