@@ -102,6 +102,25 @@
     const v=m[s]||m.local;el.textContent=v.t;el.style.color=v.c;
   }
   window.addEventListener('DOMContentLoaded',()=>setTimeout(syncInit,1200));
+
+  function syncForceLoad(){
+    if(!_fbDb){setTimeout(syncForceLoad,1000);return;}
+    _fbDb.ref('rdns_main_v1').once('value').then(snap=>{
+      const val=snap.val();
+      if(!val||!val.appointments||val.appointments.length===0)return;
+      _isSyncing=true;
+      clients=val.clients||[];
+      appointments=val.appointments||[];
+      payments=val.payments||[];
+      localStorage.setItem('rdns_main_v1',JSON.stringify(val));
+      setTimeout(()=>{_isSyncing=false;},800);
+      try{renderDash();}catch(e){}
+      try{renderAppts();}catch(e){}
+      showSyncStatus('synced');
+      console.log('Loaded from Firebase:',appointments.length,'appointments');
+    }).catch(e=>console.warn('Force load failed:',e));
+  }
+  window.addEventListener('DOMContentLoaded',()=>setTimeout(syncForceLoad,3500));
   </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
