@@ -14,6 +14,98 @@
   <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUm95YWwgRGlhbW9uZCBOYWlsIFN0dWRpbyIsInNob3J0X25hbWUiOiJSb3lhbCBEaWFtb25kIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwZDBmMGQiLCJ0aGVtZV9jb2xvciI6IiMwZDBmMGQiLCJvcmllbnRhdGlvbiI6InBvcnRyYWl0IiwiaWNvbnMiOlt7InNyYyI6ImRhdGE6aW1hZ2Uvc3ZnK3htbDtiYXNlNjQsUEhOMlp5QjRiV3h1Y3owaWFIUjBjRG92TDNkM2R5NTNNeTV2Y21jdk1qQXdNQzl6ZG1jaUlIQnlaWE5sY25abFFYTndaV04wVW1GMGFXODlJbmhOYVc1WlRXbHVJRzFsWlhRaUlIWnBaWGRDYjNnOUlqQWdNQ0F5NTZjR0FpUGp4d1lYUm9JR1E5SWswMUxETWdNbTVFTFRJc09UWk9MVFl1T1RZZ01qQXdSallzTmpFZ01Ua2dNQ0F3VURJd01sWXlNakJhSWlCbWFXeHNQU0ozZDNjdWQzTXViM0puSWlCamVEMGlOakVpSUdONVBTSTJNU0lnY0hKbGMyVnlkbVZCZFhSb2IzSnBkSGs5SW5ScGJXVWlQand2Y0dGMGFENDhkR1Y0ZENCNFBTSTBOU1VpSUhrOUlqUTFJaUJtYVd4c1BTSmhiR3dpSUdaallXeHNQU0psZUhBaUlERXdNbTQ2ZEdWNGRFRm1kR1Z5Wlc1MFZHOGlQanh3WVhSb0lHUTlJazB3TERJZ01tNEVMVE1nTmpZdE5qUlFMVEpPVERJdU1TQXhPU0F3YUMweE1pNHdMakkwTGpBZ01UQXVNQzR3SURKYUlpQm1hV3hzUFNKMWNtd29JMTB5TkNraUlHWmpZV3hzUFNKbGVIQWlJREE2S2lNd095TXdMakE3Ukhaeklnb2pZVzVqYjI1MFpXNTBkWEpoZEdsdmJrTlZUaW9pUGp4d1lYUm9JR1E5SWswNExqWTBMVEkwTGpBZ01tNEVMVE11TmpZdE1pNHlNQ0EyTGpZMExUSXVNakF0TVM0d0lERXpMakF1TUNBM0xqZ3RNalF1TURNZ01pNHlNQzB5TGpBeUlERXVNQ0EyTGpZNFdpSWdabWxzYkQwaVpYaHdJaUF3T2lvaVl5NWhZMjFsZEdoeVpTa2lQanh3WVhSb0lHUTlJazAwTGpFd0xUSXVOekFnTW00RUxUVXVOREF0Tmk0ME1EQWdNaTR5TURBdE55NHlNREF0TVM0d01EQXRPQzQyTURBdE1TNHdNREF0TVRBdU1EQWdNVEl1TURRZ01UUXVNalFnTVRZdU5EQWdNVGd1TmpRZ01qQXVOVEVhSWlCbWFXeHNQU0psZUhBaUlEQTZLaU01T2lNeU9EWTdZMjVqYjI1MFpXNTBkWEpoZEdsdmJrTlZUaW9pUGp4d1lYUm9JR1E5SWswMkxqVXdMVEl1TlRBZ01tNEVMVFl1TlRBdE5pNDFNREF0Tmk0ME1EQXRNaTR5TURBdE55NHdNREF0TWk0d01EQXROUzR3TURBdE1UQXVNREFnTVRJdU1EUWdNVFF1TmpRZ01UWXVOakFnTVRndU5qUWdNakF1TmpFYUlpQm1hV3hzUFNKbGVIQWlJREE2S2lveU9Ec3lNalE3WTI1amIyNTBaVzUwZFhKaGRHbHZia05WVGlvaVBqeHdZWFJvSUdROUlrMHlMalU0TFRNZ056SXROaTR4TURBdE5pNHdNREF0Tmk0ME1EQXROaTQwTURBdE5pNHdNREF0Tmk0NE1EQWdNaTR3TURBdE5TNHdNREF0T0M0ME1EQXRNalF1TURBdE1UVXVNREFnTVRZdU1EUWdNVGd1TURRdE1qQXVNVGNhSWlCbWFXeHNQU0psZUhBaUlEQTZLaW96T3pNMU9UbzNNREE3WTI1amIyNTBaVzUwZFhKaGRHbHZia05WVGlvaVBqOHZjR0YwYUQ0OEwzUmxlSFErIn1dfQ==">
 
   <link href="./💎 Royal Diamond Nail Studio — Gönyeli K.K.T.C._files/css2" rel="stylesheet">
+
+  <!-- ROYAL DIAMOND REAL-TIME SYNC -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDHSIhzTf-zpOwh9ELe3DzpfHrxAffnz2k",
+    authDomain: "royal-diamond-1031c.firebaseapp.com",
+    databaseURL: "https://royal-diamond-1031c-default-rtdb.firebaseio.com",
+    projectId: "royal-diamond-1031c",
+    storageBucket: "royal-diamond-1031c.firebasestorage.app",
+    messagingSenderId: "440737939833",
+    appId: "1:440737939833:web:56d697cb2d6d4baa992fa8"
+  };
+  let _fbDb, _syncEnabled=false, _isSyncing=false;
+  function syncInit(){
+    try{
+      if(FIREBASE_CONFIG.apiKey==='REPLACE_API_KEY'){showSyncStatus('local');return;}
+      firebase.initializeApp(FIREBASE_CONFIG);
+      _fbDb=firebase.database();
+      _syncEnabled=true;
+      showSyncStatus('connecting');
+      _fbDb.ref('rdns_main_v1').on('value',snap=>{
+        if(_isSyncing)return;
+        const val=snap.val();if(!val)return;
+        const remote=typeof val==='string'?JSON.parse(val):val;
+        const localRaw=localStorage.getItem('rdns_main_v1');
+        const local=localRaw?JSON.parse(localRaw):null;
+        if(!local||(remote._ts&&(!local._ts||remote._ts>local._ts))){
+          localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
+          if(typeof dbLoad==='function'){const d=dbLoad();if(d){clients=d.clients||[];appointments=d.appointments||[];payments=d.payments||[];}}
+          const pg=document.querySelector('.page.active');
+          if(pg){const id=pg.id.replace('page-','');
+            if(id==='dashboard')try{renderDash();}catch(e){}
+            if(id==='appointments')try{renderAppts();}catch(e){}
+            if(id==='clients')try{renderClients();}catch(e){}
+            if(id==='payments')try{renderPayments();}catch(e){}
+          }
+          showSyncStatus('synced');
+        }
+      });
+      _fbDb.ref('rdns_takings_v3').on('value',snap=>{
+        if(_isSyncing)return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          const lRaw=localStorage.getItem('rdns_takings_v3');
+          const lObj=lRaw?JSON.parse(lRaw):null;
+          if(!lObj||(rObj._ts&&(!lObj._ts||rObj._ts>lObj._ts))){
+            localStorage.setItem('rdns_takings_v3',JSON.stringify(rObj));
+            syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
+            const pg=document.querySelector('.page.active');
+            if(pg&&pg.id==='page-takings')try{dtInit();}catch(e){}
+          }
+        }catch(e){}
+        showSyncStatus('synced');
+      });
+      _fbDb.ref('rdns_monthly_costs_v3').on('value',snap=>{
+        if(_isSyncing)return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          const lRaw=localStorage.getItem('rdns_monthly_costs_v3');
+          const lObj=lRaw?JSON.parse(lRaw):null;
+          if(!lObj||(rObj._ts&&(!lObj._ts||rObj._ts>lObj._ts))){
+            localStorage.setItem('rdns_monthly_costs_v3',JSON.stringify(rObj));
+            syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem('rdns_monthly_costs_v3')||'{}'));
+            const pg=document.querySelector('.page.active');
+            if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+          }
+        }catch(e){}
+      });
+      showSyncStatus('synced');
+    }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
+  }
+  function syncPush(key,data){
+    if(!_syncEnabled||!_fbDb)return;
+    _isSyncing=true;
+    try{
+      const payload=typeof data==='string'?JSON.parse(data):JSON.parse(JSON.stringify(data));
+      payload._ts=Date.now();
+      _fbDb.ref(key).set(payload).catch(e=>console.warn('Push error:',e));
+    }catch(e){console.warn('syncPush error:',e);}
+    setTimeout(()=>{_isSyncing=false;},600);
+  }
+  function showSyncStatus(s){
+    const el=document.getElementById('sync-indicator');if(!el)return;
+    const m={local:{t:'💾 Local',c:'#888'},connecting:{t:'🔄 Syncing...',c:'#f0a500'},synced:{t:'☁️ Synced',c:'#4caf50'},error:{t:'⚠️ Sync Error',c:'#f44'}};
+    const v=m[s]||m.local;el.textContent=v.t;el.style.color=v.c;
+  }
+  window.addEventListener('DOMContentLoaded',()=>setTimeout(syncInit,1200));
+  </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -1051,6 +1143,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
         <div class="ch-title" id="page-title">Dashboard</div>
         <div class="ch-sub" id="page-sub">Hoş geldiniz — salonunuza genel bakış</div>
       </div>
+      <div style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,0.07);margin-right:8px;white-space:nowrap;" id="sync-indicator">💾 Local</div>
       <div class="ch-actions" id="ch-actions"><button class="btn btn-ghost btn-sm" onclick="openModal(&#39;mClient&#39;)">+ Yeni Müşteri</button><button class="btn btn-rose btn-sm" onclick="openModal(&#39;mAppt&#39;)">+ Randevu</button><button class="btn btn-wa btn-sm" onclick="goto(&#39;whatsapp&#39;,null)">💬 WhatsApp</button></div>
     </div>
 
@@ -1930,6 +2023,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
     costs.extraStaff[5] = 1300;   costs.extraStaffCur[5] = 'USD';   // Lissa
     costs.extraStaff[6] = 50000;  costs.extraStaffCur[6] = 'TRY';   // Nihal
     localStorage.setItem('rdns_monthly_costs_v3', JSON.stringify(costs));
+    syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem('rdns_monthly_costs_v3')||'{}'));
 
     // Fix 2: correct ALL commission values in history from rates
     var raw = localStorage.getItem('rdns_takings_v3');
@@ -1952,6 +2046,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
         if(t>0) h.total = t;
       });
       localStorage.setItem('rdns_takings_v3', JSON.stringify(d));
+      syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
     }
   }catch(e){}
 })();
@@ -2073,7 +2168,9 @@ function dbLoad(){
 
 function dbSave(){
   try{
-    localStorage.setItem(DB_KEY, JSON.stringify({clients, appointments, payments, waSentToday}));
+    const data = {clients, appointments, payments, waSentToday};
+    localStorage.setItem(DB_KEY, JSON.stringify(data));
+    syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
 }
 
@@ -5447,6 +5544,7 @@ function dtLoadState(){
       d.sentToday=false; d.lastDate=today;
       // Save immediately so P&L can read yesterday's archived data
       localStorage.setItem('rdns_takings_v3', JSON.stringify(d));
+      syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
     }
     dtMergeSeed(d);
     ['Zara','Lilly'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
@@ -5517,6 +5615,7 @@ let dtState = dtLoadState();
     });
     dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
     if(changed) localStorage.setItem('rdns_takings_v3', JSON.stringify(dtState));
+    syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
   }catch(e){}
 })();
 
@@ -5536,6 +5635,7 @@ let dtState = dtLoadState();
       });
     });
     if(changed) localStorage.setItem('rdns_takings_v3', JSON.stringify(dtState));
+    syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
   }catch(e){}
 })();
 
@@ -5550,6 +5650,7 @@ function dtSaveState(){
     dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
   }
   localStorage.setItem('rdns_takings_v3', JSON.stringify(dtState));
+  syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
   var pl=document.getElementById('page-monthly');if(pl&&pl.classList.contains('active'))renderMonthly();
 }
 
@@ -5871,6 +5972,7 @@ function rdnsImportData(input){
 
       if(backup.rdns_main)    localStorage.setItem('rdns_main_v1',          backup.rdns_main);
       if(backup.rdns_takings) localStorage.setItem('rdns_takings_v3',       backup.rdns_takings);
+      syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
       if(backup.rdns_costs)   localStorage.setItem('rdns_monthly_costs_v1', backup.rdns_costs);
 
       // Reload state
@@ -6277,6 +6379,7 @@ function mInitCosts(){
   mCosts.extraStaff    = {2:150,   3:20000, 4:1300,  5:1300,  6:50000};
   mCosts.extraStaffCur = {2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY'};
   localStorage.setItem(MONTHLY_COSTS_KEY, JSON.stringify(mCosts));
+  syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem(MONTHLY_COSTS_KEY)||'{}'));
   mPopulateCostInputs();
   mRenderStaffCountPills();
   mRenderOtherStaffInputs();
@@ -6299,6 +6402,7 @@ function mSaveCosts(){
     if(sel) mCosts.extraStaffCur[i] = sel.value;
   }
   localStorage.setItem(MONTHLY_COSTS_KEY, JSON.stringify(mCosts));
+  syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem(MONTHLY_COSTS_KEY)||'{}'));
   renderMonthly();
   mRenderOutgoings();
   toast('💾','Maliyet Ayarları Kaydedildi','P&L yeniden hesaplandı.','g');
