@@ -1548,22 +1548,7 @@ p, span, div, label, h1, h2, h3, h4 {
         <button class="tab active" onclick="fWA(&#39;all&#39;,this)">All <span class="tab-n" id="wt-all">0</span></button>
         <button class="tab" onclick="fWA(&#39;reminder&#39;,this)">⏰ Reminders <span class="tab-n" id="wt-reminder">0</span></button>
         <button class="tab" onclick="fWA(&#39;birthday&#39;,this)">🎂 Birthdays <span class="tab-n" id="wt-birthday">0</span></button>
-        <button class="tab" onclick="fWA(&#39;loyalty&#39;,this)">⭐ Loyalty <span class="tab-n" id="wt-loyalty">0</span></button>
-        <button class="tab" onclick="fWA(&#39;promo&#39;,this)">🎁 Promos <span class="tab-n" id="wt-promo">0</span></button>
-        <button class="tab" onclick="fWA(&#39;rebook&#39;,this)">🔄 Rebook <span class="tab-n" id="wt-rebook">0</span></button>
-        <button class="tab" onclick="fWA(&#39;visit3&#39;,this)">🎉 3rd Visit <span class="tab-n" id="wt-visit3">0</span></button>
         <button class="tab" onclick="fWA(&#39;sent&#39;,this)">✅ Sent <span class="tab-n" id="wt-sent">0</span></button>
-      </div>
-      <!-- Tier filter row -->
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-        <span style="font-size:0.72rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700;">Filter by tier:</span>
-        <button class="tier-filter-btn active" id="tf-all" onclick="fTier(&#39;all&#39;,this)">👥 All Clients</button>
-        <button class="tier-filter-btn" id="tf-Diamond" onclick="fTier(&#39;Diamond&#39;,this)">💎 Diamond</button>
-        <button class="tier-filter-btn" id="tf-Platinum" onclick="fTier(&#39;Platinum&#39;,this)">🏅 Platinum</button>
-        <button class="tier-filter-btn" id="tf-Gold" onclick="fTier(&#39;Gold&#39;,this)">⭐ Gold</button>
-        <button class="tier-filter-btn" id="tf-Silver" onclick="fTier(&#39;Silver&#39;,this)">🥈 Silver</button>
-        <button class="tier-filter-btn" id="tf-Bronze" onclick="fTier(&#39;Bronze&#39;,this)">🥉 Bronze</button>
-        <button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="broadcastToTier()">📢 Broadcast to Tier</button>
       </div>
 
       <div class="msg-cards-grid" id="wa-grid"></div>
@@ -3744,6 +3729,8 @@ function genInvoice(){
 // WHATSAPP CENTRE
 // ══════════════════════════════════════════════════════════════
 let msgQueue=[];
+// Filter out loyalty/promo/rebook/visit3 on load
+function cleanMsgQueue(){msgQueue=msgQueue.filter(m=>m.type==='reminder'||m.type==='birthday');}
 let waFilter="all";
 let waTierFilter="all";
 let waSentToday = _dbLoaded?.waSentToday || 0;
@@ -3777,10 +3764,7 @@ function buildWAQueue(){
     // Birthday
     if(isBday(c.birthday)){const id=c.id+"_bday";if(!existing.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"today",text:"",status:"pending",appt:null});existing.add(id);}}
     else if(isBdaySoon(c.birthday,7)){const id=c.id+"_bdaySoon";if(!existing.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"soon",text:"",status:"pending",appt:null});existing.add(id);}}
-    // Loyalty
-    if(c.points>0){const id=c.id+"_loyalty";if(!existing.has(id)){msgQueue.push({id,clientId:c.id,type:"loyalty",subtype:"",text:"",status:"pending",appt:null});existing.add(id);}}
-    // Promo
-    if(c.visits>0){const id=c.id+"_promo";if(!existing.has(id)){msgQueue.push({id,clientId:c.id,type:"promo",subtype:"",text:"",status:"pending",appt:null});existing.add(id);}}
+    // Loyalty and Promo disabled
   });
 }
 
@@ -3881,6 +3865,7 @@ function waTypeBadge(type){
 }
 
 function renderWA(){
+  cleanMsgQueue();
   buildWAQueue();
   updateWACounts();
   let list=waFilter==="all"?[...msgQueue]:waFilter==="sent"?msgQueue.filter(m=>m.status==="sent"):msgQueue.filter(m=>m.type===waFilter&&m.status!=="sent");
