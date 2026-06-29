@@ -2402,7 +2402,7 @@ function fpUpdateDots(){
 }
 
 function goto(page,el){
-  if((page==='monthly'||page==='takings') && !_finUnlocked){
+  if((page==='monthly'||page==='salary') && !_finUnlocked){
     _showFinPinModal(page,el); return;
   }
   _gotoActual(page,el);
