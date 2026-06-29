@@ -3324,7 +3324,7 @@ function toggleFamilyDiscount(id, event){
 }
 function renderClients(){
   const q=(document.getElementById("client-search")?.value||"").toLowerCase();
-  const list=clients.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q));
+  const list=clients.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
   document.getElementById("clients-body").innerHTML=list.map(c=>`
     <tr>
       <td><div style="display:flex;align-items:center;gap:9px">
