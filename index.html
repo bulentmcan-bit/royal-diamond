@@ -2535,8 +2535,8 @@ function popStaffSel(){
 // ══════════════════════════════════════════════════════════════
 let dashGridDate = new Date();
 
-const STAFF_LIST = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh'];
-const STAFF_COLORS = {
+const STAFF_LIST = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh','Nihal'];
+const STAFF_COLORS = {Nihal:'#f08080',
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
   Zara:'var(--lavender)', Lilly:'var(--blue)', Saeideh:'var(--orange)'
 };
@@ -2552,8 +2552,8 @@ function renderDashGrid(){
   const el = document.getElementById('dash-daily-grid');
   if(!el) return;
 
-  const staffList = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh'];
-  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Lilly:'#7aaae8',Saeideh:'#f5c27a'};
+  const staffList = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh','Nihal'];
+  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Lilly:'#7aaae8',Saeideh:'#f5c27a',Nihal:'#f08080'};
   const BOXES = 12;
 
   const now = new Date();
@@ -2871,6 +2871,7 @@ function renderSalaryPage(){
       {name:'Zara',    role:'Nail Technician',    color:'#b8a0d8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Zara']||0},
       {name:'Lilly',   role:'Nail Technician',    color:'#7aaae8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Lilly']||0},
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
+      {name:'Nihal',   role:'Nail Technician',    color:'#f08080', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Nihal']||0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
@@ -3080,6 +3081,7 @@ const DI_STAFF = [
   {name:'Zara',    color:'#b8a0d8', commRate:0.25, commExtra:0,   extraOnWorkDay:400},
   {name:'Lilly',   color:'#7aaae8', commRate:0.25, commExtra:0,   extraOnWorkDay:400},
   {name:'Saeideh', color:'#f5c27a', commRate:0.50, commExtra:0},
+  {name:'Nihal', color:'#f08080', key:'Nihal'},
 ];
 
 let diCurrentDate = '';
@@ -6819,7 +6821,7 @@ function renderMonthly(){
     html += mkGroup('💎 Helen',
       mkCard(_('m_helen_salary'), mFmtTRY(c.starSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.starSal,mCosts.starSalCur)+'</div>', 'var(--blue)', false) +
       mkCard(_('m_helen_bonus'), mFmtTRY(c.comm), 'var(--purple)', true, '25% of net after expenses, commissions, KDV & Vergi') +
-      mkCard(_('m_helen_total'), mFmtTRY(c.starTotal), 'var(--purple)', true)
+      mkCard(_('m_helen_total'), mFmtTRY(c.starTotal), 'var(--coral)', true)
     );
 
     // ── HANNAH ──
