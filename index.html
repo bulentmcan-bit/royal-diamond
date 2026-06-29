@@ -3292,6 +3292,7 @@ function renderAppts(){
       <td>${statusBadge(a.status)}</td>
       <td><div style="display:flex;gap:4px">
         ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${a.id})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${a.id})">✕</button>`:""}
+        ${(a.status==="cancelled"||a.status==="completed")?`<button class="btn btn-red btn-sm" style="opacity:0.7" onclick="deleteAppt(${a.id})">🗑 Delete</button>`:""}
       </div></td>
     </tr>`;
   }).join("");
@@ -3433,6 +3434,7 @@ function skipRebook(){
 }
 
 function cancelAppt(id){appointments.find(x=>x.id===id).status="cancelled";saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled.","r");}
+function deleteAppt(id){if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){document.getElementById("appt-badge").textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
