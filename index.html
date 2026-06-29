@@ -2535,8 +2535,8 @@ function popStaffSel(){
 // ══════════════════════════════════════════════════════════════
 let dashGridDate = new Date();
 
-const STAFF_LIST = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh','Nihal'];
-const STAFF_COLORS = {Nihal:'#f08080',
+const STAFF_LIST = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh'];
+const STAFF_COLORS = {
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
   Zara:'var(--lavender)', Lilly:'var(--blue)', Saeideh:'var(--orange)'
 };
@@ -2552,8 +2552,8 @@ function renderDashGrid(){
   const el = document.getElementById('dash-daily-grid');
   if(!el) return;
 
-  const staffList = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh','Nihal'];
-  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Lilly:'#7aaae8',Saeideh:'#f5c27a',Nihal:'#f08080'};
+  const staffList = ['Helen','Hannah','Lissa','Zara','Lilly','Saeideh'];
+  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Lilly:'#7aaae8',Saeideh:'#f5c27a'};
   const BOXES = 12;
 
   const now = new Date();
@@ -2871,7 +2871,6 @@ function renderSalaryPage(){
       {name:'Zara',    role:'Nail Technician',    color:'#b8a0d8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Zara']||0},
       {name:'Lilly',   role:'Nail Technician',    color:'#7aaae8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Lilly']||0},
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
-      {name:'Nihal',   role:'Nail Technician',    color:'#f08080', salary:50000, cur:'TL', commLabel:'Fixed salary only',          comm:0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
