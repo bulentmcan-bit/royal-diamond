@@ -1048,6 +1048,43 @@ textarea.fctrl{resize:vertical;min-height:70px;}
   font-weight: 800 !important;
 }
 
+
+/* ═══════ SALARY PAGE READABLE COLORS ═══════ */
+#page-salary .sal-card {
+  border: 2px solid #ccc !important;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.12) !important;
+}
+#page-salary .sal-card-name {
+  color: #1a1a1a !important;
+  font-weight: 800 !important;
+  font-size: 1.1rem !important;
+}
+#page-salary .sal-card-role {
+  color: #555 !important;
+  font-weight: 600 !important;
+}
+#page-salary .sal-card-total {
+  color: #c0392b !important;
+  font-weight: 800 !important;
+  font-size: 1.3rem !important;
+}
+#page-salary .sal-row-label {
+  color: #333 !important;
+  font-weight: 600 !important;
+}
+#page-salary .sal-row-val {
+  color: #1a6b2a !important;
+  font-weight: 700 !important;
+}
+#page-salary .sal-row-sub {
+  color: #555 !important;
+  font-weight: 500 !important;
+}
+#page-salary .sal-card-month {
+  color: #333 !important;
+  font-weight: 600 !important;
+}
+
 /* ═══════ LIGHT THEME ENHANCEMENTS ═══════ */
 body, .app-wrapper, .main-content, .content-area {
   background: #f0f2f5 !important;
@@ -2871,24 +2908,24 @@ function renderSalaryPage(){
       // Header
       cardsHtml+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">';
       cardsHtml+='<div><div style="font-weight:700;font-size:1rem;color:'+s.color+';">'+s.name+'</div>';
-      cardsHtml+='<div style="font-size:0.7rem;color:var(--muted);margin-top:2px;">'+s.role+'</div></div>';
+      cardsHtml+='<div style="font-size:0.78rem;color:#444;font-weight:600;margin-top:2px;">'+s.role+'</div></div>';
       cardsHtml+='<div style="text-align:right;"><div style="font-size:1.25rem;font-weight:700;color:'+s.color+';">'+fmt(total)+'</div>';
-      cardsHtml+='<div style="font-size:0.62rem;color:var(--muted);">this month</div></div></div>';
+      cardsHtml+='<div style="font-size:0.65rem;color:#666;font-weight:600;">this month</div></div></div>';
       // Lines
       if(salTRY>0){
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
-        cardsHtml+='<span style="font-size:0.75rem;color:var(--muted);">Base Salary</span>';
-        cardsHtml+='<span style="font-size:0.82rem;font-weight:700;color:var(--blue);">'+fmt(salTRY);
+        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">Base Salary</span>';
+        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#1a6b2a;">'+fmt(salTRY);
         if(s.salary>0 && s.cur!=='TL' && s.cur!=='TRY') cardsHtml+=' <span style="font-size:0.65rem;color:var(--muted);">'+fmtOrig(s.salary,s.cur)+'</span>';
         cardsHtml+='</span></div>';
       }
       if(s.comm>0){
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
-        cardsHtml+='<span style="font-size:0.75rem;color:var(--muted);">'+s.commLabel+'</span>';
-        cardsHtml+='<span style="font-size:0.82rem;font-weight:700;color:var(--purple);">'+fmt(s.comm)+'</span></div>';
+        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">'+s.commLabel+'</span>';
+        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#7b2d8b;">'+fmt(s.comm)+'</span></div>';
       }
       if(s.comm===0 && s.commLabel!=='Fixed salary only'){
-        cardsHtml+='<div style="font-size:0.65rem;color:var(--muted);margin-top:6px;font-style:italic;">'+s.commLabel+' — no earnings this month</div>';
+        cardsHtml+='<div style="font-size:0.72rem;color:#888;margin-top:6px;font-style:italic;font-weight:500;">'+s.commLabel+' — no earnings this month</div>';
       }
       cardsHtml+='</div>';
     });
