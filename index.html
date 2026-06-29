@@ -1448,7 +1448,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="searchbar"><span>🔍</span><input id="client-search" placeholder="İsim veya telefon ile ara…" oninput="renderClients()"></div>
       <div class="card" style="padding:0;overflow:hidden;">
         <table class="tbl">
-          <thead><tr><th>Client</th><th>Phone</th><th>Birthday</th><th>Visits</th><th>Points/Tier</th><th>Last Visit</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Client</th><th>Phone</th><th>Birthday</th><th>Visits</th><th>Family Discount</th><th>Last Visit</th><th>Actions</th></tr></thead>
           <tbody id="clients-body"></tbody>
         </table>
       </div>
@@ -3312,6 +3312,16 @@ function renderDash(){
 // ══════════════════════════════════════════════════════════════
 // CLIENTS
 // ══════════════════════════════════════════════════════════════
+
+function toggleFamilyDiscount(id, event){
+  event.stopPropagation();
+  const c = clients.find(x=>x.id===id);
+  if(!c) return;
+  c.familyDiscount = !c.familyDiscount;
+  dbSave();
+  renderClients();
+  toast(c.familyDiscount?'✓':'ℹ', 'Family Discount', c.name + (c.familyDiscount?' now has 30% family discount':' discount removed'), c.familyDiscount?'g':'');
+}
 function renderClients(){
   const q=(document.getElementById("client-search")?.value||"").toLowerCase();
   const list=clients.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q));
@@ -3324,7 +3334,7 @@ function renderClients(){
       <td style="font-size:0.82rem">${c.phone}</td>
       <td style="font-size:0.82rem">${c.birthday?fDate(c.birthday+"T00:00"):"—"}</td>
       <td><strong>${c.visits}</strong></td>
-      <td>${tierBadge(c.tier)}<div style="font-size:0.7rem;color:var(--muted);margin-top:2px">${c.points}pts</div></td>
+      <td><button onclick="toggleFamilyDiscount(${c.id},event)" style="padding:5px 12px;border-radius:20px;border:2px solid ${c.familyDiscount?'#4caf50':'#ccc'};background:${c.familyDiscount?'#e8f5e9':'#f5f5f5'};color:${c.familyDiscount?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;">${c.familyDiscount?'✓ 30% OFF':'No Discount'}</button></td>
       <td style="color:var(--muted);font-size:0.81rem">${c.lastVisit||"—"}</td>
       <td><div style="display:flex;gap:5px">
         <button class="btn btn-ghost btn-sm" onclick="showClientDetail(${c.id})">👁</button>
