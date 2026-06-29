@@ -5629,7 +5629,7 @@ function dtDefaultState(){
       {id:2,name:'Lissa',entries:[],active:true},
       {id:3,name:'Zara',entries:[],active:true},
       {id:4,name:'Lilly',entries:[],active:true},
-      {id:5,name:'Saeideh',entries:[],active:false},
+      {id:5,name:'Saeideh',entries:[],active:true},
       {id:6,name:'Nihal',entries:[],active:false},
     ],
     currency:'₺', mgmtPhone:'', studioName:'Royal Diamond Nail Studio',
@@ -5676,7 +5676,8 @@ function dtLoadState(){
       syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
     }
     dtMergeSeed(d);
-    ['Zara','Lilly'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
+    ['Zara','Lilly','Saeideh'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
+    if(!d.operators.find(function(x){return x.name==='Saeideh';})) d.operators.push({id:5,name:'Saeideh',entries:[],active:true});
     // Deduplicate history - if same date appears twice, keep only the first (newest save)
     var seen={};
     d.history = (d.history||[]).filter(function(h){ if(seen[h.date]) return false; seen[h.date]=true; return true; });
