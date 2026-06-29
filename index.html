@@ -569,7 +569,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
 .cal-dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;}
 .cal-dow{text-align:center;font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);padding:6px 0;font-weight:700;}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
-.cal-day{background:var(--card);border:1px solid var(--border);border-radius:9px;min-height:88px;padding:7px 8px;cursor:pointer;transition:border-color 0.14s,transform 0.14s;display:flex;flex-direction:column;}
+.cal-day{background:var(--card);border:1px solid var(--border);border-radius:9px;min-height:100px;padding:7px 8px;cursor:pointer;transition:border-color 0.14s,transform 0.14s;display:flex;flex-direction:column;}
 .cal-day:hover{border-color:var(--wa);transform:translateY(-1px);}
 .cal-day.today{border-color:var(--wa);background:rgba(37,211,102,0.06);}
 .cal-day.other-month{opacity:0.32;}
@@ -4329,18 +4329,11 @@ function renderMonthView(){
   document.getElementById('cal-grid').innerHTML = cells.map(c=>{
     const dt = new Date(c.year, c.month, c.day);
     const isToday = sameDay(dt, today);
-    const appts = apptOnDay(dt);
-    const shown = appts.slice(0,3);
-    const more = appts.length - 3;
-    return `<div class="cal-day${c.other?' other-month':''}${isToday?' today':''}${appts.length?' has-appts':''}" onclick="calDayClick('${dt.toISOString()}')">
-      <div class="cal-day-num${isToday?' today-num':''}">
-        <span>${c.day}</span>
-        ${isToday?'<span class="cal-today-dot"></span>':''}
-      </div>
-      ${shown.map(a=>`<div class="cal-event ${evClass(a)}" onclick="event.stopPropagation();calApptClick(${a.id})" title="${cName(a.clientId)} — ${a.service}">
-        <strong>${apptTime(a)}</strong> ${avI(cName(a.clientId))} ${a.service}
-      </div>`).join('')}
-      ${more>0?`<div class="cal-more">+${more} more</div>`:''}
+    const appts = apptOnDay(dt).filter(a=>a.status==='confirmed'||a.status==='completed');
+    const confirmed = appts.filter(a=>a.status==='confirmed').length;
+    return `<div class="cal-day${c.other?' other-month':''}${isToday?' today':''}" onclick="calDayClick('${dt.toISOString()}')" style="min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">
+      <div style="font-size:1.4rem;font-weight:800;color:${isToday?'#4caf50':'#1a1a1a'};">${c.day}</div>
+      ${confirmed>0?`<div style="background:#4caf50;color:white;border-radius:12px;padding:2px 10px;font-size:0.75rem;font-weight:700;">${confirmed} appt${confirmed>1?'s':''}</div>`:''}
     </div>`;
   }).join('');
 }
