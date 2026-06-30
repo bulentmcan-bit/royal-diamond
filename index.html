@@ -207,7 +207,7 @@ body::before{
   border-left:3px solid var(--wa);
   color:var(--text);
 }
-.dg-appt.completed { background:rgba(110,203,138,0.1); border-left-color:var(--green); opacity:0.75; }
+.dg-appt.completed { background:rgba(47,127,224,0.1); border-left-color:var(--green); opacity:0.75; }
 .dg-appt-name { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dg-appt-svc  { color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.63rem; }
 .dg-now-line  { position:absolute; left:0; right:0; height:2px; background:var(--rose); z-index:4; pointer-events:none; }
@@ -2625,10 +2625,10 @@ function renderDashGrid(){
       html += '<div style="display:flex;gap:3px;">';
       if(!isDone){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
-        html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(110,203,138,0.12);border:1px solid rgba(110,203,138,0.25);border-radius:4px;color:#6ecb8a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
+        html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(47,127,224,0.12);border:1px solid rgba(47,127,224,0.25);border-radius:4px;color:#2f7fe0;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
       } else {
-        html += '<span style="font-size:0.62rem;color:#6ecb8a;padding:2px 4px;">✓ Completed</span>';
+        html += '<span style="font-size:0.62rem;color:#2f7fe0;padding:2px 4px;">✓ Completed</span>';
       }
       html += '</div>';
       html += '</div>';
