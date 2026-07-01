@@ -1261,27 +1261,27 @@ p, span, div, label, h1, h2, h3, h4 {
   <!-- SIDEBAR -->
   <nav class="sidebar">
     <div class="sb-section" data-i18n="sec_overview">Genel Bakış</div>
-    <div class="nav-item active" ontouchstart="event.preventDefault();goto(&#39;dashboard&#39;,this)" onclick="goto(&#39;dashboard&#39;,this)"><span class="nav-icon">🏠</span><span data-i18n="nav_dashboard">Dashboard</span></div>
+    <div class="nav-item active" onclick="goto(&#39;dashboard&#39;,this)"><span class="nav-icon">🏠</span><span data-i18n="nav_dashboard">Dashboard</span></div>
 
     <div class="sb-section" data-i18n="sec_clients">Müşteriler</div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;clients&#39;,this)" onclick="goto(&#39;clients&#39;,this)"><span class="nav-icon">👤</span><span data-i18n="nav_clients">Müşteriler</span></div>
+    <div class="nav-item" onclick="goto(&#39;clients&#39;,this)"><span class="nav-icon">👤</span><span data-i18n="nav_clients">Müşteriler</span></div>
 
     <div class="sb-section" data-i18n="sec_bookings">Randevular</div>
 
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;treatments&#39;,this)" onclick="goto(&#39;treatments&#39;,this)"><span class="nav-icon">💆</span><span data-i18n="nav_treatments">Tedaviler</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;calendar&#39;,this)" onclick="goto(&#39;calendar&#39;,this)"><span class="nav-icon">📆</span><span data-i18n="nav_calendar">Takvim</span></div>
+    <div class="nav-item" onclick="goto(&#39;treatments&#39;,this)"><span class="nav-icon">💆</span><span data-i18n="nav_treatments">Tedaviler</span></div>
+    <div class="nav-item" onclick="goto(&#39;calendar&#39;,this)"><span class="nav-icon">📆</span><span data-i18n="nav_calendar">Takvim</span></div>
 
     <div class="sb-section" data-i18n="sec_finance">Finans</div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;payments&#39;,this)" onclick="goto(&#39;payments&#39;,this)"><span class="nav-icon">💳</span><span data-i18n="nav_payments">Ödemeler</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;invoice&#39;,this)" onclick="goto(&#39;invoice&#39;,this)"><span class="nav-icon">🧾</span><span data-i18n="nav_invoice">Fatura</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;monthly&#39;,this)" onclick="goto(&#39;monthly&#39;,this)"><span class="nav-icon">📊</span><span>Aylık P&L</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;takings&#39;,this)" onclick="goto(&#39;takings&#39;,this)"><span class="nav-icon">💰</span><span>Daily Takings</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;salary&#39;,this)" onclick="goto(&#39;salary&#39;,this)"><span class="nav-icon">💼</span><span>Salary</span></div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;gapreport&#39;,this)" onclick="goto(&#39;gapreport&#39;,this)"><span class="nav-icon">📋</span><span>Gap Report</span></div>
+    <div class="nav-item" onclick="goto(&#39;payments&#39;,this)"><span class="nav-icon">💳</span><span data-i18n="nav_payments">Ödemeler</span></div>
+    <div class="nav-item" onclick="goto(&#39;invoice&#39;,this)"><span class="nav-icon">🧾</span><span data-i18n="nav_invoice">Fatura</span></div>
+    <div class="nav-item" onclick="goto(&#39;monthly&#39;,this)"><span class="nav-icon">📊</span><span>Aylık P&L</span></div>
+    <div class="nav-item" onclick="goto(&#39;takings&#39;,this)"><span class="nav-icon">💰</span><span>Daily Takings</span></div>
+    <div class="nav-item" onclick="goto(&#39;salary&#39;,this)"><span class="nav-icon">💼</span><span>Salary</span></div>
+    <div class="nav-item" onclick="goto(&#39;gapreport&#39;,this)"><span class="nav-icon">📋</span><span>Gap Report</span></div>
 
     <hr class="sb-divider">
     <div class="sb-section" data-i18n="sec_comms">İletişim</div>
-    <div class="nav-item" ontouchstart="event.preventDefault();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
+    <div class="nav-item" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
@@ -2474,7 +2474,7 @@ function _gotoActual(page,el){
   if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
   if(page==="gapreport"){ renderGapReport(); }
-  if(window.innerWidth <= 768) setTimeout(closeSidebar, 50);
+  if(window.innerWidth <= 768) closeSidebar();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -7192,6 +7192,17 @@ function closeSidebar(){
   document.getElementById('sidebarOverlay').classList.remove('open');
   document.getElementById('mobHamburger').classList.remove('open');
 }
+
+// Mobile nav touch fix — fire goto on touchend to avoid delay/conflict
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.nav-item[onclick]').forEach(function(el){
+    el.addEventListener('touchend', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      el.click();
+    }, {passive: false});
+  });
+});
 
 // Register service worker for offline / PWA install
 if('serviceWorker' in navigator){
