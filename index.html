@@ -121,6 +121,10 @@
     }).catch(e=>console.warn('Force load failed:',e));
   }
   window.addEventListener('DOMContentLoaded',()=>setTimeout(syncForceLoad,3500));
+  window.addEventListener('DOMContentLoaded',()=>setTimeout(function(){
+    if(typeof checkR24Popups==='function') checkR24Popups();
+    setInterval(function(){ if(typeof checkR24Popups==='function') checkR24Popups(); }, 60000);
+  },4500));
   </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -2122,6 +2126,22 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="mfoot">
       <button class="btn btn-ghost" id="btn-skip-rebook" onclick="skipRebook()">Atla</button>
       <button class="btn btn-green" id="btn-confirm-rebook" onclick="confirmRebook()">🔄 Onayla &amp; Yeniden Randevu Al</button>
+    </div>
+  </div>
+</div>
+
+<!-- Daily WhatsApp Reminders popup -->
+<div class="overlay" id="mDailyReminders">
+  <div class="modal" style="max-width:540px;">
+    <div class="mhdr"><div class="mtitle">⏰ 24 Saat Kala Hatırlatma</div><button class="mclose" onclick="closeModal('mDailyReminders')">✕</button></div>
+    <div style="background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.25);border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:0.83rem;line-height:1.55;">
+      <span id="daily-reminder-count" style="font-weight:800;color:var(--wa);font-size:1rem;">0</span>
+      <span> müşterinin randevusuna 24 saatten az kaldı — isim ve telefon numaraları aşağıda. Her kartta <strong>✨ Oluştur</strong>'a basınca mesaj yazılır, sonra <strong>Gönder</strong>'e basınca o müşterinin WhatsApp'ı mesaj hazır halde açılır — siz sadece WhatsApp içindeki gönder tuşuna basmanız yeterli.</span>
+    </div>
+    <div id="daily-reminder-list" style="max-height:380px;overflow-y:auto;margin-bottom:14px;"></div>
+    <div class="mfoot">
+      <button class="btn btn-ghost" onclick="closeModal('mDailyReminders')">Daha Sonra</button>
+      <button class="btn btn-wa" onclick="sendAll24hReminders()">💬 Hepsini Oluştur &amp; Gönder</button>
     </div>
   </div>
 </div>
@@ -5195,11 +5215,56 @@ function setLang(lang){
 // ══════════════════════════════════════════════════════════════
 let dash24hMessages = {}; // clientId+apptId → {text, status}
 
+function r24ItemHtml(a){
+  const c = cObj(a.clientId);
+  const key = a.clientId+"_"+a.id;
+  const msg = dash24hMessages[key];
+  const timeUntil = hrs(a.datetime);
+  const urgency = timeUntil <= 2 ? `<span style="color:var(--rose);font-weight:700">⚡ ${Math.round(timeUntil*60)}min away</span>` :
+                  timeUntil <= 4 ? `<span style="color:var(--orange)">${Math.round(timeUntil)}h away</span>` :
+                  `<span style="color:var(--muted)">${Math.round(timeUntil)}h away</span>`;
+
+  const apptDate = new Date(a.datetime);
+  const timeStr = apptDate.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  const dateStr = apptDate.toLocaleDateString("tr-TR",{weekday:"short",day:"numeric",month:"short"});
+
+  return `<div class="r24-item" id="r24-item-${key}">
+    <div class="avatar" style="background:${avC(c?.name||'')};width:36px;height:36px;font-size:0.8rem;flex-shrink:0">${avI(c?.name||'?')}</div>
+    <div class="r24-left">
+      <div class="r24-name">${c?.name||"Unknown"}</div>
+      <div class="r24-meta">
+        <span style="font-weight:700;color:var(--wa)">📞 ${c?.phone||"—"}</span>
+        <span>💅 ${a.service}</span>
+        <span>👤 ${a.staff}</span>
+        <span>${dateStr} · ${timeStr}</span>
+        ${urgency}
+      </div>
+      ${msg?.text ? `<div class="r24-msg-preview">${msg.text}</div>` :
+        msg?.status === "loading" ? `<div class="r24-generating"><div class="dot"></div><div class="dot"></div><div class="dot"></div> Generating message…</div>` :
+        `<div style="font-size:0.75rem;color:var(--muted);margin-top:6px;font-style:italic;">Click Generate to create WhatsApp reminder</div>`}
+    </div>
+    <div class="r24-time">${timeStr}</div>
+    <div class="r24-actions">
+      ${msg?.status === "sent"
+        ? `<span class="badge badge-green" style="font-size:0.72rem;">✅ Sent</span>`
+        : msg?.text
+          ? `<button class="btn btn-wa btn-sm" onclick="send24hReminder('${key}','${c?.phone}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a6.6 6.6 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347zM12 0C5.373 0 0 5.373 0 12c0 2.119.553 4.116 1.521 5.849L.057 23.547a.5.5 0 00.611.612l5.79-1.497A11.954 11.954 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.956 9.956 0 01-5.189-1.455l-.372-.22-3.857.997 1.028-3.76-.242-.387A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+              Send</button>
+             <button class="btn btn-ghost btn-sm" onclick="gen24hMsg('${key}',${a.id},${a.clientId})">🔄</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="gen24hMsg('${key}',${a.id},${a.clientId})">✨ Generate</button>`
+      }
+    </div>
+  </div>`;
+}
+
 async function renderDash24h(){
   const list = document.getElementById("dash-r24-list");
   const countEl = document.getElementById("dash-r24-count");
   const sendBtn = document.getElementById("dash-r24-send-all");
-  if(!list) return;
+  const modalList = document.getElementById("daily-reminder-list");
+  const modalCount = document.getElementById("daily-reminder-count");
+  if(!list && !modalList) return;
 
   // Find all confirmed appointments within the next 24 hours
   const due = appointments.filter(a => {
@@ -5207,56 +5272,16 @@ async function renderDash24h(){
     return a.status === "confirmed" && h > 0 && h <= 25;
   }).sort((a,b) => new Date(a.datetime) - new Date(b.datetime));
 
-  countEl.textContent = due.length;
+  if(countEl) countEl.textContent = due.length;
+  if(modalCount) modalCount.textContent = due.length;
   if(sendBtn) sendBtn.style.display = due.length > 0 ? "inline-flex" : "none";
 
-  if(due.length === 0){
-    list.innerHTML = `<div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div>`;
-    return;
-  }
+  const html = due.length === 0
+    ? `<div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div>`
+    : due.map(r24ItemHtml).join("");
 
-  // Render each reminder item
-  list.innerHTML = due.map(a => {
-    const c = cObj(a.clientId);
-    const key = a.clientId+"_"+a.id;
-    const msg = dash24hMessages[key];
-    const timeUntil = hrs(a.datetime);
-    const urgency = timeUntil <= 2 ? `<span style="color:var(--rose);font-weight:700">⚡ ${Math.round(timeUntil*60)}min away</span>` :
-                    timeUntil <= 4 ? `<span style="color:var(--orange)">${Math.round(timeUntil)}h away</span>` :
-                    `<span style="color:var(--muted)">${Math.round(timeUntil)}h away</span>`;
-
-    const apptDate = new Date(a.datetime);
-    const timeStr = apptDate.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-    const dateStr = apptDate.toLocaleDateString("tr-TR",{weekday:"short",day:"numeric",month:"short"});
-
-    return `<div class="r24-item" id="r24-item-${key}">
-      <div class="avatar" style="background:${avC(c?.name||'')};width:36px;height:36px;font-size:0.8rem;flex-shrink:0">${avI(c?.name||'?')}</div>
-      <div class="r24-left">
-        <div class="r24-name">${c?.name||"Unknown"}</div>
-        <div class="r24-meta">
-          <span>💅 ${a.service}</span>
-          <span>👤 ${a.staff}</span>
-          <span>${dateStr} · ${timeStr}</span>
-          ${urgency}
-        </div>
-        ${msg?.text ? `<div class="r24-msg-preview">${msg.text}</div>` :
-          msg?.status === "loading" ? `<div class="r24-generating"><div class="dot"></div><div class="dot"></div><div class="dot"></div> Generating message…</div>` :
-          `<div style="font-size:0.75rem;color:var(--muted);margin-top:6px;font-style:italic;">Click Generate to create WhatsApp reminder</div>`}
-      </div>
-      <div class="r24-time">${timeStr}</div>
-      <div class="r24-actions">
-        ${msg?.status === "sent"
-          ? `<span class="badge badge-green" style="font-size:0.72rem;">✅ Sent</span>`
-          : msg?.text
-            ? `<button class="btn btn-wa btn-sm" onclick="send24hReminder('${key}','${c?.phone}')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a6.6 6.6 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347zM12 0C5.373 0 0 5.373 0 12c0 2.119.553 4.116 1.521 5.849L.057 23.547a.5.5 0 00.611.612l5.79-1.497A11.954 11.954 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.956 9.956 0 01-5.189-1.455l-.372-.22-3.857.997 1.028-3.76-.242-.387A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
-                Send</button>
-               <button class="btn btn-ghost btn-sm" onclick="gen24hMsg('${key}',${a.id},${a.clientId})">🔄</button>`
-            : `<button class="btn btn-ghost btn-sm" onclick="gen24hMsg('${key}',${a.id},${a.clientId})">✨ Generate</button>`
-        }
-      </div>
-    </div>`;
-  }).join("");
+  if(list) list.innerHTML = html;
+  if(modalList) modalList.innerHTML = html;
 }
 
 async function gen24hMsg(key, apptId, clientId){
@@ -5325,6 +5350,67 @@ function send24hReminder(key, phone){
     toast("✅","Reminder Sent!","24h reminder sent via WhatsApp.","g");
   }, 1000);
 }
+
+// Bell sound (procedurally generated — no audio file needed)
+let _bellAudioCtx = null;
+function playBellSound(){
+  try{
+    if(!_bellAudioCtx) _bellAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(_bellAudioCtx.state === 'suspended') _bellAudioCtx.resume();
+    const ctx = _bellAudioCtx;
+    const now = ctx.currentTime;
+    [880, 1318.5, 1760].forEach((freq, i)=>{
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = now + i*0.09;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(i===0?0.28:0.14, start+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start+1.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start+1.5);
+    });
+  }catch(e){ console.warn('playBellSound error:', e); }
+}
+
+// Track which appointments have already triggered a 24h popup (persisted, per device)
+function getNotifiedR24Ids(){
+  try{ return JSON.parse(localStorage.getItem('rdns_r24_notified')||'[]'); }catch(e){ return []; }
+}
+function saveNotifiedR24Ids(ids){
+  try{ localStorage.setItem('rdns_r24_notified', JSON.stringify(ids)); }catch(e){}
+}
+
+// Checks every appointment: if it just entered the 24h window and hasn't
+// been notified yet, ring the bell and pop the reminder modal.
+function checkR24Popups(){
+  try{
+    const due = appointments.filter(a=>{
+      const h = hrs(a.datetime);
+      return a.status==="confirmed" && h>0 && h<=24;
+    });
+    if(due.length === 0) return;
+
+    const notified = getNotifiedR24Ids();
+    const newlyDue = due.filter(a=>!notified.includes(a.id));
+
+    // Always keep the modal's count fresh in case it's open or about to open
+    const el = document.getElementById('daily-reminder-count');
+    if(el) el.textContent = due.length;
+
+    if(newlyDue.length > 0){
+      playBellSound();
+      if(typeof renderDash24h==='function') renderDash24h();
+      openModal('mDailyReminders');
+      const updated = notified.concat(newlyDue.map(a=>a.id));
+      saveNotifiedR24Ids(updated);
+    }
+  }catch(e){ console.warn('checkR24Popups error:', e); }
+}
+// Keep old name working in case it's referenced elsewhere
+function checkDailyReminderPopup(){ checkR24Popups(); }
 
 async function sendAll24hReminders(){
   const due = appointments.filter(a=>{
