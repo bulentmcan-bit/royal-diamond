@@ -2796,13 +2796,32 @@ function dashEditAppt(id){
         const newPrice = enteredPrice > 0 ? enteredPrice : oldPrice;
         a.price     = newPrice;
         a.staff     = document.getElementById('a-staff').value;
-        const wasCompleted = (a.status === 'completed');
-        if(!wasCompleted && enteredPrice > 0 && a.staff){
-          a.status = 'completed';
-          const cl = clients.find(function(c){ return String(c.id)===String(a.clientId); });
-          if(cl){ cl.visits = (cl.visits||0)+1; cl.lastVisit = new Date().toISOString().slice(0,10); }
-          diAutoAdd(a.staff, enteredPrice, a.datetime, a.id);
+
+        // How much has actually been sent to Daily Takings for this
+        // appointment so far (separate from a.status, so correcting the
+        // price on an already-completed appointment still works correctly
+        // instead of being silently skipped).
+        const alreadyRecorded = a._takingsAmount || 0;
+
+        if(enteredPrice > 0 && a.staff){
+          if(a.status !== 'completed'){
+            a.status = 'completed';
+            const cl = clients.find(function(c){ return String(c.id)===String(a.clientId); });
+            if(cl){ cl.visits = (cl.visits||0)+1; cl.lastVisit = new Date().toISOString().slice(0,10); }
+          }
+          if(alreadyRecorded === 0){
+            diAutoAdd(a.staff, enteredPrice, a.datetime, a.id);
+            a._takingsAmount = enteredPrice;
+          } else if(alreadyRecorded !== enteredPrice){
+            // Price was corrected — adjust Daily Takings by the difference
+            // instead of adding the full amount again.
+            const delta = enteredPrice - alreadyRecorded;
+            if(delta > 0) diAutoAdd(a.staff, delta, a.datetime, a.id);
+            else if(delta < 0) diAutoRemove(a.staff, -delta, a.datetime, a.id);
+            a._takingsAmount = enteredPrice;
+          }
         }
+
         saveAll(); renderAppts(); renderDash(); updateApptBadge();
         closeModal('mAppt');
         saveBtn.textContent = '+ Randevu';
@@ -2830,8 +2849,15 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       // Live "today" session — the Daily Takings page reads directly from
       // each operator's entries array, so it has to go here (same as a
       // manual entry) or it will never show up on screen.
-      const opIdx = dtState.operators.findIndex(function(o){return o.name===staffName;});
-      if(opIdx<0){ console.warn('diAutoAdd: no matching staff for', staffName); return; }
+      let opIdx = dtState.operators.findIndex(function(o){return o.name===staffName;});
+      if(opIdx<0){
+        // Staff picked on the appointment (e.g. "Manager"/"Nihal") has no
+        // card on the Daily Takings page yet — create one on the fly rather
+        // than silently dropping the money.
+        dtState.operators.push({name:staffName, entries:[]});
+        opIdx = dtState.operators.length-1;
+        console.warn('diAutoAdd: created new Daily Takings card for staff', staffName);
+      }
       const now = new Date();
       const time = String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
       dtState.operators[opIdx].entries.push({service:"Appointment", amount:amount, time:time, apptId:apptId||null});
@@ -2931,6 +2957,7 @@ function undoComplete(id){
   a.price=0;
   delete a._ptsAdded;
   delete a._prevLastVisit;
+  delete a._takingsAmount;
   saveAll();renderAppts();renderDash();renderPayments();updateApptBadge();
   toast("↩️","Geri Alındı",`${cObj(a.clientId)?.name} tekrar Onaylandı durumunda.`,"g");
 }
@@ -3813,7 +3840,7 @@ function confirmRebook(){
   if(!dt){toast("⚠️","Set a date","","r");return;}
   // Save price to the completed appointment and add to daily takings
   appt.price = price;
-  if(price > 0 && appt.staff) diAutoAdd(appt.staff, price, appt.datetime, appt.id);
+  if(price > 0 && appt.staff){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount = price; }
   // Create the rebooked appointment
   const newApptId=Date.now();
   const newAppt={id:newApptId,clientId:appt.clientId,service:appt.service,datetime:dt,duration:60,price:appt.price,staff:appt.staff,status:"confirmed",r24:false,r1:false,autoRebooked:true,parentId:appt.id};
@@ -3866,6 +3893,7 @@ function skipRebook(){
     if(price > 0 && appt.staff){
       appt.price = price;
       diAutoAdd(appt.staff, price, appt.datetime, appt.id);
+      appt._takingsAmount = price;
       saveAll();renderAppts();renderDash();renderPayments();
       toast("💰","Fiyat Kaydedildi",`₺${price} Daily Takings'e eklendi.`,"g");
     }
@@ -4107,10 +4135,9 @@ function waPrompt(entry){
   const c=cObj(entry.clientId);
   const a=entry.appt;
   const prompts={
-    reminder_24h:`Write a warm, friendly WhatsApp 24-hour appointment reminder in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} for Royal Diamond Nail Studio.
+    reminder_24h:`Write a professional, courteous WhatsApp 24-hour appointment reminder in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} for Royal Diamond Nail Studio.
 
 Include ALL of these details EXACTLY:
-- Client name: ${c.name}
 - Service: ${a?.service||"nail appointment"}
 - Date: ${a?new Date(a.datetime).toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'}):"tomorrow"}
 - Time: ${a?new Date(a.datetime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):""}
@@ -4118,10 +4145,12 @@ Include ALL of these details EXACTLY:
 - Location: Royal Palace Hotel, Büyük Fener Sokak, Gönyeli K.K.T.C.
 - Phone: 0548 893 3333
 
+Do NOT address the client by name or use any greeting that includes their name — open the message without a personal name (e.g. start directly with the reminder itself, a neutral opening such as "Sayın müşterimiz," is acceptable if a greeting is needed).
 Do NOT mention any staff/technician name anywhere in the message.
-Tone: warm, personal, professional. 2 short paragraphs.
-Remind them to arrive with clean, dry nails and to call/WhatsApp 0548 893 3333 if they need to reschedule.
-1-2 emojis. No hashtags.
+Do NOT use the phrase "Sizi görmek için sabırsızlanıyoruz" or any close variation of it (e.g. "sabırsızlıkla bekliyoruz").
+Tone: formal, professional, businesslike — this is a courtesy notification, not a casual/friendly message. Avoid overly warm or informal language.
+1 short paragraph. Remind them to arrive with clean, dry nails and to call/WhatsApp 0548 893 3333 if they need to reschedule.
+At most 1 emoji, used sparingly (or none at all). No hashtags.
 Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
@@ -5425,20 +5454,21 @@ async function gen24hMsg(key, apptIds, clientId){
     : `- This client has ${group.length} appointments that day — mention each one with its time:\n` +
       group.map(a=>`   • ${a.service} at ${new Date(a.datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`).join("\n");
 
-  const prompt = `Write a warm, friendly WhatsApp 24-hour appointment reminder in ${lang} for Royal Diamond Nail Studio.
+  const prompt = `Write a professional, courteous WhatsApp 24-hour appointment reminder in ${lang} for Royal Diamond Nail Studio.
 
 Include ALL of these details EXACTLY:
-- Client name: ${c.name}
 - Date: ${dateStr}
 ${servicesLine}
 - Location: Royal Palace Hotel, Büyük Fener Sokak, Gönyeli K.K.T.C.
 - Phone: 0548 893 3333
 
+Do NOT address the client by name or use any greeting that includes their name — open the message without a personal name (e.g. start directly with the reminder itself, a neutral opening such as "Sayın müşterimiz," is acceptable if a greeting is needed).
 Do NOT mention any staff/technician name anywhere in the message.
+Do NOT use the phrase "Sizi görmek için sabırsızlanıyoruz" or any close variation of it (e.g. "sabırsızlıkla bekliyoruz").
 This is ONE message covering all of this client's appointments — do not write it as if there are multiple separate reminders.
-Tone: warm, personal, professional. 2 short paragraphs.
-Remind them to arrive with clean, dry nails and to call/WhatsApp 0548 893 3333 if they need to reschedule.
-1-2 emojis. No hashtags.
+Tone: formal, professional, businesslike — this is a courtesy notification, not a casual/friendly message. Avoid overly warm or informal language.
+1 short paragraph. Remind them to arrive with clean, dry nails and to call/WhatsApp 0548 893 3333 if they need to reschedule.
+At most 1 emoji, used sparingly (or none at all). No hashtags.
 Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
@@ -5455,9 +5485,9 @@ Royal Palace Hotel, Gönyeli K.K.T.C.
     dash24hMessages[key] = {text, status:"ready", phone:c.phone, apptIds:group.map(a=>a.id)};
   }catch{
     const fallbackServices = group.length===1
-      ? `Yarın ${timeStr} randevunuz var.`
-      : `Yarın şu randevularınız var: ` + group.map(a=>`${a.service} (${new Date(a.datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})})`).join(", ") + ".";
-    dash24hMessages[key] = {text:`Merhaba ${c.name}! ${fallbackServices} Sizi görmek için sabırsızlanıyoruz! 💎
+      ? `Yarın ${timeStr} saatinde randevunuz bulunmaktadır.`
+      : `Yarın şu randevularınız bulunmaktadır: ` + group.map(a=>`${a.service} (${new Date(a.datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})})`).join(", ") + ".";
+    dash24hMessages[key] = {text:`Sayın müşterimiz, ${fallbackServices}
 
 Royal Diamond Nail Studio
 Royal Palace Hotel, Gönyeli K.K.T.C.
@@ -5471,18 +5501,22 @@ Royal Palace Hotel, Gönyeli K.K.T.C.
 function normalizeWaPhone(phone){
   if(!phone) return "";
   let p = phone.replace(/[\s\-()]/g,"");
-  if(p.startsWith("+")) p = p.slice(1);
-  if(p.startsWith("0")) p = "90" + p.slice(1);       // local 0xxxxxxxxxx → 90xxxxxxxxxx
-  else if(!p.startsWith("90") && p.length <= 10) p = "90" + p; // bare 10-digit number
+  p = p.replace(/^\+/,"");                 // drop a leading +
+  p = p.replace(/^0090/,"90");             // 0090xxxxxxxxxx (00 + 90 typed by mistake) -> 90xxxxxxxxxx
+  p = p.replace(/^00/,"");                 // any other 00<country> international prefix -> drop the 00
+  if(p.startsWith("0")) p = "90" + p.slice(1);                 // local TRNC 0xxxxxxxxxx -> 90xxxxxxxxxx
+  else if(!p.startsWith("90") && p.length <= 10) p = "90" + p; // bare 10-digit local number -> assume 90
   return p;
 }
 
 function send24hReminder(key, phone){
   const msg = dash24hMessages[key];
   if(!msg?.text) return;
-  if(msg.status === "sent") return; // already sent — don't allow a duplicate click
+  if(msg.status === "sent" || msg.status === "sending") return; // already sent or in-flight — block a duplicate click
+  msg.status = "sending"; // lock immediately so a rapid double-click can't open a second tab
   const cleanPhone = normalizeWaPhone(phone);
   window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg.text)}`, "_blank");
+  markR24Sent(msg.apptIds, msg.text); // persist right away, not after the delay
   setTimeout(()=>{
     msg.status = "sent";
     markR24Sent(msg.apptIds, msg.text);
@@ -5585,7 +5619,7 @@ async function sendAll24hReminders(){
     const key="c"+g[0].clientId;
     const msg=dash24hMessages[key];
     const c=cObj(g[0].clientId);
-    if(msg?.text && msg.status !== "sent" && c?.phone){
+    if(msg?.text && msg.status !== "sent" && msg.status !== "sending" && c?.phone){
       window.open(`https://wa.me/${normalizeWaPhone(c.phone)}?text=${encodeURIComponent(msg.text)}`,"_blank");
       msg.status="sent";
       markR24Sent(msg.apptIds||g.map(a=>a.id), msg.text);
