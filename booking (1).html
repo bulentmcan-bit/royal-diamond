@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>💎 Randevu Al — Royal Diamond Nail Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#c9a05a;--goldD:#8a6420;--dark:#141614;--card:#ffffff;--bg:#f7f5f2;--rose:#e8847a;--wa:#25D366;--text:#1f1f1f;--muted:#777;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+.hero{background:linear-gradient(135deg,#141614,#2a2f28);color:#fff;text-align:center;padding:34px 16px 26px;}
+.hero h1{font-family:'Playfair Display',serif;color:var(--gold);font-size:1.6rem;letter-spacing:0.5px;}
+.hero p{color:#cfcabc;font-size:0.85rem;margin-top:6px;}
+.wrap{max-width:520px;margin:-14px auto 40px;padding:0 14px;}
+.card{background:var(--card);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);padding:20px 18px;margin-bottom:16px;}
+.lbl{font-size:0.72rem;font-weight:800;letter-spacing:1px;color:var(--goldD);text-transform:uppercase;margin:14px 0 8px;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;}
+.chip{padding:9px 13px;border:1.5px solid #e2ded6;border-radius:12px;background:#fff;font-weight:700;font-size:0.82rem;cursor:pointer;color:#444;}
+.chip.sel{background:var(--gold);border-color:var(--gold);color:#fff;}
+select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12px;font-family:'Nunito',sans-serif;font-size:0.95rem;background:#fff;}
+.btn-wa{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:15px;margin-top:18px;background:var(--wa);border:none;border-radius:14px;color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:1.02rem;cursor:pointer;}
+.btn-wa:disabled{background:#c9c9c9;cursor:not-allowed;}
+.note{font-size:0.72rem;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5;}
+.foot{text-align:center;color:var(--muted);font-size:0.72rem;padding:0 16px 30px;}
+</style></head><body>
+<div class="hero">
+  <h1>💎 Royal Diamond Nail Studio 👑</h1>
+  <p>Gönyeli, K.K.T.C. · Online Randevu Talebi<br><span style="font-size:0.72rem;">Book your appointment — confirmed via WhatsApp</span></p>
+</div>
+<div class="wrap"><div class="card">
+  <div class="lbl">📅 Gün Seçin / Choose a day</div>
+  <div class="chips" id="days"></div>
+  <div class="lbl">🕐 Saat / Time</div>
+  <div class="chips" id="times"></div>
+  <div class="lbl">💅 Hizmet / Service</div>
+  <select id="svc">
+    <option>Acrylic Full Set</option><option>Acrylic Infill</option><option>Builder Gel (BIAB)</option>
+    <option>Gel Manicure</option><option>Gel Pedicure</option><option>Manicure</option><option>Pedicure</option>
+    <option>Nail Art</option><option>Volume / Russian Lashes</option><option>Classic Lashes</option><option>Diğer / Other</option>
+  </select>
+  <div class="lbl">👩‍🎨 Personel Tercihi / Preferred technician</div>
+  <select id="staff">
+    <option value="Farketmez">Farketmez / No preference</option>
+    <option>Helen</option><option>Hannah</option><option>Lissa</option><option>Zara</option><option>Lilly</option><option>Saeideh</option>
+  </select>
+  <div class="lbl">🙋‍♀️ Adınız / Your name</div>
+  <input id="nm" placeholder="Adınız Soyadınız">
+  <div class="lbl">📞 Telefonunuz / Your phone</div>
+  <input id="ph" placeholder="0533 000 00 00" inputmode="tel">
+  <button class="btn-wa" id="go" onclick="send()">🟢 WhatsApp ile Randevu Talebi Gönder</button>
+  <div class="note">Talebiniz WhatsApp üzerinden salonumuza iletilir ve en kısa sürede onaylanır. 💛<br>Your request is sent to us on WhatsApp and confirmed shortly.</div>
+</div></div>
+<div class="foot">Royal Diamond Nail Studio · Gönyeli K.K.T.C. · ⭐ 4.7 Google · 📞 0548 893 3333</div>
+<script>
+const SALON = '905488933333';
+const SLOTS = ['08:00','09:30','11:00','12:30','14:00','15:30','17:00','18:30'];
+let selDay = null, selTime = null;
+const dEl = document.getElementById('days'), tEl = document.getElementById('times');
+const gunler = ['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+const aylar = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+for(let i=0;i<14;i++){
+  const d = new Date(); d.setDate(d.getDate()+i);
+  const c = document.createElement('button'); c.className='chip'; c.type='button';
+  c.textContent = (i===0?'Bugün':i===1?'Yarın':gunler[d.getDay()])+' '+d.getDate()+' '+aylar[d.getMonth()];
+  c.onclick = ()=>{ selDay = d; [...dEl.children].forEach(x=>x.classList.remove('sel')); c.classList.add('sel'); };
+  dEl.appendChild(c);
+}
+SLOTS.forEach(t=>{
+  const c = document.createElement('button'); c.className='chip'; c.type='button'; c.textContent = t;
+  c.onclick = ()=>{ selTime = t; [...tEl.children].forEach(x=>x.classList.remove('sel')); c.classList.add('sel'); };
+  tEl.appendChild(c);
+});
+function send(){
+  const nm = document.getElementById('nm').value.trim();
+  const ph = document.getElementById('ph').value.trim();
+  if(!selDay){ alert('Lütfen bir gün seçin. / Please choose a day.'); return; }
+  if(!selTime){ alert('Lütfen bir saat seçin. / Please choose a time.'); return; }
+  if(!nm){ alert('Lütfen adınızı yazın. / Please enter your name.'); return; }
+  const tarih = gunler[selDay.getDay()]+', '+selDay.getDate()+' '+aylar[selDay.getMonth()]+' '+selDay.getFullYear();
+  const msg = '💎 RANDEVU TALEBİ — Royal Diamond\n\n'+
+    '📅 Tarih: '+tarih+'\n🕐 Saat: '+selTime+'\n'+
+    '💅 Hizmet: '+document.getElementById('svc').value+'\n'+
+    '👩‍🎨 Personel: '+document.getElementById('staff').value+'\n'+
+    '🙋‍♀️ İsim: '+nm+(ph?'\n📞 Tel: '+ph:'')+'\n\n'+
+    'Uygunluk onayınızı bekliyorum, teşekkürler! 😊';
+  window.location.href = 'https://wa.me/'+SALON+'?text='+encodeURIComponent(msg);
+}
+</script></body></html>
