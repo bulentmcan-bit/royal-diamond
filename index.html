@@ -347,6 +347,14 @@
       publishAvailability();
     }).catch(e=>console.warn('OB recheck error:',e));
   }
+  try{
+    firebase.auth().onAuthStateChanged(u=>{
+      if(u&&u.isAnonymous){
+        try{showSyncStatus('error');}catch(e){}
+        try{toast('⚠️','OTURUM BOZULDU','Giriş oturumu misafir moduna düştü — kaydetme durdu. Sayfayı yenileyip tekrar giriş yapın.','r');}catch(e){}
+      }
+    });
+  }catch(e){}
   function _obWake(){
     if(!_syncEnabled||!_fbDb)return;
     try{firebase.database().goOnline();}catch(e){}
@@ -1549,7 +1557,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#7ecec4;font-weight:700;">Sürüm v35 · Online Randevu · 07.07.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#7ecec4;font-weight:700;">Sürüm v36 · Online Randevu · 08.07.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
           border-radius:8px;color:var(--waLight);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
