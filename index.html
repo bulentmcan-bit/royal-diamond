@@ -1558,7 +1558,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#7ecec4;font-weight:700;">Sürüm v38 · Online Randevu · 08.07.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#7ecec4;font-weight:700;">Sürüm v39 · Online Randevu · 08.07.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
           border-radius:8px;color:var(--waLight);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
@@ -2550,8 +2550,9 @@ p, span, div, label, h1, h2, h3, h4 {
 const AV_COLORS=["#1a7a40","#c9726b","#9b6b8f","#6b9ba0","#9b8b6b","#7a9b6b","#b07a5a","#6b7a9b"];
 function avC(n){return AV_COLORS[(n||'?').charCodeAt(0)%AV_COLORS.length];}
 function avI(n){return (n||'?').split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();}
-function dh(h){const d=new Date();d.setHours(d.getHours()+h);return d.toISOString().slice(0,16);}
-function dw(w){const d=new Date();d.setDate(d.getDate()+(w*7));return d.toISOString().slice(0,16);}
+function dtLocal(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());}
+function dh(h){const d=new Date();d.setHours(d.getHours()+h);return dtLocal(d);}
+function dw(w){const d=new Date();d.setDate(d.getDate()+(w*7));return dtLocal(d);}
 const NOW=new Date();
 function hrs(dt){return(new Date(dt)-new Date())/3600000;}
 function fDT(dt){return new Date(dt).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}
@@ -2615,7 +2616,7 @@ function add3W(originalDt, staffMember){
       });
 
       if(!conflict){
-        return slotStart.toISOString().slice(0,16);
+        return dtLocal(slotStart);
       }
     }
   }
@@ -2624,13 +2625,13 @@ function add3W(originalDt, staffMember){
   const fallback = new Date(originalDt);
   fallback.setDate(fallback.getDate() + 21);
   if(fallback.getDay() === 0) fallback.setDate(fallback.getDate() + 1);
-  return fallback.toISOString().slice(0,16);
+  return dtLocal(fallback);
 }
 
 function nextNonSunday(dt){
   const d=new Date(dt);
   if(d.getDay()===0) d.setDate(d.getDate()+1);
-  return d.toISOString().slice(0,16);
+  return dtLocal(d);
 }
 
 function tierBadge(t){
@@ -3097,7 +3098,7 @@ function dashEditAppt(id){
     const svc = document.getElementById('a-service');
     if(svc) svc.value = a.service;
     const dt = document.getElementById('a-dt');
-    if(dt) dt.value = new Date(a.datetime).toISOString().slice(0,16);
+    if(dt) dt.value = dtLocal(new Date(a.datetime));
     const dur = document.getElementById('a-dur');
     if(dur) dur.value = a.duration || 60;
     const pr = document.getElementById('a-price');
@@ -3161,7 +3162,7 @@ function dashEditAppt(id){
           if(a.status !== 'completed'){
             a.status = 'completed';
             const cl2 = clients.find(function(c){ return String(c.id)===String(a.clientId); });
-            if(cl2){ cl2.visits = (cl2.visits||0)+1; cl2.lastVisit = new Date().toISOString().slice(0,10); }
+            if(cl2){ cl2.visits = (cl2.visits||0)+1; cl2.lastVisit = dtLocal(new Date()).slice(0,10); }
             // 🔄 Offer the automatic 3-week follow-up from this path too
             try{ setTimeout(function(){ if(typeof showRebookModal==='function') showRebookModal(a, cl2); }, 300); }catch(e){}
           }
@@ -3205,7 +3206,7 @@ function dashCompleteAppt(id){
 function diAutoAdd(staffName, amount, datetime, apptId){
   try{
     if(!dtState) return;
-    const dateKey = (datetime||new Date().toISOString()).slice(0,10);
+    const dateKey = (datetime||dtLocal(new Date())).slice(0,10);
     const todayKey = dtDateKey();
 
     if(dateKey === todayKey && dtState.operators){
@@ -3271,7 +3272,7 @@ function diAutoAdd(staffName, amount, datetime, apptId){
 function diAutoRemove(staffName, amount, datetime, apptId){
   try{
     if(!dtState) return;
-    const dateKey = (datetime||new Date().toISOString()).slice(0,10);
+    const dateKey = (datetime||dtLocal(new Date())).slice(0,10);
     const todayKey = dtDateKey();
 
     if(dateKey === todayKey && dtState.operators){
@@ -6764,7 +6765,7 @@ const DT_INITIALS_COLORS = [
   {bg:'#b8a0d8',fg:'white'}
 ];
 
-function dtDateKey(){ return new Date().toISOString().slice(0,10); }
+function dtDateKey(){ return dtLocal(new Date()).slice(0,10); }
 function dtOpTotal(op){ return ((op&&op.entries)||[]).reduce((s,e)=>s+((e&&e.amount)||0),0); }
 function dtGrandTotal(){ return (((dtState||{}).operators)||[]).filter(o=>o&&o.active).reduce((s,o)=>s+dtOpTotal(o),0); }
 
