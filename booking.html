@@ -136,9 +136,10 @@ renderTimes();
 
 // ── Firebase: anonymous sign-in + live availability ──
 try{
-  firebase.initializeApp(FIREBASE_CONFIG);
-  db=firebase.database();
-  firebase.auth().signInAnonymously().then(()=>{
+  // Isolated app instance + in-memory auth only: never touches the salon app's login session
+  const bkApp=firebase.initializeApp(FIREBASE_CONFIG,'bookingPage');
+  db=bkApp.database();
+  bkApp.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).then(()=>bkApp.auth().signInAnonymously()).then(()=>{
     ready=true;
     db.ref('rdns_public_availability/days').on('value',snap=>{
       avail=snap.val()||null;
@@ -149,8 +150,8 @@ try{
     setTimeout(()=>{if(!avail)connEl.innerHTML='Müsaitlik bilgisi yüklenemedi — talebiniz yine de iletilir.';},8000);
   }).catch(e=>{console.warn(e);connEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile devam edilir.';});
 }catch(e){console.warn(e);connEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile devam edilir.';}
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&db){try{firebase.database().goOnline();}catch(e){}}});
-window.addEventListener('online',()=>{if(db){try{firebase.database().goOnline();}catch(e){}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&db){try{db.goOnline();}catch(e){}}});
+window.addEventListener('online',()=>{if(db){try{db.goOnline();}catch(e){}}});
 
 // ── Submit ──
 function waMsg(tarih,nm,ph){
