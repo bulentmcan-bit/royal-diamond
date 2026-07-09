@@ -1766,25 +1766,33 @@ p, span, div, label, h1, h2, h3, h4 {
     <!-- ════ CALENDAR PAGE ════ -->
     <div class="page" id="page-reception">
       <style>
-        .rc-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
-        @media(max-width:640px){.rc-cards{grid-template-columns:1fr 1fr}}
-        .rc-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-        .rc-card .rc-num{font-size:clamp(22px,4vw,32px);font-weight:800;color:var(--gold)}
+        .rc-hero{background:linear-gradient(135deg,rgba(212,169,106,.14),rgba(232,132,122,.10));border:1.5px solid var(--gold);border-radius:14px;padding:18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px}
+        .rc-hero .rc-h-num{font-size:clamp(34px,6vw,52px);font-weight:800;color:var(--goldLight);line-height:1}
+        .rc-hero .rc-h-lbl{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+        .rc-hero .rc-h-msg{font-size:15px;font-weight:700;max-width:420px}
+        .rc-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+        @media(max-width:760px){.rc-cards{grid-template-columns:1fr 1fr}}
+        .rc-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+        .rc-card .rc-num{font-size:clamp(20px,3.5vw,28px);font-weight:800;color:var(--gold)}
         .rc-card.rc-ok .rc-num{color:#2e9e5b}
         .rc-card.rc-no .rc-num{color:var(--red)}
-        .rc-card .rc-lbl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+        .rc-card .rc-lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:4px}
         .rc-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
         .rc-bar{height:20px;background:#eee;border-radius:10px;overflow:hidden}
         .rc-bar-fill{height:100%;background:linear-gradient(90deg,var(--rose),var(--gold));border-radius:10px;width:0%;transition:width .5s ease}
-        .rc-row{display:flex;align-items:center;gap:8px;margin-bottom:3px}
-        .rc-day{width:26px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0}
-        .rc-row.rc-today .rc-day{color:var(--goldLight);font-weight:800}
-        .rc-cells{display:grid;grid-template-columns:repeat(22,1fr);gap:2px;flex:1}
-        .rc-cell{aspect-ratio:1/1;border-radius:2px;background:#eeeaf2}
-        .rc-cell.rc-f{background:var(--rose)}
-        .rc-row.rc-done .rc-cell.rc-f{background:var(--gold)}
-        .rc-cnt{width:36px;flex-shrink:0;text-align:center;font-size:13px;font-weight:800;color:var(--muted)}
-        .rc-row.rc-done .rc-cnt{color:var(--goldLight)}
+        .rc-dayrow{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:8px;font-size:13.5px}
+        .rc-dayrow:nth-child(even){background:#faf8fb}
+        .rc-dayrow.rc-today{background:rgba(212,169,106,.15);border:1px solid var(--gold);font-weight:800}
+        .rc-d-date{width:74px;flex-shrink:0;color:var(--muted)}
+        .rc-dayrow.rc-today .rc-d-date{color:var(--goldLight)}
+        .rc-d-bar{flex:1;height:12px;background:#eeeaf2;border-radius:6px;overflow:hidden}
+        .rc-d-fill{height:100%;border-radius:6px;background:var(--rose)}
+        .rc-dayrow.rc-hit .rc-d-fill{background:var(--gold)}
+        .rc-d-count{width:64px;flex-shrink:0;text-align:right;font-weight:800}
+        .rc-d-badge{width:56px;flex-shrink:0;text-align:center;font-size:11px;font-weight:800;border-radius:8px;padding:3px 0}
+        .rc-b-hit{background:rgba(212,169,106,.2);color:var(--goldLight)}
+        .rc-b-miss{background:rgba(232,122,122,.15);color:var(--red)}
+        .rc-b-future{background:#f0eef3;color:#b9b3c2}
         .rc-money-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
         @media(max-width:560px){.rc-money-grid{grid-template-columns:1fr}}
         .rc-field label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
@@ -1801,10 +1809,10 @@ p, span, div, label, h1, h2, h3, h4 {
         .rc-rules p{margin-bottom:8px;font-size:14px;line-height:1.65}
         .rc-rules b{color:var(--goldLight)}
       </style>
-      <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <div>
           <div style="font-weight:700;font-size:1.2rem;color:var(--gold);margin-bottom:4px;">📈 Resepsiyon Komisyon</div>
-          <div style="color:var(--muted);font-size:.9rem;">Günlük Tetris tahtası — 650 müşteri hedefi &amp; net bakiyenin %2'si</div>
+          <div style="color:var(--muted);font-size:.9rem;">Ayda 650 tamamlanan müşteri = net bakiyenin %2'si</div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="btn" onclick="rcShift(-1)" style="min-width:38px;">‹</button>
@@ -1813,38 +1821,40 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
       </div>
 
+      <div class="rc-hero" id="rc-hero" style="display:none;">
+        <div>
+          <div class="rc-h-num" id="rc-today-num">0</div>
+          <div class="rc-h-lbl">Bugün tamamlanan müşteri · hedef 22</div>
+        </div>
+        <div class="rc-h-msg" id="rc-today-msg"></div>
+        <button class="btn" onclick="goto('gapreport',null)" style="background:var(--gold);color:#fff;border:none;">📋 Boşlukları Gör &amp; Doldur</button>
+      </div>
+
       <div class="rc-cards">
-        <div class="rc-card"><div class="rc-num" id="rc-total">0</div><div class="rc-lbl">Bu ay müşteri (✓ tamamlanan)</div></div>
+        <div class="rc-card"><div class="rc-num" id="rc-total">0</div><div class="rc-lbl">Bu ay toplam</div></div>
         <div class="rc-card rc-no" id="rc-gate-card"><div class="rc-num" id="rc-remain">650</div><div class="rc-lbl" id="rc-remain-lbl">Hedefe kalan</div></div>
-        <div class="rc-card"><div class="rc-num" id="rc-pace">22</div><div class="rc-lbl">Gerekli günlük ortalama</div></div>
+        <div class="rc-card"><div class="rc-num" id="rc-pace">22</div><div class="rc-lbl">Kalan günlerde gereken/gün</div></div>
+        <div class="rc-card" id="rc-proj-card"><div class="rc-num" id="rc-proj">—</div><div class="rc-lbl">Bu gidişle ay sonu</div></div>
       </div>
 
       <div class="rc-panel">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
-          <b>Aylık hedef: 650 müşteri</b><span id="rc-pct" style="color:var(--muted);font-size:13px;">%0</span>
+          <b>650 hedefine ilerleme</b><span id="rc-pct" style="color:var(--muted);font-size:13px;">%0</span>
         </div>
         <div class="rc-bar"><div class="rc-bar-fill" id="rc-bar-fill"></div></div>
         <div id="rc-pace-msg" style="margin-top:10px;font-size:14px;"></div>
       </div>
 
       <div class="rc-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-          <b style="font-size:15px;">Günlük Tetris Tahtası</b>
-          <span style="font-size:11px;color:var(--muted);">🟥 Müşteri &nbsp; 🟨 Günlük hedef doldu (22) &nbsp; ⬜ Boş slot</span>
-        </div>
-        <div id="rc-board"></div>
-        <div style="font-size:12px;color:var(--muted);margin-top:10px;">Her satır bir gün, her kutu sistemde <b>✓ tamamlanan</b> bir müşteridir. Tahta kendini doldurur — resepsiyonun işi boşlukları gerçek randevularla doldurmak! 🎯</div>
-      </div>
-
-      <div class="rc-panel">
-        <b style="font-size:15px;display:block;margin-bottom:14px;">Ay Sonu Hesabı</b>
+        <b style="font-size:15px;display:block;margin-bottom:6px;">Ay Sonu Hesabı — Komisyon</b>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Ciro sistemdeki ödemelerden otomatik gelir; giderleri ay sonunda yönetim girer.</div>
         <div class="rc-money-grid">
           <div class="rc-field">
-            <label>Aylık ciro (₺) — ödemelerden otomatik</label>
+            <label>Aylık ciro (₺) — otomatik</label>
             <input id="rc-turnover" type="number" readonly>
           </div>
           <div class="rc-field">
-            <label>Aylık giderler (₺) — ay sonunda girilir</label>
+            <label>Aylık giderler (₺)</label>
             <input id="rc-expenses" type="number" inputmode="decimal" min="0" step="0.01" placeholder="örn. 577566" oninput="rcExpChanged(this.value)">
           </div>
         </div>
@@ -1858,13 +1868,19 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
       </div>
 
+      <div class="rc-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+          <b style="font-size:15px;">Gün Gün Durum</b>
+          <span style="font-size:11.5px;color:var(--muted);">✓ = günlük 22 hedefi doldu</span>
+        </div>
+        <div id="rc-board"></div>
+      </div>
+
       <div class="rc-panel rc-rules">
         <b style="font-size:15px;display:block;margin-bottom:10px;">Kurallar — Kısa ve Net</b>
-        <p><b>1.</b> Hedef: günde <b>22 müşteri</b>, ayda en az <b>650 müşteri</b>.</p>
-        <p><b>2.</b> 650'ye ulaşılırsa: aylık <b>net bakiyenin %2'si</b> komisyon olarak maaşa eklenir.</p>
-        <p><b>3.</b> 650'nin altında kalırsa komisyon ödenmez.</p>
-        <p><b>4.</b> Sadece <b>✓ tamamlanan</b> randevular sayılır — no-show ve iptal sayılmaz. 24 saat hatırlatmalarını gönder, iptalleri aynı gün doldur, her müşteriyi çıkmadan bir sonraki randevusuna yaz.</p>
-        <p><b>5.</b> Her ekstra müşteri iki kez kazandırır: hem 650 hedefine yaklaştırır, hem de %2'nin hesaplandığı net bakiyeyi büyütür. Boş her slot senin paran! 💎</p>
+        <p><b>1.</b> Hedef: günde <b>22 müşteri</b>, ayda en az <b>650 müşteri</b>. Sadece <b>✓ tamamlanan</b> randevular sayılır — no-show ve iptal sayılmaz.</p>
+        <p><b>2.</b> 650'ye ulaşılırsa aylık <b>net bakiyenin %2'si</b> maaşa eklenir; altında kalırsa komisyon ödenmez.</p>
+        <p><b>3.</b> Yol: 24 saat hatırlatmalarını gönder, iptali aynı gün doldur, Gap Report'taki her boşluğu ara, her müşteriyi çıkmadan bir sonraki randevusuna yaz. Boş her slot senin paran! 💎</p>
       </div>
     </div>
 
@@ -8590,10 +8606,11 @@ async function installPWA(){
         content: attr(data-content);
       }
     </style><div aria-label="grammarly-integration" role="group" tabindex="-1" class="grammarly-desktop-integration" data-content="{&quot;mode&quot;:&quot;full&quot;,&quot;isActive&quot;:true,&quot;isUserDisabled&quot;:false}"></div></template></grammarly-desktop-integration><script>
-// ══ Resepsiyon Komisyon (Tetris) ══
+// ══ Resepsiyon Komisyon ══
 var RC_THRESHOLD=650, RC_DAILY=22, RC_RATE=0.02;
 var _rcNow=new Date(), rcY=_rcNow.getFullYear(), rcM=_rcNow.getMonth();
 var RC_MONTHS=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+var RC_WD=['Paz','Pzt','Sal','Çar','Per','Cum','Cmt'];
 function rcPad(n){return (n<10?'0':'')+n;}
 function rcDaysIn(y,m){return new Date(y,m+1,0).getDate();}
 function rcFmt(n){return '₺'+n.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -8627,17 +8644,30 @@ function renderReception(){
   _rcData=rcMonthData();
   var exp='';try{exp=localStorage.getItem(rcExpKey())||'';}catch(e){}
   document.getElementById('rc-expenses').value=exp;
-  var board=document.getElementById('rc-board');board.innerHTML='';
+
   var today=new Date();
+  var cur=(today.getFullYear()===rcY&&today.getMonth()===rcM);
+  var board=document.getElementById('rc-board');board.innerHTML='';
   _rcData.days.forEach(function(v,i){
-    var row=document.createElement('div');row.className='rc-row';
-    if(today.getFullYear()===rcY&&today.getMonth()===rcM&&today.getDate()===i+1)row.classList.add('rc-today');
-    if(v>=RC_DAILY)row.classList.add('rc-done');
-    var lab=document.createElement('div');lab.className='rc-day';lab.textContent=i+1;row.appendChild(lab);
-    var cells=document.createElement('div');cells.className='rc-cells';
-    for(var c=0;c<RC_DAILY;c++){var cell=document.createElement('div');cell.className='rc-cell'+(c<v?' rc-f':'');cells.appendChild(cell);}
-    row.appendChild(cells);
-    var cnt=document.createElement('div');cnt.className='rc-cnt';cnt.textContent=v||'';row.appendChild(cnt);
+    var day=i+1;
+    var isToday=cur&&today.getDate()===day;
+    var isFuture=cur?day>today.getDate():(new Date(rcY,rcM,day)>today);
+    var row=document.createElement('div');
+    row.className='rc-dayrow'+(isToday?' rc-today':'')+(v>=RC_DAILY?' rc-hit':'');
+    var dt=document.createElement('div');dt.className='rc-d-date';
+    dt.textContent=day+' '+RC_WD[new Date(rcY,rcM,day).getDay()]+(isToday?' ★':'');
+    row.appendChild(dt);
+    var bar=document.createElement('div');bar.className='rc-d-bar';
+    var fill=document.createElement('div');fill.className='rc-d-fill';
+    fill.style.width=Math.min(100,Math.round(v/RC_DAILY*100))+'%';
+    bar.appendChild(fill);row.appendChild(bar);
+    var cnt=document.createElement('div');cnt.className='rc-d-count';
+    cnt.textContent=isFuture&&v===0?'—':(v+' / '+RC_DAILY);row.appendChild(cnt);
+    var badge=document.createElement('div');
+    if(isFuture&&v===0){badge.className='rc-d-badge rc-b-future';badge.textContent='·';}
+    else if(v>=RC_DAILY){badge.className='rc-d-badge rc-b-hit';badge.textContent='✓'+(v>RC_DAILY?' +'+(v-RC_DAILY):'');}
+    else{badge.className='rc-d-badge rc-b-miss';badge.textContent=(RC_DAILY-v)+' eksik';}
+    row.appendChild(badge);
     board.appendChild(row);
   });
   rcRecalc();
@@ -8646,22 +8676,49 @@ function rcRecalc(){
   if(!_rcData)return;
   var total=_rcData.days.reduce(function(a,b){return a+b;},0);
   var remain=Math.max(0,RC_THRESHOLD-total), gate=total>=RC_THRESHOLD;
-  document.getElementById('rc-total').textContent=total;
-  var remEl=document.getElementById('rc-remain'),remLbl=document.getElementById('rc-remain-lbl'),gc=document.getElementById('rc-gate-card');
-  if(gate){remEl.textContent='AÇIK ✓';remLbl.textContent='Komisyon kapısı';gc.className='rc-card rc-ok';}
-  else{remEl.textContent=remain;remLbl.textContent='Hedefe kalan müşteri';gc.className='rc-card rc-no';}
   var d=rcDaysIn(rcY,rcM),today=new Date();
   var cur=(today.getFullYear()===rcY&&today.getMonth()===rcM);
   var left=cur?(d-today.getDate()+1):d;
   var pace=gate?0:Math.ceil(remain/Math.max(1,left));
+
+  // hero (current month only)
+  var hero=document.getElementById('rc-hero');
+  if(cur){
+    hero.style.display='flex';
+    var tv=_rcData.days[today.getDate()-1]||0;
+    document.getElementById('rc-today-num').textContent=tv;
+    var tmsg;
+    if(tv>=RC_DAILY){tmsg='🎉 Bugünün hedefi doldu! Her ekstra müşteri komisyonu büyütür.';}
+    else{tmsg='Bugün '+(RC_DAILY-tv)+' müşteri daha lazım. Boşlukları doldur, iptalleri yakala! →';}
+    document.getElementById('rc-today-msg').textContent=tmsg;
+  } else { hero.style.display='none'; }
+
+  document.getElementById('rc-total').textContent=total;
+  var remEl=document.getElementById('rc-remain'),remLbl=document.getElementById('rc-remain-lbl'),gc=document.getElementById('rc-gate-card');
+  if(gate){remEl.textContent='AÇIK ✓';remLbl.textContent='Komisyon kapısı';gc.className='rc-card rc-ok';}
+  else{remEl.textContent=remain;remLbl.textContent='Hedefe kalan müşteri';gc.className='rc-card rc-no';}
   document.getElementById('rc-pace').textContent=gate?'✓':pace;
+
+  // projection: average of elapsed days x total days
+  var projCard=document.getElementById('rc-proj-card'),projEl=document.getElementById('rc-proj');
+  if(cur){
+    var elapsed=today.getDate();
+    var proj=elapsed>0?Math.round(total/elapsed*d):0;
+    projEl.textContent='~'+proj;
+    projCard.className='rc-card '+(proj>=RC_THRESHOLD?'rc-ok':'rc-no');
+  } else {
+    projEl.textContent=total;
+    projCard.className='rc-card '+(gate?'rc-ok':'rc-no');
+  }
+
   var pct=Math.min(100,Math.round(total/RC_THRESHOLD*100));
   document.getElementById('rc-bar-fill').style.width=pct+'%';
-  document.getElementById('rc-pct').textContent='%'+pct+(total>RC_THRESHOLD?' (+'+(total-RC_THRESHOLD)+' bonus müşteri)':'');
+  document.getElementById('rc-pct').textContent=total+' / 650 — %'+pct+(total>RC_THRESHOLD?' (+'+(total-RC_THRESHOLD)+' bonus)':'');
   var pm=document.getElementById('rc-pace-msg');
   if(gate){pm.innerHTML='🎉 <b>Hedef tamamlandı!</b> Bundan sonraki her müşteri net bakiyeyi — yani komisyonu — büyütmeye devam ediyor.';}
-  else if(cur){pm.innerHTML='Kapıyı açmak için kalan '+left+' günde günlük ortalama <b>'+pace+' müşteri</b> gerekiyor.';}
-  else{pm.innerHTML='Bu ay için '+remain+' müşteri daha gerekiyordu.';}
+  else if(cur){pm.innerHTML='Kapıyı açmak için kalan <b>'+left+' günde</b> günde ortalama <b>'+pace+' müşteri</b> gerekiyor.';}
+  else{pm.innerHTML='Bu ay '+remain+' müşteri eksik kaldı.';}
+
   var turnover=_rcData.turnover||0;
   var expenses=parseFloat(document.getElementById('rc-expenses').value)||0;
   var net=turnover-expenses;
@@ -8672,6 +8729,7 @@ function rcRecalc(){
   var box=document.getElementById('rc-comm-box'),val=document.getElementById('rc-comm-val'),why=document.getElementById('rc-comm-why');
   if(gate&&net>0){box.className='rc-comm';val.textContent=rcFmt(net*RC_RATE);why.textContent=total+' müşteri ✓ — '+rcFmt(net)+' net bakiyenin %2\u2019si.';}
   else if(gate){box.className='rc-comm';val.textContent=rcFmt(0);why.textContent='Hedef tamam ✓ — giderler girilince komisyon burada görünecek.';}
+  else if(net>0){box.className='rc-comm rc-locked';val.textContent='Kilitli 🔒';why.textContent=remain+' müşteri daha gerekiyor. Açılırsa şu anki netle komisyon: '+rcFmt(net*RC_RATE);}
   else{box.className='rc-comm rc-locked';val.textContent='Kilitli 🔒';why.textContent='Komisyon için '+remain+' müşteri daha gerekiyor.';}
 }
 </script>
