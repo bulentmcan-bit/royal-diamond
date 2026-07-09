@@ -8,46 +8,29 @@
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#14101c;         /* deep aubergine-black */
-    --panel:#1e1828;
-    --panel2:#261e33;
-    --line:#3a2f4d;
-    --gold:#d4af37;
-    --gold-soft:#e8cf7a;
-    --blush:#e8a0b4;      /* nail-polish blush */
-    --ink:#f3eef8;
-    --muted:#9c8fb0;
-    --green:#7ed491;
-    --red:#e57373;
+    --bg:#14101c; --panel:#1e1828; --panel2:#261e33; --line:#3a2f4d;
+    --gold:#d4af37; --gold-soft:#e8cf7a; --blush:#e8a0b4;
+    --ink:#f3eef8; --muted:#9c8fb0; --green:#7ed491; --red:#e57373;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  body{
-    background:var(--bg);color:var(--ink);
-    font-family:'Manrope',sans-serif;
-    min-height:100vh;padding:20px 14px 60px;
-  }
+  body{background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif;min-height:100vh;padding:20px 14px 60px}
   .wrap{max-width:960px;margin:0 auto}
-  header{text-align:center;margin-bottom:22px}
-  .brand{
-    font-family:'Marcellus',serif;font-size:clamp(26px,5vw,40px);
-    letter-spacing:.06em;color:var(--gold);
-  }
-  .brand small{display:block;font-family:'Manrope';font-size:12px;letter-spacing:.35em;
-    text-transform:uppercase;color:var(--muted);margin-top:4px}
-  .month-row{display:flex;justify-content:center;align-items:center;gap:14px;margin-top:14px}
-  .month-row button{
-    background:var(--panel);border:1px solid var(--line);color:var(--gold);
-    width:38px;height:38px;border-radius:10px;font-size:18px;cursor:pointer;
-  }
-  .month-row button:focus-visible{outline:2px solid var(--gold)}
-  #monthLabel{font-weight:700;font-size:17px;min-width:170px;text-align:center;text-transform:capitalize}
+  header{text-align:center;margin-bottom:18px}
+  .brand{font-family:'Marcellus',serif;font-size:clamp(26px,5vw,40px);letter-spacing:.06em;color:var(--gold)}
+  .brand small{display:block;font-family:'Manrope';font-size:12px;letter-spacing:.35em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+  .topbar{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .topbar button{background:var(--panel);border:1px solid var(--line);color:var(--gold);height:38px;border-radius:10px;font-size:15px;cursor:pointer;font-family:'Manrope';padding:0 12px}
+  .topbar button.nav{width:38px;font-size:18px;padding:0}
+  .topbar button:focus-visible{outline:2px solid var(--gold)}
+  #monthLabel{font-weight:700;font-size:17px;min-width:150px;text-align:center;text-transform:capitalize}
+  .mode{display:inline-flex;align-items:center;gap:7px;margin-top:12px;font-size:12px;padding:6px 14px;border-radius:20px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
+  .mode .dot{width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .mode.live .dot{background:var(--green)}
+  .mode.live{color:var(--green);border-color:rgba(126,212,145,.4)}
 
-  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
   @media(max-width:640px){.cards{grid-template-columns:1fr 1fr}}
-  .card{
-    background:var(--panel);border:1px solid var(--line);border-radius:16px;
-    padding:16px 14px;text-align:center;
-  }
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 14px;text-align:center}
   .card .num{font-size:clamp(24px,4.5vw,34px);font-weight:800}
   .card .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px}
   .card.gate-ok .num{color:var(--green)}
@@ -59,13 +42,10 @@
   .progress-head b{font-size:15px}
   .progress-head span{font-size:13px;color:var(--muted)}
   .bar{height:22px;background:var(--panel2);border-radius:11px;overflow:hidden;position:relative}
-  .bar-fill{height:100%;background:linear-gradient(90deg,var(--blush),var(--gold));border-radius:11px;
-    width:0%;transition:width .6s ease;min-width:0}
-  .bar-gate{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--gold);left:100%}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--blush),var(--gold));border-radius:11px;width:0%;transition:width .6s ease}
   .pace{margin-top:10px;font-size:14px}
   .pace b{color:var(--gold-soft)}
 
-  /* Tetris board — each row is a day, 30 cells = daily target */
   .board-panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px}
   .board-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
   .board-title h2{font-family:'Marcellus',serif;font-weight:400;font-size:18px;letter-spacing:.05em}
@@ -74,15 +54,14 @@
   .board{display:flex;flex-direction:column;gap:3px}
   .row{display:flex;align-items:center;gap:8px}
   .row .day{width:26px;font-size:11px;color:var(--muted);text-align:right;flex-shrink:0}
-  .cells{display:grid;grid-template-columns:repeat(30,1fr);gap:2px;flex:1}
+  .row.today .day{color:var(--gold);font-weight:800}
+  .cells{display:grid;grid-template-columns:repeat(22,1fr);gap:2px;flex:1}
   .cell{aspect-ratio:1/1;border-radius:2px;background:var(--panel2)}
   .cell.f{background:var(--blush)}
   .row.done .cell.f{background:var(--gold)}
-  .row .count{width:56px;flex-shrink:0;text-align:left}
-  .row .count input{
-    width:52px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
-    border-radius:8px;padding:5px 6px;font-size:13px;font-family:'Manrope';text-align:center;
-  }
+  .row .count{width:56px;flex-shrink:0}
+  .row .count input{width:52px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:5px 6px;font-size:13px;font-family:'Manrope';text-align:center}
+  .row .count input:disabled{opacity:1;color:var(--ink)}
   .row .count input:focus-visible{outline:2px solid var(--gold);border-color:var(--gold)}
   .row.done .count input{border-color:var(--gold);color:var(--gold)}
   .board-note{font-size:12px;color:var(--muted);margin-top:10px}
@@ -92,20 +71,14 @@
   .money-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
   @media(max-width:560px){.money-grid{grid-template-columns:1fr}}
   .field label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-  .field input{
-    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
-    border-radius:10px;padding:11px 12px;font-size:16px;font-family:'Manrope';font-weight:600;
-  }
+  .field input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:11px 12px;font-size:16px;font-family:'Manrope';font-weight:600}
   .field input:focus-visible{outline:2px solid var(--gold);border-color:var(--gold)}
+  .field .sub{font-size:11px;color:var(--muted);margin-top:5px}
   .calc{border-top:1px dashed var(--line);padding-top:14px}
   .calc-row{display:flex;justify-content:space-between;padding:6px 0;font-size:15px}
   .calc-row span:first-child{color:var(--muted)}
   .calc-row.total{border-top:1px solid var(--line);margin-top:8px;padding-top:12px}
-  .commission-big{
-    text-align:center;margin-top:14px;padding:18px;border-radius:14px;
-    background:linear-gradient(135deg,rgba(212,175,55,.12),rgba(232,160,180,.08));
-    border:1px solid var(--gold);
-  }
+  .commission-big{text-align:center;margin-top:14px;padding:18px;border-radius:14px;background:linear-gradient(135deg,rgba(212,175,55,.12),rgba(232,160,180,.08));border:1px solid var(--gold)}
   .commission-big .lbl{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-soft)}
   .commission-big .val{font-family:'Marcellus',serif;font-size:clamp(30px,6vw,46px);color:var(--gold);margin-top:4px}
   .commission-big .why{font-size:13px;color:var(--muted);margin-top:6px}
@@ -116,7 +89,8 @@
   .rules h2{font-family:'Marcellus',serif;font-weight:400;font-size:18px;letter-spacing:.05em;margin-bottom:10px}
   .rules p{margin-bottom:8px;color:#cfc4de}
   .rules b{color:var(--gold-soft)}
-  .savenote{text-align:center;font-size:11px;color:var(--muted);margin-top:14px}
+  .backlink{display:block;text-align:center;margin-top:18px;color:var(--muted);font-size:13px;text-decoration:none}
+  .backlink:hover{color:var(--gold)}
   @media (prefers-reduced-motion: reduce){ .bar-fill{transition:none} }
 </style>
 </head>
@@ -124,25 +98,27 @@
 <div class="wrap">
   <header>
     <div class="brand">Royal Diamond<small>Resepsiyon Komisyon Takibi</small></div>
-    <div class="month-row">
-      <button id="prevM" aria-label="Önceki ay">‹</button>
+    <div class="topbar">
+      <button id="prevM" class="nav" aria-label="Önceki ay">‹</button>
       <div id="monthLabel"></div>
-      <button id="nextM" aria-label="Sonraki ay">›</button>
+      <button id="nextM" class="nav" aria-label="Sonraki ay">›</button>
+      <button id="refreshBtn" title="Sistemden yeniden oku">⟳ Yenile</button>
     </div>
+    <div class="mode" id="modeBadge"><span class="dot"></span><span id="modeText">Sistem verisi aranıyor…</span></div>
   </header>
 
   <div class="cards">
     <div class="card gold"><div class="num" id="cTotal">0</div><div class="lbl">Bu ay müşteri</div></div>
-    <div class="card" id="cGateCard"><div class="num" id="cRemain">900</div><div class="lbl" id="cRemainLbl">Hedefe kalan</div></div>
-    <div class="card"><div class="num" id="cPace">30</div><div class="lbl">Gerekli günlük ortalama</div></div>
+    <div class="card" id="cGateCard"><div class="num" id="cRemain">650</div><div class="lbl" id="cRemainLbl">Hedefe kalan</div></div>
+    <div class="card"><div class="num" id="cPace">22</div><div class="lbl">Gerekli günlük ortalama</div></div>
   </div>
 
   <div class="progress-outer">
     <div class="progress-head">
-      <b>Aylık hedef: 900 müşteri</b>
+      <b>Aylık hedef: 650 müşteri</b>
       <span id="progPct">%0</span>
     </div>
-    <div class="bar"><div class="bar-fill" id="barFill"></div><div class="bar-gate"></div></div>
+    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
     <div class="pace" id="paceMsg"></div>
   </div>
 
@@ -151,19 +127,27 @@
       <h2>Günlük Tetris Tahtası</h2>
       <div class="legend">
         <span><i style="background:var(--blush)"></i>Müşteri</span>
-        <span><i style="background:var(--gold)"></i>Günlük hedef doldu (30)</span>
+        <span><i style="background:var(--gold)"></i>Günlük hedef doldu (22)</span>
         <span><i style="background:var(--panel2)"></i>Boş slot</span>
       </div>
     </div>
     <div class="board" id="board"></div>
-    <div class="board-note">Her satır bir gün, her kutu bir müşteridir. Günün müşteri sayısını sağdaki kutuya yaz — satır 30'a ulaşınca altın rengine döner. 30 dolu satır = 900 müşteri = komisyon kapısı açılır. 🎯</div>
+    <div class="board-note" id="boardNote">Her satır bir gün, her kutu bir müşteridir. Satır 22'ye ulaşınca altın rengine döner. Ortalama 22 dolu satır = 650 müşteri = komisyon kapısı açılır. 🎯</div>
   </div>
 
   <div class="money">
     <h2>Ay Sonu Hesabı</h2>
     <div class="money-grid">
-      <div class="field"><label for="turnover">Aylık ciro (₺)</label><input id="turnover" type="number" inputmode="decimal" min="0" step="0.01" placeholder="örn. 1472000"></div>
-      <div class="field"><label for="expenses">Aylık giderler (₺)</label><input id="expenses" type="number" inputmode="decimal" min="0" step="0.01" placeholder="örn. 577566"></div>
+      <div class="field">
+        <label for="turnover">Aylık ciro (₺)</label>
+        <input id="turnover" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0">
+        <div class="sub" id="turnSub"></div>
+      </div>
+      <div class="field">
+        <label for="expenses">Aylık giderler (₺)</label>
+        <input id="expenses" type="number" inputmode="decimal" min="0" step="0.01" placeholder="örn. 577566">
+        <div class="sub">Ay sonunda patron girer.</div>
+      </div>
     </div>
     <div class="calc">
       <div class="calc-row"><span>Ciro</span><span id="rTurn">₺0,00</span></div>
@@ -173,74 +157,106 @@
     <div class="commission-big locked" id="commBox">
       <div class="lbl">Resepsiyon Komisyonu (Net × %2)</div>
       <div class="val" id="commVal">Kilitli 🔒</div>
-      <div class="why" id="commWhy">Komisyon için bu ay en az 900 müşteri gerekir.</div>
+      <div class="why" id="commWhy">Komisyon için bu ay en az 650 müşteri gerekir.</div>
     </div>
   </div>
 
   <div class="rules">
     <h2>Kurallar — Kısa ve Net</h2>
-    <p><b>1.</b> Hedef: günde <b>30 müşteri</b>, ayda en az <b>900 müşteri</b>.</p>
-    <p><b>2.</b> 900'e ulaşılırsa: aylık <b>net bakiyenin %2'si</b> komisyon olarak maaşa eklenir.</p>
-    <p><b>3.</b> 900'ün altında kalırsa komisyon ödenmez.</p>
-    <p><b>4.</b> Sadece <b>tamamlanmış ve ödenmiş</b> randevular sayılır — gelmeyen (no-show) ve iptal sayılmaz. Bu yüzden 24 saat hatırlatmalarını gönder, iptalleri aynı gün doldur, her müşteriyi çıkmadan bir sonraki randevusuna yaz.</p>
-    <p><b>5.</b> Her ekstra müşteri iki kez kazandırır: hem 900 hedefine yaklaştırır, hem de %2'nin hesaplandığı net bakiyeyi büyütür. Boş her slot senin paran! 💎</p>
+    <p><b>1.</b> Hedef: günde <b>22 müşteri</b>, ayda en az <b>650 müşteri</b>.</p>
+    <p><b>2.</b> 650'ye ulaşılırsa: aylık <b>net bakiyenin %2'si</b> komisyon olarak maaşa eklenir.</p>
+    <p><b>3.</b> 650'nin altında kalırsa komisyon ödenmez.</p>
+    <p><b>4.</b> Sadece <b>tamamlanmış (✓ completed)</b> randevular sayılır — gelmeyen (no-show) ve iptal sayılmaz. Bu yüzden 24 saat hatırlatmalarını gönder, iptalleri aynı gün doldur, her müşteriyi çıkmadan bir sonraki randevusuna yaz.</p>
+    <p><b>5.</b> Her ekstra müşteri iki kez kazandırır: hem 650 hedefine yaklaştırır, hem de %2'nin hesaplandığı net bakiyeyi büyütür. Boş her slot senin paran! 💎</p>
   </div>
 
-  <div class="savenote" id="saveNote">Veriler bu cihazda saklanır.</div>
+  <a class="backlink" href="index.html">← Ana sisteme dön</a>
 </div>
 
 <script>
 (function(){
-  // ---- safe storage (falls back to memory if unavailable) ----
+  // ---- safe storage for this page's own settings (expenses etc.) ----
   var mem = {};
   var canStore = false;
-  try {
-    var t='__rd_test__';
-    window.localStorage.setItem(t,'1');
-    window.localStorage.removeItem(t);
-    canStore = true;
-  } catch(e){ canStore = false; }
+  try { var t='__rd_t__'; window.localStorage.setItem(t,'1'); window.localStorage.removeItem(t); canStore=true; } catch(e){}
   function sGet(k){ try { return canStore ? window.localStorage.getItem(k) : (mem[k]||null); } catch(e){ return mem[k]||null; } }
   function sSet(k,v){ try { if(canStore){ window.localStorage.setItem(k,v); } else { mem[k]=v; } } catch(e){ mem[k]=v; } }
-  if(!canStore){ document.getElementById('saveNote').textContent = 'Not: Bu önizlemede veriler sayfa yenilenince sıfırlanır. Dosyayı tarayıcıda açınca kalıcı olur.'; }
 
-  var THRESHOLD = 900, DAILY = 30, RATE = 0.02;
+  var THRESHOLD = 650, DAILY = 22, RATE = 0.02;
+  var MAIN_DB_KEY = 'rdns_main_v1'; // main system database (same origin)
   var now = new Date();
-  var viewY = now.getFullYear(), viewM = now.getMonth(); // 0-based
+  var viewY = now.getFullYear(), viewM = now.getMonth();
+  var liveMode = false;
 
   var TR_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
   function keyFor(y,m){ return 'rd_reception_' + y + '_' + (m+1); }
   function daysIn(y,m){ return new Date(y, m+1, 0).getDate(); }
-  function fmtTL(n){
-    return '₺' + n.toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  function pad(n){ return (n<10?'0':'')+n; }
+  function fmtTL(n){ return '₺' + n.toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+  // ---- read the MAIN SYSTEM's data (appointments + payments) ----
+  function readMainDB(){
+    try {
+      var raw = window.localStorage.getItem(MAIN_DB_KEY);
+      if(!raw) return null;
+      var db = JSON.parse(raw);
+      if(!db || !Array.isArray(db.appointments)) return null;
+      return db;
+    } catch(e){ return null; }
   }
 
-  function loadMonth(){
-    var raw = sGet(keyFor(viewY, viewM));
+  // per-day completed counts + monthly paid turnover for the viewed month
+  function monthFromSystem(){
+    var db = readMainDB();
+    if(!db) return null;
     var d = daysIn(viewY, viewM);
+    var prefix = viewY + '-' + pad(viewM+1) + '-';
+    var days = new Array(d).fill(0);
+    var apptRevenue = 0;
+    (db.appointments||[]).forEach(function(a){
+      if(!a || !a.datetime || a.status !== 'completed') return;
+      var ds = String(a.datetime).slice(0,10);
+      if(ds.indexOf(prefix) !== 0) return;
+      var dayNum = parseInt(ds.slice(8,10),10);
+      if(dayNum>=1 && dayNum<=d){ days[dayNum-1]++; apptRevenue += (parseFloat(a.price)||0); }
+    });
+    // payments are the actual money taken — prefer them for ciro when present
+    var payRevenue = 0, payCount = 0;
+    (db.payments||[]).forEach(function(p){
+      if(!p || !p.date) return;
+      var ds = String(p.date).slice(0,10);
+      if(ds.indexOf(prefix) !== 0) return;
+      payRevenue += (parseFloat(p.amount)||0); payCount++;
+    });
+    return { days: days, turnover: payCount>0 ? payRevenue : apptRevenue, source: payCount>0 ? 'payments' : 'appointments' };
+  }
+
+  function loadLocal(){
+    var raw = sGet(keyFor(viewY,viewM));
+    var d = daysIn(viewY,viewM);
     var data;
     try { data = raw ? JSON.parse(raw) : null; } catch(e){ data = null; }
-    if(!data){ data = { days: new Array(d).fill(0), turnover: '', expenses: '' }; }
-    if(data.days.length !== d){
+    if(!data) data = { days:new Array(d).fill(0), turnover:'', expenses:'' };
+    if(!Array.isArray(data.days) || data.days.length!==d){
       var nd = new Array(d).fill(0);
-      for(var i=0;i<Math.min(d,data.days.length);i++) nd[i]=data.days[i];
+      if(Array.isArray(data.days)) for(var i=0;i<Math.min(d,data.days.length);i++) nd[i]=data.days[i];
       data.days = nd;
     }
     return data;
   }
-  function saveMonth(data){ sSet(keyFor(viewY,viewM), JSON.stringify(data)); }
+  function saveLocal(data){ sSet(keyFor(viewY,viewM), JSON.stringify(data)); }
 
-  var state = loadMonth();
-
+  var state = loadLocal();
   var boardEl = document.getElementById('board');
 
   function buildBoard(){
     boardEl.innerHTML = '';
     var d = daysIn(viewY, viewM);
+    var today = new Date();
     for(var day=1; day<=d; day++){
       var row = document.createElement('div');
       row.className = 'row';
-      row.setAttribute('data-day', day);
+      if(today.getFullYear()===viewY && today.getMonth()===viewM && today.getDate()===day) row.classList.add('today');
 
       var lab = document.createElement('div');
       lab.className='day'; lab.textContent = day;
@@ -248,11 +264,7 @@
 
       var cells = document.createElement('div');
       cells.className = 'cells';
-      for(var c=0;c<DAILY;c++){
-        var cell = document.createElement('div');
-        cell.className='cell';
-        cells.appendChild(cell);
-      }
+      for(var c=0;c<DAILY;c++){ var cell=document.createElement('div'); cell.className='cell'; cells.appendChild(cell); }
       row.appendChild(cells);
 
       var cnt = document.createElement('div');
@@ -260,42 +272,71 @@
       var inp = document.createElement('input');
       inp.type='number'; inp.min='0'; inp.max='99'; inp.inputMode='numeric';
       inp.value = state.days[day-1] || '';
+      inp.disabled = liveMode; // live mode: counts come from the system
       inp.setAttribute('aria-label', day + '. gün müşteri sayısı');
       (function(dayIdx){
         inp.addEventListener('input', function(){
           var v = parseInt(this.value,10);
-          if(isNaN(v) || v<0) v=0;
-          if(v>99) v=99;
-          state.days[dayIdx] = v;
-          saveMonth(state);
-          paintRow(dayIdx);
-          recalc();
+          if(isNaN(v)||v<0) v=0; if(v>99) v=99;
+          state.days[dayIdx]=v; saveLocal(state); paintRow(dayIdx); recalc();
         });
       })(day-1);
       cnt.appendChild(inp);
       row.appendChild(cnt);
-
       boardEl.appendChild(row);
     }
     paintAll();
   }
 
   function paintRow(idx){
-    var row = boardEl.children[idx];
-    if(!row) return;
+    var row = boardEl.children[idx]; if(!row) return;
     var v = state.days[idx]||0;
     var cells = row.querySelector('.cells').children;
-    for(var i=0;i<cells.length;i++){
-      cells[i].className = 'cell' + (i < v ? ' f' : '');
-    }
-    if(v >= DAILY) row.classList.add('done'); else row.classList.remove('done');
+    for(var i=0;i<cells.length;i++) cells[i].className = 'cell' + (i<v?' f':'');
+    var inp = row.querySelector('input'); if(inp && document.activeElement!==inp) inp.value = v||'';
+    if(v>=DAILY) row.classList.add('done'); else row.classList.remove('done');
   }
   function paintAll(){ for(var i=0;i<state.days.length;i++) paintRow(i); }
 
   var turnEl = document.getElementById('turnover');
   var expEl  = document.getElementById('expenses');
-  turnEl.addEventListener('input', function(){ state.turnover=this.value; saveMonth(state); recalc(); });
-  expEl.addEventListener('input',  function(){ state.expenses=this.value; saveMonth(state); recalc(); });
+  turnEl.addEventListener('input', function(){ if(!liveMode){ state.turnover=this.value; saveLocal(state); } recalc(); });
+  expEl.addEventListener('input',  function(){ state.expenses=this.value; saveLocal(state); recalc(); });
+
+  function setMode(live, srcNote){
+    liveMode = live;
+    var badge = document.getElementById('modeBadge');
+    var txt = document.getElementById('modeText');
+    if(live){
+      badge.classList.add('live');
+      txt.textContent = 'Canlı: sistemdeki tamamlanan randevulardan otomatik' + (srcNote||'');
+      turnEl.readOnly = true;
+      document.getElementById('turnSub').textContent = 'Sistemden otomatik hesaplanır.';
+      document.getElementById('boardNote').textContent = 'Her satır bir gün, her kutu sistemde ✓ tamamlanan bir müşteridir. Satır 22\u2019ye ulaşınca altın olur. Bu tahta kendini doldurur — resepsiyonun işi boşlukları gerçek randevularla doldurmak! 🎯';
+    } else {
+      badge.classList.remove('live');
+      txt.textContent = 'Manuel mod: bu cihazda ana sistem verisi bulunamadı — sayılar elle girilir';
+      turnEl.readOnly = false;
+      document.getElementById('turnSub').textContent = 'Ana sistem bu cihazda açılırsa otomatik dolar.';
+    }
+  }
+
+  function refresh(){
+    var sys = monthFromSystem();
+    state = loadLocal();
+    if(sys){
+      state.days = sys.days;
+      state.turnover = String(sys.turnover||0);
+      saveLocal(state);
+      setMode(true, sys.source==='payments' ? ' (ödemelerden)' : ' (randevu ücretlerinden)');
+    } else {
+      setMode(false);
+    }
+    turnEl.value = state.turnover || '';
+    expEl.value = state.expenses || '';
+    buildBoard();
+    recalc();
+  }
 
   function recalc(){
     var total = state.days.reduce(function(a,b){return a+(b||0);},0);
@@ -303,79 +344,58 @@
     var gate = total >= THRESHOLD;
 
     document.getElementById('cTotal').textContent = total;
-    var remEl = document.getElementById('cRemain');
-    var remLbl = document.getElementById('cRemainLbl');
-    var gateCard = document.getElementById('cGateCard');
-    if(gate){
-      remEl.textContent = 'AÇIK ✓';
-      remLbl.textContent = 'Komisyon kapısı';
-      gateCard.className = 'card gate-ok';
-    } else {
-      remEl.textContent = remain;
-      remLbl.textContent = 'Hedefe kalan müşteri';
-      gateCard.className = 'card gate-no';
-    }
+    var remEl=document.getElementById('cRemain'), remLbl=document.getElementById('cRemainLbl'), gateCard=document.getElementById('cGateCard');
+    if(gate){ remEl.textContent='AÇIK ✓'; remLbl.textContent='Komisyon kapısı'; gateCard.className='card gate-ok'; }
+    else { remEl.textContent=remain; remLbl.textContent='Hedefe kalan müşteri'; gateCard.className='card gate-no'; }
 
-    // pace: needed per remaining day (only meaningful for current month)
-    var d = daysIn(viewY, viewM);
+    var d = daysIn(viewY,viewM);
     var today = new Date();
     var isCurrent = (today.getFullYear()===viewY && today.getMonth()===viewM);
     var daysLeft = isCurrent ? (d - today.getDate() + 1) : d;
-    var pace = gate ? 0 : Math.ceil(remain / Math.max(1,daysLeft));
+    var pace = gate ? 0 : Math.ceil(remain/Math.max(1,daysLeft));
     document.getElementById('cPace').textContent = gate ? '✓' : pace;
 
     var pct = Math.min(100, Math.round(total/THRESHOLD*100));
-    document.getElementById('barFill').style.width = pct + '%';
-    document.getElementById('progPct').textContent = '%' + pct + (total>THRESHOLD ? ' (+'+(total-THRESHOLD)+' bonus müşteri)' : '');
+    document.getElementById('barFill').style.width = pct+'%';
+    document.getElementById('progPct').textContent = '%'+pct + (total>THRESHOLD?' (+'+(total-THRESHOLD)+' bonus müşteri)':'');
     var paceMsg = document.getElementById('paceMsg');
-    if(gate){
-      paceMsg.innerHTML = '🎉 <b>Hedef tamamlandı!</b> Bundan sonraki her müşteri net bakiyeyi — yani komisyonunu — büyütmeye devam ediyor.';
-    } else if(isCurrent){
-      paceMsg.innerHTML = 'Kapıyı açmak için kalan ' + daysLeft + ' günde günlük ortalama <b>' + pace + ' müşteri</b> gerekiyor.';
-    } else {
-      paceMsg.innerHTML = 'Bu ay için ' + remain + ' müşteri daha gerekiyordu.';
-    }
+    if(gate){ paceMsg.innerHTML = '🎉 <b>Hedef tamamlandı!</b> Bundan sonraki her müşteri net bakiyeyi — yani komisyonunu — büyütmeye devam ediyor.'; }
+    else if(isCurrent){ paceMsg.innerHTML = 'Kapıyı açmak için kalan '+daysLeft+' günde günlük ortalama <b>'+pace+' müşteri</b> gerekiyor.'; }
+    else { paceMsg.innerHTML = 'Bu ay için '+remain+' müşteri daha gerekiyordu.'; }
 
     var turnover = parseFloat(state.turnover)||0;
     var expenses = parseFloat(state.expenses)||0;
     var net = turnover - expenses;
     document.getElementById('rTurn').textContent = fmtTL(turnover);
-    document.getElementById('rExp').textContent = '− ' + fmtTL(expenses);
+    document.getElementById('rExp').textContent = '− '+fmtTL(expenses);
     document.getElementById('rNet').textContent = fmtTL(net);
 
-    var box = document.getElementById('commBox');
-    var val = document.getElementById('commVal');
-    var why = document.getElementById('commWhy');
+    var box=document.getElementById('commBox'), val=document.getElementById('commVal'), why=document.getElementById('commWhy');
     if(gate && net>0){
       box.classList.remove('locked');
       val.textContent = fmtTL(net*RATE);
-      why.textContent = total + ' müşteri ✓ — ' + fmtTL(net) + ' net bakiyenin %2\u2019si.';
+      why.textContent = total+' müşteri ✓ — '+fmtTL(net)+' net bakiyenin %2\u2019si.';
     } else if(gate){
       box.classList.remove('locked');
       val.textContent = fmtTL(0);
-      why.textContent = 'Hedef tamam ✓ — ay sonu ciro ve giderleri girince komisyon burada görünecek.';
+      why.textContent = 'Hedef tamam ✓ — giderler girilince komisyon burada görünecek.';
     } else {
       box.classList.add('locked');
       val.textContent = 'Kilitli 🔒';
-      why.textContent = 'Komisyon için ' + remain + ' müşteri daha gerekiyor.';
+      why.textContent = 'Komisyon için '+remain+' müşteri daha gerekiyor.';
     }
   }
 
   function renderMonth(){
-    document.getElementById('monthLabel').textContent = TR_MONTHS[viewM] + ' ' + viewY;
-    state = loadMonth();
-    turnEl.value = state.turnover || '';
-    expEl.value = state.expenses || '';
-    buildBoard();
-    recalc();
+    document.getElementById('monthLabel').textContent = TR_MONTHS[viewM]+' '+viewY;
+    refresh();
   }
 
-  document.getElementById('prevM').addEventListener('click', function(){
-    viewM--; if(viewM<0){viewM=11;viewY--;} renderMonth();
-  });
-  document.getElementById('nextM').addEventListener('click', function(){
-    viewM++; if(viewM>11){viewM=0;viewY++;} renderMonth();
-  });
+  document.getElementById('prevM').addEventListener('click', function(){ viewM--; if(viewM<0){viewM=11;viewY--;} renderMonth(); });
+  document.getElementById('nextM').addEventListener('click', function(){ viewM++; if(viewM>11){viewM=0;viewY++;} renderMonth(); });
+  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  // re-read when returning to the tab
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) refresh(); });
 
   renderMonth();
 })();
