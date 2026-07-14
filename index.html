@@ -353,7 +353,7 @@
       console.log('[OB] appointment created:',a);
       _fbDb.ref('rdns_booking_requests/'+id).update({handled:'booked',handledAt:Date.now(),apptId:a.id}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Randevu kaydedildi ama Firebase Rules güncellemesi yayınlanmamış — çift kayıt riskine karşı Rules ekranını güncelleyin.','r');}catch(_){}} );
       try{toast('🌐','ONLINE RANDEVU KAYDEDİLDİ! 🎉',cl.name+' — '+req.date+' '+req.time+(staffPick?' · '+staffPick:'')+(req.service?' · '+req.service:''),'g');}catch(e){}
-      try{renderAppts();renderDash();updateApptBadge();buildWAQueue();}catch(e){}
+      try{renderAppts();renderDash();updateApptBadge();buildWAQueue();updateWACounts();renderWA();}catch(e){}
       publishAvailability();
     }).catch(e=>console.warn('OB recheck error:',e));
   }
@@ -4671,7 +4671,7 @@ function completeAppt(id){
     if(ref&&ref.phone){
       const rid=ref.id+"_refthx_"+a.clientId;
       if(!msgQueue.some(m=>m.id===rid)&&!waSentIds.has(rid)){
-        msgQueue.push({id:rid,clientId:ref.id,type:"referral",subtype:"",text:`Sevgili ${ref.name}, ${cliNow.name}'i bize önerdiğiniz için çok teşekkür ederiz! 🤝💎 Ödül olarak bir sonraki bakımınızda %15 indirim sizi bekliyor. Randevu için: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});
+        msgQueue.push({id:rid,clientId:ref.id,type:"referral",subtype:"",text:`Değerli müşterimiz, bir arkadaşınızı bize önerdiğiniz için çok teşekkür ederiz! 🤝💎 Ödül olarak bir sonraki bakımınızda %15 indirim sizi bekliyor. Randevu için: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});
         updateWACounts();
         toast("🤝","Referans Ödülü!",`${ref.name} için %15 indirimli teşekkür mesajı hazır — WhatsApp Merkezi'nde.`,"g");
       }
@@ -5017,7 +5017,7 @@ function queueOccasion(key){
   clients.filter(c=>c.phone&&c.visits>0).forEach(c=>{
     const id=c.id+"_occ_"+key+yr;
     if(msgQueue.some(m=>m.id===id)||waSentIds.has(id))return;
-    msgQueue.push({id,clientId:c.id,type:"occasion",subtype:"",text:`${o.emoji} Sevgili ${c.name}, ${o.offer}! 💅 Randevunuzu şimdiden ayırtın: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});n++;
+    msgQueue.push({id,clientId:c.id,type:"occasion",subtype:"",text:`${o.emoji} Değerli müşterimiz, ${o.offer}! 💅 Randevunuzu şimdiden ayırtın: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});n++;
   });
   if(n){toast("🎊",o.name,`${n} kampanya mesajı hazır — 🎊 Özel Günler sekmesinden gönderin.`,"g");goto("whatsapp",null);fWA("occasion",null);}
   else toast("ℹ️",o.name,"Tüm mesajlar zaten hazırlanmış veya gönderilmiş.","");
@@ -5030,7 +5030,7 @@ function launchReactivation(){
   if(!fresh.length){toast("ℹ️","Reaktivasyon","Bekleyen yeni kayıt yok — hepsi zaten kuyrukta veya gönderilmiş.","");return;}
   if(!confirm(fresh.length+" kişiye (hiç ziyareti kaydedilmemiş müşteriler) reaktivasyon mesajı hazırlanacak. Devam edilsin mi?"))return;
   fresh.forEach(c=>{
-    msgQueue.push({id:c.id+"_react_v1",clientId:c.id,type:"react",subtype:"",text:`Sevgili ${c.name}, Royal Diamond Nail Studio yenilendi! 💎 Royal Palace Hotel Gönyeli'deki salonumuzda ilk randevunuza özel %10 indirim sizi bekliyor 💅 Randevu için arayın veya WhatsApp'tan yazın: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});
+    msgQueue.push({id:c.id+"_react_v1",clientId:c.id,type:"react",subtype:"",text:`Değerli müşterimiz, Royal Diamond Nail Studio yenilendi! 💎 Royal Palace Hotel Gönyeli'deki salonumuzda ilk randevunuza özel %10 indirim sizi bekliyor 💅 Randevu için arayın veya WhatsApp'tan yazın: 0548 893 3333\n\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,status:"pending",appt:null});
   });
   fWA("react",null);
   toast("🚀","Reaktivasyon Hazır!",`${fresh.length} mesaj hazır — Send All her tıklamada 20 sohbet açar, tekrar tıklayarak devam edin.`,"g");
@@ -5097,12 +5097,12 @@ Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
-    reminder_1h:`Write a short bubbly WhatsApp message telling ${c.name} their ${a?.service||"appointment"} is in about 1 hour at ${a?fDT(a.datetime):"soon"}. Brief, warm, excited. 1 paragraph. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
-    birthday_today:`Write a heartfelt birthday WhatsApp message for a nail salon customer named ${c.name}. They are ${c.tier} tier with ${c.points} loyalty points. Offer a special 20% birthday discount valid this week. 2 paragraphs. Birthday and nail emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
-    birthday_soon:`Write a warm WhatsApp message telling ${c.name} their birthday is coming soon! Invite them to book a birthday treatment, offer 15% off. ${c.tier} member. 2 short paragraphs. Fun tone. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
-    loyalty_:`Write a celebratory WhatsApp loyalty message for ${c.name}. They are now ${c.tier} tier at Royal Diamond Nail Studio. Tier benefits: Diamond (40+ visits)=exclusive monthly gift+25% off+top priority, Platinum (30+ visits)=20% off+free nail art+VIP treatment, Gold (20+ visits)=15% off+complimentary nail art, Silver (10+ visits in 10 months)=10% off+priority booking, Bronze=welcome member pricing. Celebrate their achievement warmly. 2 paragraphs. Use fitting emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
-    promo_:`Write an enticing personalised WhatsApp promotional offer for ${c.name}, a ${c.tier} loyalty member at Royal Diamond Nail Studio. Tier rewards: Diamond=exclusive monthly gift treatment+25% off; Platinum=20% off+free nail art; Gold=15% off any service; Silver=10% off+priority booking (Silver requires 10 visits in 10 months); Bronze=5% welcome discount on next visit. Write a warm offer tailored EXACTLY to their ${c.tier} tier benefit. 2 short paragraphs. Max 2 emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
-    visit3_:`Write a warm, celebratory WhatsApp message in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} to ${c.name} celebrating their 3rd visit to Royal Diamond Nail Studio! 
+    reminder_1h:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a short bubbly WhatsApp message telling the client their ${a?.service||"appointment"} is in about 1 hour at ${a?fDT(a.datetime):"soon"}. Brief, warm, excited. 1 paragraph. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
+    birthday_today:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a heartfelt birthday WhatsApp message for a nail salon customer. They are ${c.tier} tier with ${c.points} loyalty points. Offer a special 20% birthday discount valid this week. 2 paragraphs. Birthday and nail emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
+    birthday_soon:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm WhatsApp message telling the client their birthday is coming soon! Invite them to book a birthday treatment, offer 15% off. ${c.tier} member. 2 short paragraphs. Fun tone. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
+    loyalty_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a celebratory WhatsApp loyalty message for a client. They are now ${c.tier} tier at Royal Diamond Nail Studio. Tier benefits: Diamond (40+ visits)=exclusive monthly gift+25% off+top priority, Platinum (30+ visits)=20% off+free nail art+VIP treatment, Gold (20+ visits)=15% off+complimentary nail art, Silver (10+ visits in 10 months)=10% off+priority booking, Bronze=welcome member pricing. Celebrate their achievement warmly. 2 paragraphs. Use fitting emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
+    promo_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write an enticing personalised WhatsApp promotional offer for a ${c.tier} loyalty member at Royal Diamond Nail Studio. Tier rewards: Diamond=exclusive monthly gift treatment+25% off; Platinum=20% off+free nail art; Gold=15% off any service; Silver=10% off+priority booking (Silver requires 10 visits in 10 months); Bronze=5% welcome discount on next visit. Write a warm offer tailored EXACTLY to their ${c.tier} tier benefit. 2 short paragraphs. Max 2 emojis. Sign off as "Royal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
+    visit3_:`Write a warm, celebratory WhatsApp message in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} to a client celebrating their 3rd visit to Royal Diamond Nail Studio! IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead.  
 
 Make them feel special and valued. Mention:
 - This is a special milestone — their 3rd visit!
@@ -5116,10 +5116,9 @@ Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
-    rebook_confirm:`Write a warm, friendly WhatsApp message in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} to ${c.name} confirming their next nail appointment at Royal Diamond Nail Studio.
+    rebook_confirm:`Write a warm, friendly WhatsApp message in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} to a client confirming their next nail appointment at Royal Diamond Nail Studio. IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. 
 
 Details to include EXACTLY:
-- Client name: ${c.name}
 - Service: ${a?.service||"nail appointment"}
 - Date: ${a?new Date(a.datetime).toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'}):"in 3 weeks"}
 - Time: ${a?new Date(a.datetime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):""}
@@ -5136,7 +5135,7 @@ Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
-    rebook_reminder:`Write a warm WhatsApp reminder in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} that ${c.name}'s nail appointment is TOMORROW.
+    rebook_reminder:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm WhatsApp reminder in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} that the client's nail appointment is TOMORROW.
 
 Details:
 - Service: ${a?.service||"nail appointment"}
@@ -5152,13 +5151,13 @@ Sign off exactly as:
 Royal Diamond Nail Studio 💎
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
-    winback_:`Write a warm "we miss you" WhatsApp message in Turkish for ${c.name}, a ${c.tier} tier client of Royal Diamond Nail Studio whose last visit was ${c.lastVisit}. Warmly say we miss them ("Sizi özledik!"), invite them back, and offer 10% off their next appointment this month. Mention they can book by calling or WhatsApping 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
+    winback_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm "we miss you" WhatsApp message in Turkish for a ${c.tier} tier client of Royal Diamond Nail Studio whose last visit was ${c.lastVisit}. Warmly say we miss them ("Sizi özledik!"), invite them back, and offer 10% off their next appointment this month. Mention they can book by calling or WhatsApping 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
 Sign off exactly as:\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,
-    react_:`Write a warm reactivation WhatsApp message in Turkish for ${c.name}. Royal Diamond Nail Studio (Royal Palace Hotel, Gönyeli) has been fully renewed. Invite them to experience the new salon with 10% off their first appointment. Booking: 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
+    react_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm reactivation WhatsApp message in Turkish for a client. Royal Diamond Nail Studio (Royal Palace Hotel, Gönyeli) has been fully renewed. Invite them to experience the new salon with 10% off their first appointment. Booking: 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
 Sign off exactly as:\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,
-    occasion_:`Write a festive Turkish WhatsApp campaign message for ${c.name} from Royal Diamond Nail Studio for an upcoming special occasion, offering 15% off and inviting them to book early on 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
+    occasion_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a festive Turkish WhatsApp campaign message from Royal Diamond Nail Studio for an upcoming special occasion, offering 15% off and inviting them to book early on 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
 Sign off exactly as:\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,
-    referral_:`Write a warm Turkish WhatsApp thank-you message for ${c.name} who referred a friend to Royal Diamond Nail Studio. Thank them sincerely and offer 15% off their next treatment as a reward. Booking: 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
+    referral_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm Turkish WhatsApp thank-you message for a client who referred a friend to Royal Diamond Nail Studio. Thank them sincerely and offer 15% off their next treatment as a reward. Booking: 0548 893 3333. 2 short paragraphs, 1-2 emojis, no hashtags.
 Sign off exactly as:\nRoyal Diamond Nail Studio 💎\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n📞 0548 893 3333`,
   };
   const key=`${entry.type}_${entry.subtype}`;
@@ -5170,7 +5169,7 @@ async function genMsg(entry){
     const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,messages:[{role:"user",content:waPrompt(entry)}]})});
     const d=await res.json();
     return d.content?.[0]?.text||"Hi! A message from Royal Diamond Nail Studio 💅";
-  }catch{return `Hi ${cObj(entry.clientId)?.name}! Greetings from Royal Diamond Nail Studio 💅 — we look forward to seeing you soon!`;}
+  }catch{return `Değerli müşterimiz, Royal Diamond Nail Studio'dan selamlar! 💅 Sizi yakında aramızda görmekten mutluluk duyarız. 📞 0548 893 3333`;}
 }
 
 function waTypeBadge(type){
@@ -5190,6 +5189,13 @@ function renderWA(){
 
   if(list.length===0){
     grid.innerHTML=`<div style="grid-column:1/-1;text-align:center;padding:50px;color:var(--muted)"><div style="font-size:2.5rem;margin-bottom:10px">${waFilter==="sent"?"✅":"💬"}</div><div style="font-weight:700;font-size:1.1rem;color:var(--soft);margin-bottom:5px">${waFilter==="sent"?"All sent!":"Nothing here yet"}</div></div>`;
+    const _pAll=msgQueue.filter(m=>m.status!=="sent").length;
+    document.getElementById("wa-q-title").textContent=_pAll>0?`${_pAll} message${_pAll>1?"s":""} ready to send today`:"No messages in the queue";
+    document.getElementById("wa-q-sub").textContent=_pAll>0?"Click Send All or send individually below":"Mesajlar bir müşteri kurala uyduğunda (hatırlatma, doğum günü, geri kazanım…) veya kampanya başlattığınızda burada görünür";
+    document.getElementById("wa-badge").textContent=msgQueue.filter(m=>m.status==="pending"&&m.text).length||0;
+    const _p=msgQueue.filter(m=>m.status==="pending"&&m.text).length;
+    document.getElementById("bulk-n").textContent=_p;
+    document.getElementById("bulk-bar").classList.toggle("on",_p>0);
     return;
   }
 
