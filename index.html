@@ -1187,16 +1187,16 @@ textarea.fctrl{resize:vertical;min-height:70px;}
 @media (max-width: 768px) {
 
   /* ── Sidebar mobile colour boost ── */
-  .sidebar { background: #c0392b !important; border-right: 2px solid rgba(255,255,255,0.2) !important; }
-  .nav-item { color: #ffffff !important; font-size: 0.88rem !important; font-weight: 600 !important; }
-  .nav-label { color: #ffffff !important; }
-  .nav-section-label { color: rgba(255,255,255,0.7) !important; }
+  .sidebar { background: #f7f8fb !important; border-right: 1px solid #e6e8ec !important; }
+  .nav-item { color: #2a2a33 !important; font-size: 0.88rem !important; font-weight: 600 !important; }
+  .nav-label { color: #2a2a33 !important; }
+  .nav-section-label { color: rgba(0,0,0,0.5) !important; }
   .nav-badge { background: var(--wa) !important; color: #000 !important; }
   .nav-item .nav-icon { font-size: 1.1rem; }
-  .nav-item:hover, .nav-item.active { color: #fff !important; }
-  .sb-section { color: #7db882 !important; font-size: 0.68rem; letter-spacing: 1.5px; }
-  .sb-footer { color: #8ab88e !important; }
-  .sb-status { color: var(--waLight) !important; }
+  .nav-item:hover, .nav-item.active { color: #0f8a4a !important; }
+  .sb-section { color: #7a7f88 !important; font-size: 0.68rem; letter-spacing: 1.5px; }
+  .sb-footer { color: #6b7280 !important; }
+  .sb-status { color: var(--green) !important; }
 
   /* Layout */
   body { overflow: hidden; }
@@ -1369,14 +1369,17 @@ body, .app-wrapper, .main-content, .content-area {
   color: #1a1a1a !important;
 }
 .sidebar {
-  background: #1a1a2e;
-  border-right: 2px solid #e0e0e0;
+  background: #f7f8fb;
+  border-right: 1px solid #e6e8ec;
 }
 .sidebar .nav-item, .sidebar .nav-label, .sidebar span {
-  color: #ffffff !important;
+  color: #2a2a33 !important;
+}
+.sidebar .nav-item.active, .sidebar .nav-item.active span {
+  color: #0f8a4a !important;
 }
 .sidebar .nav-section-label {
-  color: rgba(255,255,255,0.6) !important;
+  color: rgba(0,0,0,0.45) !important;
 }
 .topbar, .app-header {
   background: #1a1a2e !important;
@@ -1569,19 +1572,19 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#7ecec4;font-weight:700;">Sürüm v39 · Online Randevu · 08.07.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v39 · Online Randevu · 08.07.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
-          border-radius:8px;color:var(--waLight);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
+          border-radius:8px;color:var(--waDark);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
           ⬇ Veriyi Yedekle (.json)
         </button>
         <label style="width:100%;padding:7px 10px;background:rgba(212,169,106,0.1);border:1px solid rgba(212,169,106,0.25);
-          border-radius:8px;color:var(--gold);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;display:block;">
+          border-radius:8px;color:var(--goldLight);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;display:block;">
           ⬆ Yedeği Geri Yükle
           <input type="file" accept=".json" onchange="rdnsImportData(this)" style="display:none;">
         </label>
         <button onclick="rdChangePin()" style="width:100%;padding:7px 10px;background:rgba(232,122,122,0.08);border:1px solid rgba(232,122,122,0.25);margin-top:6px;
-          border-radius:8px;color:#e87a7a;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
+          border-radius:8px;color:#c9605a;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
           🔒 Patron PIN Değiştir
         </button>
       </div>
