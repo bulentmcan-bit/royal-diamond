@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Royal Diamond Assistant — Preview</title>
+<style>
+  body{margin:0;font-family:Georgia,serif;background:#f6f2ea;min-height:100vh}
+  .preview-note{max-width:560px;margin:60px auto;padding:24px;background:#fff;border:1px solid #e2d9c6;border-radius:12px;color:#4a4436;font-size:15px;line-height:1.7}
+  .preview-note h1{font-size:20px;color:#8a6d1f;margin:0 0 10px}
+</style>
+</head>
+<body>
+
+<div class="preview-note">
+  <h1>Royal Diamond Assistant — Önizleme</h1>
+  Bu sayfa sadece önizleme içindir. Sağ alttaki altın baloncuğa tıklayın.<br>
+  Kendi sitenize eklemek için aşağıdaki <b>RD-ASSISTANT START</b> ile <b>RD-ASSISTANT END</b> arasındaki her şeyi kopyalayıp booking.html dosyanızda <b>&lt;/body&gt;</b> etiketinden hemen önce yapıştırın.
+</div>
+
+<!-- ================= RD-ASSISTANT START ================= -->
+<div id="rdw-root">
+<style>
+  #rdw-root{--rd-gold:#b9974b;--rd-gold-dark:#8a6d1f;--rd-ink:#1c1a15;--rd-cream:#faf7f0;--rd-line:#e6dcc6;
+    font-family:'Segoe UI',Tahoma,Arial,sans-serif;position:fixed;right:18px;bottom:18px;z-index:99999;
+    -webkit-font-smoothing:antialiased}
+  #rdw-root *{box-sizing:border-box;margin:0;padding:0}
+  #rdw-bubble{width:62px;height:62px;border-radius:50%;background:var(--rd-ink);border:2px solid var(--rd-gold);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.28);
+    transition:transform .15s ease}
+  #rdw-bubble:hover{transform:scale(1.06)}
+  #rdw-bubble svg{width:30px;height:30px}
+  #rdw-badge{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#2eaa5e;border:2px solid #fff}
+  #rdw-panel{display:none;position:absolute;right:0;bottom:76px;width:340px;max-width:calc(100vw - 36px);
+    background:var(--rd-cream);border:1px solid var(--rd-line);border-radius:16px;overflow:hidden;
+    box-shadow:0 16px 40px rgba(0,0,0,.30)}
+  #rdw-panel.rdw-open{display:flex;flex-direction:column}
+  #rdw-head{background:var(--rd-ink);padding:14px 16px;display:flex;align-items:center;gap:10px}
+  #rdw-head .rdw-title{font-family:Georgia,'Times New Roman',serif;color:var(--rd-gold);font-size:16px;letter-spacing:.4px}
+  #rdw-head .rdw-sub{color:#cfc6ae;font-size:11px;letter-spacing:.6px;text-transform:uppercase}
+  #rdw-close{margin-left:auto;background:none;border:none;color:#cfc6ae;font-size:20px;line-height:1;cursor:pointer;padding:4px}
+  #rdw-langs{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--rd-line);background:#fffdf8}
+  .rdw-lang{flex:1;border:1px solid var(--rd-line);background:#fff;border-radius:20px;padding:6px 0;font-size:12px;
+    letter-spacing:.5px;color:#6b6350;cursor:pointer;transition:all .12s}
+  .rdw-lang.rdw-on{background:var(--rd-gold);border-color:var(--rd-gold);color:#fff;font-weight:600}
+  #rdw-body{padding:14px;overflow-y:auto;max-height:52vh;display:flex;flex-direction:column;gap:10px;background:linear-gradient(rgba(250,247,240,.94),rgba(250,247,240,.94)),url("https://bulentmcan-bit.github.io/royal-diamond/assistant-photo.jpg") center/cover no-repeat}
+  .rdw-msg{background:#fff;border:1px solid var(--rd-line);border-radius:12px;border-top-left-radius:4px;
+    padding:11px 13px;font-size:13.5px;line-height:1.6;color:#3d382c;max-width:95%;white-space:pre-line}
+  .rdw-msg b{color:var(--rd-gold-dark)}
+  .rdw-menu{display:flex;flex-direction:column;gap:7px}
+  .rdw-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:#fff;
+    border:1px solid var(--rd-line);border-radius:10px;padding:10px 12px;font-size:13.5px;color:#3d382c;
+    cursor:pointer;transition:all .12s;text-decoration:none}
+  .rdw-btn:hover{border-color:var(--rd-gold);background:#fdf9ef}
+  .rdw-btn .rdw-ic{width:18px;text-align:center;color:var(--rd-gold-dark);font-size:15px;flex:none}
+  .rdw-btn.rdw-wa{background:#eaf7ee;border-color:#bfe3cb}
+  .rdw-btn.rdw-wa:hover{border-color:#2eaa5e}
+  #rdw-foot{padding:8px 14px 12px;font-size:10.5px;color:#a79c82;text-align:center;letter-spacing:.4px;background:#fffdf8;border-top:1px solid var(--rd-line)}
+  @media (max-width:420px){#rdw-panel{width:calc(100vw - 36px)}}
+  @media (prefers-reduced-motion:reduce){#rdw-bubble{transition:none}}
+</style>
+
+<div id="rdw-panel" role="dialog" aria-label="Royal Diamond assistant">
+  <div id="rdw-head">
+    <img src="https://bulentmcan-bit.github.io/royal-diamond/logo.jpg" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid #b9974b" aria-hidden="true">
+    <div>
+      <div class="rdw-title">Royal Diamond</div>
+      <div class="rdw-sub" id="rdw-subline">Asistan</div>
+    </div>
+    <button id="rdw-close" aria-label="Close">×</button>
+  </div>
+  <div id="rdw-langs">
+    <button class="rdw-lang rdw-on" data-l="tr">TR</button>
+    <button class="rdw-lang" data-l="en">EN</button>
+    <button class="rdw-lang" data-l="el">ΕΛ</button>
+    <button class="rdw-lang" data-l="ru">RU</button>
+  </div>
+  <img id="rdw-photo" src="https://bulentmcan-bit.github.io/royal-diamond/assistant-photo.jpg" alt=""
+       style="width:100%;height:96px;object-fit:cover;display:block;border-bottom:1px solid #e6dcc6"
+       onerror="this.style.display='none'">
+  <div id="rdw-body"></div>
+  <div id="rdw-foot">Royal Diamond Nail Studio · Gönyeli, K.K.T.C.</div>
+</div>
+
+<button id="rdw-bubble" aria-label="Open Royal Diamond assistant">
+  <span id="rdw-badge"></span>
+  <img src="https://bulentmcan-bit.github.io/royal-diamond/logo.jpg" alt="" style="width:46px;height:46px;border-radius:50%;object-fit:cover" aria-hidden="true">
+</button>
+
+<script>
+(function(){
+  var WA_NUMBER="905488933333";
+  var MAPS_URL="https://www.google.com/maps/search/?api=1&query=Royal+Palace+Hotel+G%C3%B6nyeli+Nicosia";
+  var BOOKING_URL="https://bulentmcan-bit.github.io/royal-diamond/booking.html";
+
+  var T={
+    tr:{sub:"Asistan",
+      hello:"Merhaba! 💅 Royal Diamond Nail Studio'ya hoş geldiniz. Size nasıl yardımcı olabilirim?",
+      m_price:"Fiyat listesi", m_hours:"Çalışma saatleri", m_book:"Randevu al",
+      m_loc:"Konum & yol tarifi", m_wa:"WhatsApp'tan yazın", m_back:"← Ana menü",
+      price:"<b>Güncel Fiyat Listesi</b>\nJel Başlangıç: 1.700 TL\nDolgu: 1.600 TL\nPedikür (Ojesiz): 1.400 TL\nKalıcı Ojeli Pedikür: 1.600 TL\nİpek Kirpik Klasik: 1.800 TL\nİpek Kirpik Volume: 2.000 TL\n\n<b>Nail Art ekstra ücretlidir.</b>\nDiğer hizmetler ve detaylı bilgi için bize yazabilirsiniz.",
+      hours:"<b>Çalışma saatlerimiz</b>\nPazartesi – Cumartesi: 08:00 – 18:00\nPazar: Kapalı\n\nRandevu ile çalışıyoruz; müsaitlik için randevu sayfamıza bakabilirsiniz.",
+      book:"Online randevu sayfamız üzerinden gün ve saat seçebilirsiniz 👇",
+      book_btn:"Randevu sayfasını aç",
+      loc:"<b>Adresimiz</b>\nRoyal Palace Hotel\nBüyük Fener Sokak, Gönyeli\nK.K.T.C.\n\nTelefon: 0548 893 3333",
+      loc_btn:"Haritada aç",
+      wa_msg:"Merhaba, Royal Diamond hakkında bilgi almak istiyorum."},
+    en:{sub:"Assistant",
+      hello:"Hello! 💅 Welcome to Royal Diamond Nail Studio. How can I help you?",
+      m_price:"Price list", m_hours:"Opening hours", m_book:"Book an appointment",
+      m_loc:"Location & directions", m_wa:"Chat on WhatsApp", m_back:"← Main menu",
+      price:"<b>Current price list</b>\nGel — new set: 1,700 TL\nInfill / refill: 1,600 TL\nPedicure (no polish): 1,400 TL\nPedicure with gel polish: 1,600 TL\nSilk lashes — Classic: 1,800 TL\nSilk lashes — Volume: 2,000 TL\n\n<b>Nail art is charged extra.</b>\nMessage us for other services and details.",
+      hours:"<b>Opening hours</b>\nMonday – Saturday: 08:00 – 18:00\nSunday: Closed\n\nWe work by appointment; check our booking page for availability.",
+      book:"You can pick a day and time on our online booking page 👇",
+      book_btn:"Open booking page",
+      loc:"<b>Our address</b>\nRoyal Palace Hotel\nBüyük Fener Sokak, Gönyeli\nNorth Cyprus\n\nPhone: 0548 893 3333",
+      loc_btn:"Open in Maps",
+      wa_msg:"Hello, I would like some information about Royal Diamond."},
+    el:{sub:"Βοηθός",
+      hello:"Γεια σας! 💅 Καλώς ήρθατε στο Royal Diamond Nail Studio. Πώς μπορώ να σας βοηθήσω;",
+      m_price:"Τιμοκατάλογος", m_hours:"Ώρες λειτουργίας", m_book:"Κλείστε ραντεβού",
+      m_loc:"Τοποθεσία & οδηγίες", m_wa:"Μήνυμα στο WhatsApp", m_back:"← Αρχικό μενού",
+      price:"<b>Τρέχων τιμοκατάλογος</b>\nΤζελ — νέο σετ: 1.700 TL\nΣυμπλήρωμα (γέμισμα): 1.600 TL\nΠεντικιούρ (χωρίς βερνίκι): 1.400 TL\nΠεντικιούρ με ημιμόνιμο: 1.600 TL\nΜεταξωτές βλεφαρίδες — Classic: 1.800 TL\nΜεταξωτές βλεφαρίδες — Volume: 2.000 TL\n\n<b>Το nail art χρεώνεται επιπλέον.</b>\nΓράψτε μας για άλλες υπηρεσίες και λεπτομέρειες.",
+      hours:"<b>Ώρες λειτουργίας</b>\nΔευτέρα – Σάββατο: 08:00 – 18:00\nΚυριακή: Κλειστά\n\nΛειτουργούμε με ραντεβού· δείτε τη διαθεσιμότητα στη σελίδα κρατήσεων.",
+      book:"Μπορείτε να επιλέξετε ημέρα και ώρα στη σελίδα online κρατήσεων 👇",
+      book_btn:"Άνοιγμα σελίδας κρατήσεων",
+      loc:"<b>Η διεύθυνσή μας</b>\nRoyal Palace Hotel\nBüyük Fener Sokak, Gönyeli\nΒόρεια Κύπρος\n\nΤηλέφωνο: 0548 893 3333",
+      loc_btn:"Άνοιγμα στους Χάρτες",
+      wa_msg:"Γεια σας, θα ήθελα πληροφορίες για το Royal Diamond."},
+    ru:{sub:"Ассистент",
+      hello:"Здравствуйте! 💅 Добро пожаловать в Royal Diamond Nail Studio. Чем могу помочь?",
+      m_price:"Прайс-лист", m_hours:"Часы работы", m_book:"Записаться",
+      m_loc:"Адрес и маршрут", m_wa:"Написать в WhatsApp", m_back:"← Главное меню",
+      price:"<b>Актуальный прайс-лист</b>\nГель — новый набор: 1.700 TL\nКоррекция: 1.600 TL\nПедикюр (без покрытия): 1.400 TL\nПедикюр с гель-лаком: 1.600 TL\nШёлковые ресницы — Classic: 1.800 TL\nШёлковые ресницы — Volume: 2.000 TL\n\n<b>Nail art — за дополнительную плату.</b>\nНапишите нам о других услугах и деталях.",
+      hours:"<b>Часы работы</b>\nПонедельник – Суббота: 08:00 – 18:00\nВоскресенье: выходной\n\nРаботаем по записи; свободное время смотрите на странице записи.",
+      book:"Выбрать день и время можно на нашей странице онлайн-записи 👇",
+      book_btn:"Открыть страницу записи",
+      loc:"<b>Наш адрес</b>\nRoyal Palace Hotel\nBüyük Fener Sokak, Gönyeli\nСеверный Кипр\n\nТелефон: 0548 893 3333",
+      loc_btn:"Открыть на карте",
+      wa_msg:"Здравствуйте, хочу узнать информацию о Royal Diamond."}
+  };
+
+  var lang="tr";
+  try{ var saved=localStorage.getItem("rdw-lang"); if(saved && T[saved]) lang=saved; }catch(e){}
+
+  var bubble=document.getElementById("rdw-bubble"),
+      panel=document.getElementById("rdw-panel"),
+      body=document.getElementById("rdw-body"),
+      closeBtn=document.getElementById("rdw-close"),
+      subline=document.getElementById("rdw-subline");
+
+  function waLink(){ return "https://wa.me/"+WA_NUMBER+"?text="+encodeURIComponent(T[lang].wa_msg); }
+
+  function el(tag,cls,html){ var e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
+
+  function menu(){
+    var t=T[lang], m=el("div","rdw-menu");
+    m.appendChild(btn("💅",t.m_price,function(){show("price");}));
+    m.appendChild(btn("🕘",t.m_hours,function(){show("hours");}));
+    m.appendChild(btn("📅",t.m_book,function(){show("book");}));
+    m.appendChild(btn("📍",t.m_loc,function(){show("loc");}));
+    var w=link("🟢",t.m_wa,waLink()); w.className+=" rdw-wa"; m.appendChild(w);
+    return m;
+  }
+  function btn(ic,label,fn){ var b=el("button","rdw-btn"); b.appendChild(el("span","rdw-ic",ic)); b.appendChild(el("span",null,label)); b.onclick=fn; return b; }
+  function link(ic,label,href){ var a=el("a","rdw-btn"); a.href=href; a.target="_blank"; a.rel="noopener";
+    a.appendChild(el("span","rdw-ic",ic)); a.appendChild(el("span",null,label)); return a; }
+
+  function home(){
+    var t=T[lang]; subline.textContent=t.sub; body.innerHTML="";
+    body.appendChild(el("div","rdw-msg",t.hello));
+    body.appendChild(menu());
+  }
+
+  function show(key){
+    var t=T[lang]; body.innerHTML="";
+    body.appendChild(el("div","rdw-msg",t[key]));
+    var m=el("div","rdw-menu");
+    if(key==="book") m.appendChild(link("📅",t.book_btn,BOOKING_URL));
+    if(key==="loc")  m.appendChild(link("📍",t.loc_btn,MAPS_URL));
+    if(key==="price"){ var w=link("🟢",t.m_wa,waLink()); w.className+=" rdw-wa"; m.appendChild(w); }
+    m.appendChild(btn("🏠",t.m_back,home));
+    body.appendChild(m);
+    body.scrollTop=0;
+  }
+
+  document.querySelectorAll("#rdw-langs .rdw-lang").forEach(function(b){
+    if(b.dataset.l===lang){document.querySelectorAll(".rdw-lang").forEach(function(x){x.classList.remove("rdw-on");}); b.classList.add("rdw-on");}
+    b.onclick=function(){
+      lang=b.dataset.l;
+      try{localStorage.setItem("rdw-lang",lang);}catch(e){}
+      document.querySelectorAll(".rdw-lang").forEach(function(x){x.classList.remove("rdw-on");});
+      b.classList.add("rdw-on"); home();
+    };
+  });
+
+  bubble.onclick=function(){ panel.classList.toggle("rdw-open"); if(panel.classList.contains("rdw-open")) home(); };
+  closeBtn.onclick=function(){ panel.classList.remove("rdw-open"); };
+
+  home();
+})();
+</script>
+</div>
+<!-- ================= RD-ASSISTANT END ================= -->
+
+</body>
+</html>
