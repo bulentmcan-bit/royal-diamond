@@ -2676,7 +2676,7 @@ p, span, div, label, h1, h2, h3, h4 {
     costs.utils = 20000;     costs.utilsCur = 'TRY';
     costs.supplies = 1000;   costs.suppliesCur = 'USD';
     costs.other = 1460;      costs.otherCur = 'USD';
-    costs.staffCount = 5;
+    costs.staffCount = 6;
     if(!costs.extraStaff) costs.extraStaff = {};
     if(!costs.extraStaffCur) costs.extraStaffCur = {};
     costs.extraStaff[2] = 150;    costs.extraStaffCur[2] = 'GBP';   // Beverages
@@ -2684,6 +2684,7 @@ p, span, div, label, h1, h2, h3, h4 {
     costs.extraStaff[4] = 1300;   costs.extraStaffCur[4] = 'USD';   // Hannah
     costs.extraStaff[5] = 1300;   costs.extraStaffCur[5] = 'USD';   // Lissa
     costs.extraStaff[6] = 50000;  costs.extraStaffCur[6] = 'TRY';   // Nihal
+    costs.extraStaff[7] = 52000;  costs.extraStaffCur[7] = 'TRY';   // Zebo
     localStorage.setItem('rdns_monthly_costs_v3', JSON.stringify(costs));
     syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem('rdns_monthly_costs_v3')||'{}'));
 
