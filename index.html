@@ -9086,8 +9086,7 @@ function renderMonthly(){
 
     // ── Build grouped HTML sections ──────────────────────────────
     const nihalSalTRY = mToTRY(mCosts.extraStaff[6]||0, mCosts.extraStaffCur[6]||'TRY');
-    const zaraSalTRY  = mToTRY(mCosts.extraStaff[7]||0, mCosts.extraStaffCur[7]||'TRY');
-    const lillySalTRY = mToTRY(mCosts.extraStaff[8]||0, mCosts.extraStaffCur[8]||'TRY');
+    const zeboSalTRY  = mToTRY(mCosts.extraStaff[7]||0, mCosts.extraStaffCur[7]||'TRY');
 
     function mkCard(label, value, color, highlight, sub){
       return '<div class="m-card'+(highlight?' highlight':'')+'"><div class="m-card-label">'+label+'</div><div class="m-card-val" style="color:'+color+';line-height:1.3;">'+value+'</div>'+(sub?'<div style="font-size:0.62rem;color:var(--muted);margin-top:3px;">'+sub+'</div>':'')+'</div>';
@@ -9151,6 +9150,13 @@ function renderMonthly(){
     if(nihalSalTRY>0){
       html += mkGroup('🧡 Nihal',
         mkCard('Nihal — '+_('m_salary'), mFmtTRY(nihalSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[6]||0,mCosts.extraStaffCur[6]||'TRY')+'</div>', 'var(--coral)', true)
+      );
+    }
+
+    // ── ZEBO ──
+    if(zeboSalTRY>0){
+      html += mkGroup('💚 Zebo',
+        mkCard('Zebo — '+_('m_salary'), mFmtTRY(zeboSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[7]||0,mCosts.extraStaffCur[7]||'TRY')+'</div>', 'var(--coral)', true)
       );
     }
 
