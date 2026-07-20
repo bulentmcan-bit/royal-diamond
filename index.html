@@ -4005,7 +4005,7 @@ function renderSalaryPage(){
       var kdv   = Math.round(monthRevenue * 0.05 / 1.05);
       var vergi = Math.round(monthRevenue * 0.10);
       var breakeven = toTRY(2000,'USD') + toTRY(450,'GBP') + toTRY(1300,'USD') + toTRY(1300,'USD') +
-                      50000 + toTRY(150,'GBP') + 20000 +
+                      50000 + 52000 + toTRY(150,'GBP') + 20000 +
                       toTRY(750,'GBP') + 20000 + toTRY(1000,'USD') + toTRY(1460,'USD') + allTechComms;
       var above = Math.max(0, monthRevenue - breakeven);
       var net   = Math.max(0, above - kdv - vergi);
@@ -4019,6 +4019,7 @@ function renderSalaryPage(){
       {name:'Lissa',   role:'Nail Technician',    color:'#e8847a', salary:1300, cur:'USD', commLabel:'12% of own client income',   comm:commTotals['Lissa']||0},
       {name:'Zara',    role:'Nail Technician',    color:'#b8a0d8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Zara']||0},
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
+      {name:'Zebo',    role:'Nail Technician',    color:'#8fd1a8', salary:52000,cur:'TL',  commLabel:'Fixed salary only',comm:0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
@@ -4121,6 +4122,7 @@ function renderHelenBreakdown(c, total){
   const hannahSal  = (mCosts.extraStaff[4]||0) * usd;
   const lissaSal   = (mCosts.extraStaff[5]||0) * usd;
   const nihalSal   = (mCosts.extraStaff[6]||0);
+  const zeboSal    = (mCosts.extraStaff[7]||0);
   const rent       = mCosts.rent      * gbp;
   const utils      = mCosts.utils;
   const supplies   = mCosts.supplies  * usd;
@@ -4128,7 +4130,7 @@ function renderHelenBreakdown(c, total){
   const bev        = (mCosts.extraStaff[2]||0) * gbp;
   const socmed     = (mCosts.extraStaff[3]||0);
 
-  const totalExpenses = helenSal+helenAccom+hannahSal+lissaSal+nihalSal+rent+utils+supplies+ni+bev+socmed;
+  const totalExpenses = helenSal+helenAccom+hannahSal+lissaSal+nihalSal+zeboSal+rent+utils+supplies+ni+bev+socmed;
 
   // Tech comms from history
   const ym = mViewMonth||mCurrentMonth();
@@ -4162,6 +4164,7 @@ function renderHelenBreakdown(c, total){
   html += row('Hannah — Salary',      hannahSal,  '$1,300 × ₺'+usd.toFixed(2), 'var(--mint)');
   html += row('Lissa — Salary',       lissaSal,   '$1,300 × ₺'+usd.toFixed(2), 'var(--mint)');
   html += row('Nihal — Salary',       nihalSal,   '₺50,000',                    'var(--mint)');
+  html += row('Zebo — Salary',        zeboSal,    '₺52,000',                    'var(--mint)');
 
   // Fixed expenses
   html += divider('Business Expenses');
@@ -8605,10 +8608,10 @@ let mCosts = {
   supplies:1000,   suppliesCur:'USD',  // Business supplies $1,000
   other:1460,      otherCur:'USD',     // National Insurance $1,460 (4 people)
   vat:5, tax:15,
-  staffCount:5,
-  // extraStaff slots: 2=Beverages, 3=SocialMedia, 4=Hannah, 5=Lissa, 6=Nihal
-  extraStaff:   {2:150,   3:20000, 4:1300,  5:1300,  6:50000},
-  extraStaffCur:{2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY'},
+  staffCount:6,
+  // extraStaff slots: 2=Beverages, 3=SocialMedia, 4=Hannah, 5=Lissa, 6=Nihal, 7=Zebo
+  extraStaff:   {2:150,   3:20000, 4:1300,  5:1300,  6:50000, 7:52000},
+  extraStaffCur:{2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY', 7:'TRY'},
 };
 
 // Live rates: TRY per 1 unit of currency
@@ -8704,9 +8707,10 @@ function mGetCalc(rev, viewMonth){
   const hannahSal   = Math.round(1300 * usd);   // Hannah $1,300
   const lissaSal    = Math.round(1300 * usd);   // Lissa $1,300
   const nihalSal    = 50000;                     // Nihal ₺50,000
+  const zeboSal     = 52000;                     // Zebo ₺52,000
   const beverages   = Math.round(150  * gbp);   // İçecekler £150
   const socialMedia = 20000;                     // Sosyal Medya ₺20,000
-  const totalStaff  = starSalTRY + starFlatTRY + hannahSal + lissaSal + nihalSal + beverages + socialMedia;
+  const totalStaff  = starSalTRY + starFlatTRY + hannahSal + lissaSal + nihalSal + zeboSal + beverages + socialMedia;
 
   // Fixed costs
   const fixedTRY = Math.round(750  * gbp)   // Kira £750
@@ -8751,7 +8755,7 @@ function mGetCalc(rev, viewMonth){
     starBase: starSalTRY + starFlatTRY,
     starTotal: starSalTRY + comm,
     starSalTRY, starFlatTRY,
-    extraStaffTotal: hannahSal + lissaSal + nihalSal + beverages + socialMedia,
+    extraStaffTotal: hannahSal + lissaSal + nihalSal + zeboSal + beverages + socialMedia,
     totalStaff, fixed: fixedTRY,
     techCommTotal};
 }
@@ -8787,9 +8791,9 @@ function mInitCosts(){
   mCosts.utils = 20000;     mCosts.utilsCur = 'TRY';
   mCosts.supplies = 1000;   mCosts.suppliesCur = 'USD';
   mCosts.other = 1460;      mCosts.otherCur = 'USD';
-  mCosts.staffCount = 5;
-  mCosts.extraStaff    = {2:150,   3:20000, 4:1300,  5:1300,  6:50000};
-  mCosts.extraStaffCur = {2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY'};
+  mCosts.staffCount = 6;
+  mCosts.extraStaff    = {2:150,   3:20000, 4:1300,  5:1300,  6:50000, 7:52000};
+  mCosts.extraStaffCur = {2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY', 7:'TRY'};
   localStorage.setItem(MONTHLY_COSTS_KEY, JSON.stringify(mCosts));
   syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem(MONTHLY_COSTS_KEY)||'{}'));
   mPopulateCostInputs();
@@ -8837,7 +8841,7 @@ function mPopulateCostInputs(){
 function mRenderStaffCountPills(){
   const cont=document.getElementById('m-staff-count-pills');
   if(!cont) return;
-  cont.innerHTML=[0,1,2,3,4].map(n=>`
+  cont.innerHTML=[0,1,2,3,4,5,6].map(n=>`
     <button class="mpill${mCosts.staffCount===n?' active':''}" onclick="mSetStaffCount(${n})">${n} kişi</button>
   `).join('');
 }
@@ -8856,8 +8860,8 @@ function mRenderOtherStaffInputs(){
   for(let i=2;i<=mCosts.staffCount+1;i++){
     const cur = mCosts.extraStaffCur[i]||'USD';
     const g=document.createElement('div'); g.className='m-cost-group';
-    const staffNames={2:'Hannah',3:'Lissa',4:'Zara',6:'Saeideh',7:'Nihal'};
-    g.innerHTML=`<div class="m-cost-label">${staffNames[i]||('Staff '+i)} — Salary</div>
+    const staffNames={2:'İçecekler (Beverages)',3:'Sosyal Medya',4:'Hannah — Salary',5:'Lissa — Salary',6:'Nihal — Salary',7:'Zebo — Salary'};
+    g.innerHTML=`<div class="m-cost-label">${staffNames[i]||('Staff '+i+' — Salary')}</div>
       <div class="m-cost-inp-row">
         <input class="m-cost-inp" type="number" id="mc-tech${i}" value="${mCosts.extraStaff[i]||0}" placeholder="0"
           oninput="mUpdateTryHintExtra(${i})"/>
@@ -8969,6 +8973,7 @@ function mRenderOutgoings(){
     {label:'Hannah — Salary',         amount:mCosts.extraStaff[4]||0, cur:mCosts.extraStaffCur[4]||'USD', col:'var(--mint)'},
     {label:'Lissa — Salary',          amount:mCosts.extraStaff[5]||0, cur:mCosts.extraStaffCur[5]||'USD', col:'var(--mint)'},
     {label:'Nihal — Salary',          amount:mCosts.extraStaff[6]||0, cur:mCosts.extraStaffCur[6]||'TRY', col:'var(--mint)'},
+    {label:'Zebo — Salary',           amount:mCosts.extraStaff[7]||0, cur:mCosts.extraStaffCur[7]||'TRY', col:'var(--mint)'},
   ];
 
   const grand = lines.reduce((s,l)=>s+mToTRY(l.amount,l.cur),0);
@@ -9063,6 +9068,7 @@ function renderMonthly(){
       {l:'Hannah — Salary', v:mFmtTRY(hannahSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[4]||0,mCosts.extraStaffCur[4]||'USD')+'</div>', col:'var(--mint)'},
       {l:'Lissa — Salary',  v:mFmtTRY(lissaSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[5]||0,mCosts.extraStaffCur[5]||'USD')+'</div>', col:'var(--mint)'},
       {l:'Nihal — Salary',  v:mFmtTRY(mToTRY(mCosts.extraStaff[6]||0,mCosts.extraStaffCur[6]||'TRY'))+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[6]||0,mCosts.extraStaffCur[6]||'TRY')+'</div>', col:'var(--mint)'},
+      {l:'Zebo — Salary',   v:mFmtTRY(mToTRY(mCosts.extraStaff[7]||0,mCosts.extraStaffCur[7]||'TRY'))+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[7]||0,mCosts.extraStaffCur[7]||'TRY')+'</div>', col:'var(--mint)'},
     ];
 
     // Individual commission cards from actual monthly income
