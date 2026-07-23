@@ -61,7 +61,7 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
   <div class="legend"><span><span class="dot g"></span>Müsait / Available</span><span><span class="dot x"></span>Dolu / Full</span></div>
   <div class="lbl">💅 Hizmet / Service</div>
   <select id="svc">
-    <option>Klasik Manikür</option><option>Jel Başlangıç (Full Set)</option><option>Dolgu (Infill)</option><option>Nail Art</option><option>French / Ombre</option><option>Tırnak Çıkarma</option><option>Klasik Pedikür (Ojesiz)</option><option>Jel Pedikür</option><option>Lüks Spa Pedikür</option><option>Medikal Pedikür</option><option>Renk Değişimi (Pedikür)</option><option>Klasik Kirpik Uygulaması</option><option>Volume / Rus Kirpiği</option><option>Kirpik Dolgu</option><option>Kirpik Lifting &amp; Boyama</option><option>Kirpik Çıkarma</option><option>Altın Oran Kaş Alımı</option><option>Kaş Boyama</option><option>Kaş Laminasyon</option><option>Microblading</option><option>Bıyık / Çene Ağda</option><option>Tüm Yüz Ağda</option><option>Koltuk Altı Ağda</option><option>Yarım Bacak Ağda</option><option>Tam Bacak Ağda</option><option>Bikini Ağda</option><option>Özel Bölge Ağda</option><option>Tüm Vücut Ağda</option><option>Tam Kol Ağda</option><option>Güzellik Uygulaması</option><option>Diğer / Other</option>
+    <option value="Klasik Manikür">Klasik Manikür · 1 saat</option><option value="Jel Başlangıç (Full Set)">Jel Başlangıç (Full Set) · 1 sa 30 dk</option><option value="Dolgu (Infill)">Dolgu (Infill) · 1 sa 30 dk</option><option value="Nail Art">Nail Art · 1 saat</option><option value="French / Ombre">French / Ombre · 1 saat</option><option value="Tırnak Çıkarma">Tırnak Çıkarma · 30 dk</option><option value="Klasik Pedikür (Ojesiz)">Klasik Pedikür (Ojesiz) · 45 dk</option><option value="Jel Pedikür">Jel Pedikür · 1 saat</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür · 1 sa 30 dk</option><option value="Medikal Pedikür">Medikal Pedikür · 1 sa 30 dk</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür) · 30 dk</option><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması · 1 saat</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği · 1 sa 15 dk</option><option value="Kirpik Dolgu">Kirpik Dolgu · 1 saat</option><option value="Kirpik Lifting &amp; Boyama">Kirpik Lifting &amp; Boyama · 1 saat</option><option value="Kirpik Çıkarma">Kirpik Çıkarma · 30 dk</option><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı · 30 dk</option><option value="Kaş Boyama">Kaş Boyama · 1 saat</option><option value="Kaş Laminasyon">Kaş Laminasyon · 1 saat</option><option value="Microblading">Microblading · 2 saat</option><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda · 30 dk</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda · 45 dk</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda · 30 dk</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda · 1 saat</option><option value="Tam Bacak Ağda">Tam Bacak Ağda · 1 sa 30 dk</option><option value="Bikini Ağda">Bikini Ağda · 30 dk</option><option value="Özel Bölge Ağda">Özel Bölge Ağda · 1 saat</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda · 3 saat</option><option value="Tam Kol Ağda">Tam Kol Ağda · 1 saat</option><option value="Güzellik Uygulaması">Güzellik Uygulaması · 1 saat</option><option value="Diğer / Other">Diğer / Other · 1 saat</option>
   </select>
   <div class="lbl">🙋‍♀️ Adınız / Your name</div>
   <input id="nm" placeholder="Adınız Soyadınız">
@@ -81,7 +81,7 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
 <div class="foot">Royal Diamond Nail Studio · Gönyeli K.K.T.C. · ⭐ 4.7 Google · 📞 0548 893 3333</div>
 <script>
 const SALON='905488933333';
-const SLOTS=['08:00','09:00','09:30','10:00','11:00','12:00','12:30','13:00','14:00','15:00','15:30','16:00','17:00','18:00','18:30'];
+const SLOTS=(function(){var a=[];for(var m=8*60;m<=18*60+30;m+=30){a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2));}return a;})();
 const CAP=3;
 const FIREBASE_CONFIG={
   apiKey:"AIzaSyDHSIhzTf-zpOwh9ELe3DzpfHrxAffnz2k",
@@ -111,6 +111,16 @@ for(let i=0;i<14;i++){
 }
 
 // ── Time chips: green if free, gray if full/past ──
+const DUR={'klasik manikür':60,'jel başlangıç':90,'dolgu':90,'tırnak çıkarma':30,'nail art':60,
+'klasik pedikür':45,'jel pedikür':60,'lüks spa pedikür':90,'medikal pedikür':90,'renk değişimi':30,
+'klasik kirpik':60,'volume':75,'rus kirpiği':75,'kirpik dolgu':60,'kirpik çıkarma':30,
+'altın oran':30,'microblading':120,'bıyık':30,'çene ağda':30,'tüm yüz':45,'koltuk altı':30,
+'yarım bacak':60,'tam bacak':90,'bikini':30,'özel bölge':60,'tüm vücut':180,'tam kol':60,'güzellik':60};
+function svcDur(){
+  var s=String(document.getElementById('svc').value||'').toLowerCase(),best=null,ln=0;
+  for(var k in DUR){ if(s.indexOf(k)!==-1 && k.length>ln){ln=k.length;best=DUR[k];} }
+  return best||60;
+}
 function slotState(day,slot){
   const now=new Date();
   const [h,m]=slot.split(':').map(Number);
@@ -121,8 +131,20 @@ function slotState(day,slot){
   if(!dayAv)return 'unknown';
   const s=dayAv[slot];
   if(!s)return 'unknown';
+  const dur=svcDur(), start=h*60+m;
+  // covering half-hour slots for the full treatment length
+  const cover=[];for(var t2=start;t2<start+dur;t2+=30){cover.push(('0'+Math.floor(t2/60)).slice(-2)+':'+('0'+(t2%60)).slice(-2));}
+  if(s.t){ // per-technician data: is any technician free for the whole treatment?
+    const techs=Object.keys(s.t);
+    const ok=techs.some(function(tech){
+      return cover.every(function(cs){const cd=dayAv[cs];return !cd||!cd.t||!Number(cd.t[tech]);});
+    });
+    return ok?'free':'full';
+  }
+  // legacy data without per-tech info: start slot capacity only
   return (Number(s.b)||0)>=(Number(s.c)||CAP)?'full':'free';
 }
+document.getElementById('svc').addEventListener('change',renderTimes);
 function renderTimes(){
   tEl.innerHTML='';
   if(!selDay){SLOTS.forEach(t=>{const c=document.createElement('button');c.className='chip';c.style.opacity='0.75';c.type='button';c.textContent=t;c.disabled=true;tEl.appendChild(c);});return;}
