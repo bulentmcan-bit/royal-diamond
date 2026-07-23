@@ -2029,12 +2029,14 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="sec-hdr">
         <div class="sec-title" style="display:flex;align-items:center;gap:12px;">Client Directory <span id="client-count-pill" style="background:var(--wa,#25d366);color:#fff;font-size:0.95rem;font-weight:800;padding:4px 14px;border-radius:20px;letter-spacing:0.3px;">0</span></div>
         <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" style="border-color:#b8860b;color:#b8860b;" onclick="phoneCleanupToggle()">🧹 Numara Temizliği</button>
           <button class="btn btn-ghost btn-sm" style="border-color:#c94040;color:#c94040;" onclick="bdayCampToggle()">🎂 Doğum Günü Kampanyası</button>
           <button class="btn btn-ghost btn-sm" id="clients-page-import-btn" onclick="openModal(&#39;mImport&#39;)">📥 Excel/CSV İçe Aktar</button>
           <button class="btn btn-rose btn-sm" id="clients-page-add-btn" onclick="openModal(&#39;mClient&#39;)">+ Müşteri Ekle</button>
         </div>
       </div>
       <div id="bday-camp-panel" style="display:none;"></div>
+      <div id="phone-cleanup-panel" style="display:none;"></div>
       <div class="searchbar"><span>🔍</span><input id="client-search" placeholder="İsim veya telefon ile ara…" oninput="renderClients()"></div>
       <div class="card" style="padding:0;overflow:hidden;">
         <table class="tbl">
@@ -4636,6 +4638,59 @@ function toggleFamilyDiscount(id, event){
   toast(c.familyDiscount?'✓':'ℹ', 'Family Discount', c.name + (c.familyDiscount?' now has 30% family discount':' discount removed'), c.familyDiscount?'g':'');
 }
 // ── 🗑 MÜŞTERİ SİL — sadece patron, isim yazarak onay ──────────
+function _phoneIssue(p){
+  const raw=String(p||'').trim();
+  if(!raw||raw==='\u2014'||raw==='-') return 'yok';
+  const d=raw.replace(/\D/g,'');
+  if(d.length<10||d.length>15) return 'hatali';
+  if(/^(\d)\1+$/.test(d)) return 'hatali';
+  const n=d.replace(/^00/,'');
+  if(/^90\d{10}$/.test(n)||/^0?5\d{9}$/.test(d)) return null;
+  if(/^(44|49|33|34|39|31|32|30|41|43|46|48|1|7|20|61|86|94|98|971|972|973|974|994|995|996|998)\d{6,12}$/.test(n)) return null;
+  return 'kontrol';
+}
+function phoneCleanupToggle(){
+  const p=document.getElementById('phone-cleanup-panel');
+  if(!p)return;
+  if(p.style.display!=='none'){p.style.display='none';return;}
+  renderPhoneCleanup(); p.style.display='block';
+}
+function renderPhoneCleanup(){
+  const p=document.getElementById('phone-cleanup-panel'); if(!p)return;
+  const items=clients.map(c=>({c,issue:_phoneIssue(c.phone)})).filter(x=>x.issue);
+  if(!items.length){p.innerHTML='<div class="card" style="padding:16px;margin-bottom:14px;">\u2705 Harika! Numaras\u0131z veya hatal\u0131 numaral\u0131 m\u00fc\u015fteri yok.</div>';return;}
+  const lbl={yok:'\ud83d\udcf5 Numara yok',hatali:'\u274c Hatal\u0131 numara',kontrol:'\u26a0\ufe0f Kontrol edin'};
+  let h='<div class="card" style="padding:16px;margin-bottom:14px;border:1px solid #b8860b;">';
+  h+='<div style="font-weight:800;margin-bottom:4px;">\ud83e\uddf9 Numara Temizli\u011fi \u00b7 '+items.length+' m\u00fc\u015fteri bulundu</div>';
+  h+='<div style="color:var(--muted);font-size:0.85rem;margin-bottom:12px;">Silmek istediklerinizi i\u015faretli b\u0131rak\u0131n \u2014 m\u00fc\u015fteriyle birlikte randevular\u0131 da silinir. \u26a0\ufe0f Kontrol edin i\u015faretli olanlar yurt d\u0131\u015f\u0131 numaras\u0131 olabilir, o y\u00fczden bo\u015f b\u0131rak\u0131ld\u0131.</div>';
+  items.forEach(x=>{
+    const chk=x.issue!=='kontrol'?'checked':'';
+    h+='<label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid rgba(0,0,0,0.07);cursor:pointer;">'
+      +'<input type="checkbox" class="pc-chk" data-id="'+x.c.id+'" '+chk+'>'
+      +'<span style="flex:1;font-weight:600;">'+(x.c.name||'(isimsiz)')+'</span>'
+      +'<span style="color:var(--muted);min-width:130px;">'+(x.c.phone||'\u2014')+'</span>'
+      +'<span style="font-size:0.8rem;">'+lbl[x.issue]+'</span></label>';
+  });
+  h+='<div style="display:flex;gap:8px;margin-top:12px;">'
+    +'<button class="btn btn-sm" style="background:#c94040;color:#fff;" onclick="phoneCleanupDelete()">\ud83d\uddd1 Se\u00e7ilenleri Sil</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="phoneCleanupToggle()">Kapat</button></div></div>';
+  p.innerHTML=h;
+}
+function phoneCleanupDelete(){
+  const ids=[...document.querySelectorAll('#phone-cleanup-panel .pc-chk:checked')].map(el=>el.getAttribute('data-id'));
+  if(!ids.length){alert('Silmek i\u00e7in en az bir m\u00fc\u015fteri i\u015faretleyin.');return;}
+  if(!ownerPin())return;
+  const names=ids.map(id=>clients.find(c=>String(c.id)===String(id))?.name).filter(Boolean);
+  if(!confirm('\u26a0\ufe0f KALICI S\u0130LME \u2014 geri al\u0131namaz!\n\n'+ids.length+' m\u00fc\u015fteri ve t\u00fcm randevular\u0131 silinecek:\n\n\u2022 '+names.slice(0,15).join('\n\u2022 ')+(names.length>15?'\n\u2026':'')+'\n\nOnayl\u0131yor musunuz?'))return;
+  const idset=new Set(ids.map(String));
+  clients=clients.filter(c=>!idset.has(String(c.id)));
+  appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
+  saveAll();
+  renderClients();renderDash();renderAppts();updateApptBadge();
+  try{buildWAQueue();renderWA();}catch(e){}
+  renderPhoneCleanup();
+  toast('\ud83d\uddd1','Temizlik Tamam',ids.length+' m\u00fc\u015fteri silindi.','r');
+}
 function deleteClient(id){
   const c = clients.find(x=>x.id===id);
   if(!c) return;
