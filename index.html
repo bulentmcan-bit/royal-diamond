@@ -289,11 +289,8 @@
   }
 
   // ═══════ ONLINE BOOKING ENGINE (rande.vu style · per-technician grids) ═══════
-  const RD_OB_TECH_SLOTS={
-    'Helen':['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00'],
-    'Hannah':['08:00','09:30','11:00','12:30','14:00','15:30','17:00','18:30'],
-    'Lissa':['08:00','09:30','11:00','12:30','14:00','15:30','17:00','18:30']
-  };
+  const RD_OB_HALF=(()=>{const a=[];for(let m=8*60;m<=18*60+30;m+=30){a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));}return a;})();
+  const RD_OB_TECH_SLOTS={'Helen':RD_OB_HALF,'Hannah':RD_OB_HALF,'Lissa':RD_OB_HALF};
   const RD_OB_UNION=[...new Set(Object.values(RD_OB_TECH_SLOTS).flat())].sort();
   const RD_OB_DAYS=14;
   let _obAvailTimer=null, _obListenerOn=false;
@@ -302,6 +299,7 @@
   function _obCap(slot){return Object.values(RD_OB_TECH_SLOTS).filter(l=>l.includes(slot)).length;}
   function _obTechOf(staff){if(!staff)return null;const s=String(staff).toLowerCase().trim();return Object.keys(RD_OB_TECH_SLOTS).find(t=>t.toLowerCase()===s)||null;}
   function _obNearest(grid,mins,tol){let nearest=null,minDiff=Infinity;grid.forEach(s=>{const[h,m]=s.split(':').map(Number);const d=Math.abs(mins-(h*60+m));if(d<minDiff){minDiff=d;nearest=s;}});return minDiff<=tol?nearest:null;}
+  function _obDurOf(a){var d=parseInt(a.duration);if(d)return d;try{var s2=staffSvcDur(a.staff,a.service);if(s2)return s2;}catch(e){}return 60;}
   function _obDayMaps(dateKey){
     const total={},byTech={};RD_OB_UNION.forEach(s=>total[s]=0);
     Object.keys(RD_OB_TECH_SLOTS).forEach(t=>{byTech[t]={};});
@@ -309,14 +307,12 @@
       if(!a||a.status==='cancelled')return;
       const dt=new Date(a.datetime);if(isNaN(dt))return;
       if(_obDateKey(dt)!==dateKey)return;
-      const mins=dt.getHours()*60+dt.getMinutes();
-      const tech=_obTechOf(a.staff);
-      const grid=tech?RD_OB_TECH_SLOTS[tech]:RD_OB_UNION;
-      const tol=tech?(tech==='Helen'?30:45):30;
-      const slot=_obNearest(grid,mins,tol);
-      if(!slot)return;
-      total[slot]=(total[slot]||0)+1;
-      if(tech)byTech[tech][slot]=true;
+      const tech=_obTechOf(a.staff);if(!tech)return;
+      const st=dt.getHours()*60+dt.getMinutes(), en=st+_obDurOf(a);
+      RD_OB_UNION.forEach(slot=>{
+        const p=slot.split(':');const sm=(+p[0])*60+(+p[1]);
+        if(sm<en && sm+30>st && !byTech[tech][slot]){byTech[tech][slot]=true;total[slot]=(total[slot]||0)+1;}
+      });
     });
     return {total:total,byTech:byTech};
   }
@@ -333,7 +329,10 @@
           const key=_obDateKey(d);
           const maps=_obDayMaps(key);
           const slots={};
-          RD_OB_UNION.forEach(s=>{slots[s]={b:maps.total[s]||0,c:_obCap(s)};});
+          RD_OB_UNION.forEach(s=>{
+            const t={};Object.keys(RD_OB_TECH_SLOTS).forEach(k=>{t[k]=maps.byTech[k][s]?1:0;});
+            slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t};
+          });
           days[key]=slots;
         }
         _fbDb.ref('rdns_public_availability').set({_ts:Date.now(),days:days})
@@ -361,17 +360,22 @@
       const maps=_obDayMaps(req.date);
       const cap=_obCap(req.time);
       const booked=maps.total[req.time]||0;
-      if(!RD_OB_UNION.includes(req.time)||booked>=cap){
+      const _reqDur=(function(){try{var s3=rdSvcDur(req.service);if(s3)return s3;}catch(e){}return 60;})();
+      let staffPick='';
+      (function(){
+        const rp=req.time.split(':');const rs=(+rp[0])*60+(+rp[1]), re2=rs+_reqDur;
+        outer: for(const t of Object.keys(RD_OB_TECH_SLOTS)){
+          for(const slot of RD_OB_UNION){const sp=slot.split(':');const smm=(+sp[0])*60+(+sp[1]);
+            if(smm<re2 && smm+30>rs && maps.byTech[t][slot]) continue outer;}
+          staffPick=t; break;
+        }
+      })();
+      if(!RD_OB_UNION.includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
         try{toast('🌐','ONLINE TALEP — SAAT DOLU ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama saat dolu. Tel: '+(req.phone||'—')+' — alternatif için arayın.','r');}catch(e){}
         publishAvailability();
         return;
-      }
-      // Auto-assign a technician whose grid contains this time and who is free at it
-      let staffPick='';
-      for(const t of Object.keys(RD_OB_TECH_SLOTS)){
-        if(RD_OB_TECH_SLOTS[t].includes(req.time)&&!maps.byTech[t][req.time]){staffPick=t;break;}
       }
       const digits=p=>String(p||'').replace(/\D/g,'').slice(-9);
       const reqDigits=digits(req.phone);
@@ -381,7 +385,7 @@
         cl={id:Date.now()+Math.floor(Math.random()*999),name:(req.name||'Online Müşteri').trim(),phone:cleanPhone,notes:'🌐 Online randevu sayfasından kayıt',visits:0};
         clients.push(cl);
       }
-      const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:staffPick==='Helen'?60:90,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true};
+      const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true};
       appointments.push(a);
       _obMarkProcessed(id);
       try{saveAll();}catch(e){try{syncPush('rdns_main_v1',{clients,appointments,payments});}catch(_){}}
@@ -2820,14 +2824,14 @@ function getTier(clientId){
   if(visits10m>=10) return "Silver";
   return "Bronze";
 }
-function add3W(originalDt, staffMember){
+function add3W(originalDt, staffMember, svcMins){
   // Start exactly 3 weeks later at the same time
   const base = new Date(originalDt);
   base.setDate(base.getDate() + 21);
 
 
-  // Now find a free 1-hour slot for this staff member (allow up to 14 day search)
-  let _slot_mins_local = 60; // 1 hour per client
+  // Now find a free slot for this staff member (allow up to 14 day search)
+  let _slot_mins_local = parseInt(svcMins) || 60; // gerçek hizmet süresi
   for(let dayOffset = 0; dayOffset < 14; dayOffset++){
     const candidate = new Date(base);
     candidate.setDate(base.getDate() + dayOffset);
@@ -4982,7 +4986,7 @@ function saveAppt(){
 let rebookPending=null;
 function showRebookModal(a, c){
   rebookPending={appt:a,client:c};
-  const sug=add3W(a.datetime, a.staff);
+  const sug=add3W(a.datetime, a.staff, (typeof rdSvcDur==='function'?rdSvcDur(a.service):60));
   const sugDate=new Date(sug);
   const sugDay=sugDate.toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   const sugTime=sugDate.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
@@ -10092,6 +10096,110 @@ function rvSendAll(){
     setTimeout(function(){ rvSend(it.client.id); }, i*900);
   });
 }
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   🎁 KAMPANYA İNDİRİM SİSTEMİ
+   Story paylaşımı / Google yorumu / Referans indirimleri müşteri
+   kartına kaydedilir ve ödeme anında (Tedavi Tamamlandı ekranı)
+   otomatik hatırlatılır — unutmak imkânsız.
+   ══════════════════════════════════════════════════════════════ */
+(function(){
+
+  const TYPES = {
+    story:  {icon:'📱', label:'Story Paylaşımı',  pct:5,  when:'today'},
+    review: {icon:'⭐', label:'Google Yorumu',    pct:5,  when:'next'},
+    friend: {icon:'👭', label:'Arkadaş Getirdi',  pct:10, when:'today'}
+  };
+
+  function _cli(){ try{ return clients||[]; }catch(e){ return []; } }
+  function _save(){ try{ saveAll(); }catch(e){} }
+  function pend(c){ return (c && c.rdDiscounts||[]).filter(d=>d.status==='pending'); }
+
+  function grant(clientId, type){
+    const c=_cli().find(x=>String(x.id)===String(clientId)); if(!c) return;
+    const t=TYPES[type]; if(!t) return;
+    c.rdDiscounts = c.rdDiscounts||[];
+    // aynı tip bekleyen indirim varsa ikinciyi verme
+    if(c.rdDiscounts.some(d=>d.type===type && d.status==='pending')){
+      toast('🎁','Zaten kayıtlı', c.name+' için bekleyen '+t.label+' indirimi zaten var.',''); return;
+    }
+    c.rdDiscounts.push({id:Date.now(), type:type, pct:t.pct, label:t.label,
+      earned:new Date().toISOString(), status:'pending'});
+    _save();
+    toast('🎁','İndirim Kazandı!', c.name+' → %'+t.pct+' ('+t.label+') '+(t.when==='today'?'— bugün kullanılabilir':'— SONRAKİ ziyarette'),'g');
+    paint();
+  }
+
+  function apply(clientId, discId){
+    const c=_cli().find(x=>String(x.id)===String(clientId)); if(!c) return;
+    const d=(c.rdDiscounts||[]).find(x=>String(x.id)===String(discId)); if(!d||d.status!=='pending') return;
+    d.status='used'; d.used=new Date().toISOString();
+    const ap=(window.rebookPending||{}).appt;
+    if(ap){
+      ap.rdDiscount={pct:d.pct,label:d.label};
+      // fiyat zaten kasaya işlendiyse farkı düş
+      if(ap._takingsAmount>0){
+        const newAmt=Math.round(ap._takingsAmount*(100-d.pct)/100);
+        const delta=ap._takingsAmount-newAmt;
+        try{ if(delta>0 && typeof diAutoRemove==='function'){ diAutoRemove(ap.staff, delta, ap.datetime, ap.id); ap._takingsAmount=newAmt; if(ap.price)ap.price=newAmt; } }catch(e){}
+        toast('✅','İndirim Uygulandı', '%'+d.pct+' düşüldü — kasadan ₺'+delta+' azaltıldı.','g');
+      }else{
+        toast('✅','İndirim Uygulandı', 'Ücreti %'+d.pct+' İNDİRİMLİ tahsil edin ve fiyatı indirimli girin.','g');
+      }
+    }else{
+      toast('✅','İndirim Kullanıldı', d.label+' (%'+d.pct+') kullanıldı olarak işaretlendi.','g');
+    }
+    _save(); paint();
+  }
+
+  window.rdCampGrant=grant; window.rdCampApply=apply;
+
+  function panelHTML(c){
+    if(!c) return '';
+    const p=pend(c);
+    let h='<div id="rd-camp-panel" style="margin:12px 0;border-radius:10px;overflow:hidden;border:1px solid rgba(212,175,55,.45);">';
+    if(p.length){
+      h+='<div style="background:linear-gradient(90deg,rgba(212,175,55,.22),rgba(212,175,55,.08));padding:11px 13px;">'
+        +'<div style="font-weight:800;color:#E8C96A;font-size:0.9rem;margin-bottom:7px;">🎁 DİKKAT — BEKLEYEN İNDİRİM VAR!</div>'
+        +p.map(d=>'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;font-size:0.84rem;">'
+          +'<span>'+(TYPES[d.type]?TYPES[d.type].icon:'🎁')+' '+d.label+' — <strong style="color:#E8C96A;">%'+d.pct+' indirim</strong></span>'
+          +'<button onclick="rdCampApply(\''+c.id+'\',\''+d.id+'\')" style="background:#25d366;border:none;color:#08110a;font-weight:800;border-radius:7px;padding:5px 12px;font-size:0.78rem;cursor:pointer;">✓ Uygula</button>'
+          +'</div>').join('')
+        +'</div>';
+    }
+    h+='<div style="background:rgba(255,255,255,.03);padding:9px 13px;">'
+      +'<div style="font-size:0.72rem;color:var(--muted);margin-bottom:6px;">Bugün kazandı mı? Tek dokunuşla kaydet:</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+      +Object.keys(TYPES).map(k=>{const t=TYPES[k];
+        return '<button onclick="rdCampGrant(\''+c.id+'\',\''+k+'\')" style="background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.4);color:#E8C96A;border-radius:8px;padding:6px 10px;font-size:0.74rem;font-weight:700;cursor:pointer;">'
+          +t.icon+' '+t.label+' %'+t.pct+(t.when==='next'?' (sonraki)':'')+'</button>';}).join('')
+      +'</div></div></div>';
+    return h;
+  }
+
+  function paint(){
+    try{
+      const info=document.getElementById('rb-info'); if(!info) return;
+      const c=(window.rebookPending||{}).client; if(!c) return;
+      const old=document.getElementById('rd-camp-panel'); if(old) old.remove();
+      info.insertAdjacentHTML('afterend', panelHTML(c));
+    }catch(e){ console.warn('camp paint:',e); }
+  }
+
+  // Tedavi Tamamlandı ekranı açıldığında paneli bas
+  const _orig=window.showRebookModal;
+  if(typeof _orig==='function'){
+    window.showRebookModal=function(a,c){
+      const r=_orig.apply(this,arguments);
+      setTimeout(paint,80);
+      const p=pend(c);
+      if(p.length) setTimeout(()=>toast('🎁','İNDİRİM HATIRLATMA', c.name+' için bekleyen %'+p[0].pct+' indirim var — ödemeden düşmeyi unutmayın!','g'),300);
+      return r;
+    };
+  }
+})();
 </script>
 </body><script>
 // 🔒 First-run owner PIN setup — runs once per device
