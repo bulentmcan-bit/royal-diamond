@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Royal Diamond — Station Timers</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --bg:#141019; --panel:#1E1826; --line:#3A3046; --gold:#D9BC7A; --gold-deep:#A8873F;
+    --ivory:#F5EFE4; --dim:#9B8FA8; --rose:#D98CA0; --green:#8FBF9B;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; min-height:100vh; color:var(--ivory); font-family:'Jost',sans-serif;
+    background:radial-gradient(1100px 600px at 50% -10%, #241B2F 0%, var(--bg) 60%) var(--bg);
+  }
+  .wrap{max-width:560px; margin:0 auto; padding:0 20px 40px;}
+  .crest{color:var(--gold); letter-spacing:.45em; font-size:10px; text-transform:uppercase; text-align:center; padding-top:30px;}
+  h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; text-align:center; margin:6px 0 4px;}
+  .sub{color:var(--dim); font-size:13px; text-align:center; margin:0 0 20px;}
+  .hidden{display:none !important;}
+  button{font-family:'Jost',sans-serif; cursor:pointer;}
+
+  /* role picker */
+  .role-btn{display:block; width:100%; padding:18px 20px; margin-top:14px; background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; color:var(--ivory); font-size:18px; text-align:left;}
+  .role-btn.reception{border-color:var(--gold-deep);}
+  .role-btn .tag{display:block; font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);}
+  .role-btn.reception .tag{color:var(--gold);}
+
+  /* reception */
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 18px; margin-bottom:14px;}
+  .card.running{border-color:var(--gold-deep);}
+  .card.finished{border-color:var(--rose);}
+  .card-top{display:flex; justify-content:space-between; align-items:baseline;}
+  .card-top .name{font-family:'Cormorant Garamond',serif; font-size:24px;}
+  .status{font-size:14px; color:var(--dim);}
+  .status.running{color:var(--green);}
+  .status.finished{color:var(--rose);}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .chip{padding:10px 14px; border-radius:10px; border:1px solid var(--gold-deep); background:transparent;
+    color:var(--gold); font-size:15px; min-width:62px;}
+  .chip:active{background:var(--gold-deep); color:var(--bg);}
+  .custom{width:64px; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
+    color:var(--ivory); font-size:15px; font-family:'Jost',sans-serif;}
+  .send{padding:10px 16px; border-radius:10px; border:none; background:var(--gold); color:var(--bg); font-size:15px; font-weight:500;}
+  .cancel{margin-top:12px; padding:10px 18px; border-radius:10px; border:1px solid var(--line);
+    background:transparent; color:var(--dim); font-size:14px;}
+  .note{color:var(--dim); font-size:12px; text-align:center; margin-top:10px;}
+
+  /* station */
+  .station-wrap{text-align:center;}
+  .station-name{font-family:'Cormorant Garamond',serif; font-size:30px; margin:4px 0 18px;}
+  .ring-box{position:relative; width:280px; height:280px; margin:0 auto;}
+  .ring-box svg{transform:rotate(-90deg);}
+  .ring-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .time-big{font-family:'Cormorant Garamond',serif; font-size:62px; font-variant-numeric:tabular-nums;}
+  .time-label{color:var(--dim); font-size:13px; letter-spacing:.15em; text-transform:uppercase;}
+  .times-up{font-family:'Cormorant Garamond',serif; font-size:40px; color:var(--rose);}
+  .waiting{color:var(--dim); font-size:15px;}
+  .gotit{margin-top:22px; padding:14px 34px; border-radius:12px; border:none; background:var(--rose);
+    color:var(--bg); font-size:17px;}
+  .switch{background:none; border:none; color:var(--dim); font-size:12px; text-decoration:underline;
+    display:block; margin:24px auto 0;}
+  .setup-warn{background:var(--panel); border:1px solid var(--rose); border-radius:14px; padding:16px 18px;
+    margin-top:20px; font-size:14px; line-height:1.5; color:var(--ivory);}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     STEP 1: PASTE YOUR FIREBASE CONFIG BETWEEN THE LINES BELOW
+     (from Firebase Console -> Project settings -> Your apps)
+     ============================================================ -->
+<script>
+const firebaseConfig = {
+  databaseURL: "https://royal-diamond-1031c-default-rtdb.firebaseio.com"
+};
+</script>
+<!-- ============================================================ -->
+
+<div class="wrap">
+  <div class="crest">Royal ◆ Diamond</div>
+
+  <!-- setup warning (shows only if config missing) -->
+  <div id="setupWarn" class="setup-warn hidden">
+    <b>Setup needed:</b> the Firebase config has not been pasted into this file yet,
+    so the timers cannot sync. Open <code>timers.html</code> and paste your Firebase
+    config where marked, then upload it again.
+  </div>
+
+  <!-- ROLE PICKER -->
+  <div id="rolePage">
+    <h1>Station Timers</h1>
+    <p class="sub">Who is using this device?</p>
+    <button class="role-btn reception" onclick="pickRole('reception')">
+      <span class="tag">Controller</span>Reception
+    </button>
+    <button class="role-btn" onclick="pickRole(1)"><span class="tag">Technician</span>Helen</button>
+    <button class="role-btn" onclick="pickRole(2)"><span class="tag">Technician</span>Lissa</button>
+    <button class="role-btn" onclick="pickRole(3)"><span class="tag">Technician</span>Hanah</button>
+  </div>
+
+  <!-- RECEPTION -->
+  <div id="receptionPage" class="hidden">
+    <h1>Station Timers</h1>
+    <p class="sub">Reception · tap a time to send it to a station</p>
+    <div id="cards"></div>
+    <p class="note">Phones update instantly. Keep this page open.</p>
+    <button class="switch" onclick="reset()">Switch role</button>
+  </div>
+
+  <!-- STATION -->
+  <div id="stationPage" class="hidden station-wrap">
+    <div class="station-name" id="stationName">Station</div>
+    <div class="ring-box">
+      <svg width="280" height="280" viewBox="0 0 280 280">
+        <circle cx="140" cy="140" r="120" fill="none" stroke="var(--line)" stroke-width="6"/>
+        <circle id="ringProg" cx="140" cy="140" r="120" fill="none" stroke="var(--gold)" stroke-width="6"
+          stroke-linecap="round" stroke-dasharray="754" stroke-dashoffset="754"
+          style="transition:stroke-dashoffset 1s linear;"/>
+      </svg>
+      <div class="ring-center">
+        <div id="stRunning" class="hidden">
+          <div class="time-big" id="timeBig">0:00</div>
+          <div class="time-label" id="timeLabel"></div>
+        </div>
+        <div id="stAlarm" class="times-up hidden">Time's up</div>
+        <div id="stIdle" class="waiting">Waiting for reception…</div>
+      </div>
+    </div>
+    <button id="gotit" class="gotit hidden" onclick="dismiss()">Got it</button>
+    <p class="note">Keep this page open — the screen will stay awake.</p>
+    <button class="switch" onclick="reset()">Switch role</button>
+  </div>
+</div>
+
+<script>
+const STATIONS = [1,2,3];
+const NAMES = {1:'Helen', 2:'Lissa', 3:'Hanah'};
+let role = null, timers = {}, db = null, dismissedAt = 0, lastRing = 0, audioCtx = null;
+const $ = id => document.getElementById(id);
+
+// ---- Firebase ----
+const configured = firebaseConfig && firebaseConfig.databaseURL;
+if (configured) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  db.ref('timers').on('value', snap => { timers = snap.val() || {}; render(); });
+} else {
+  $('setupWarn').classList.remove('hidden');
+}
+
+// ---- roles ----
+function pickRole(r){
+  unlockAudio();
+  role = r;
+  $('rolePage').classList.add('hidden');
+  if (r === 'reception') { $('receptionPage').classList.remove('hidden'); }
+  else {
+    $('stationPage').classList.remove('hidden');
+    $('stationName').textContent = NAMES[r] || ('Station ' + r);
+    requestWake();
+  }
+  render();
+}
+function reset(){
+  role = null;
+  $('receptionPage').classList.add('hidden');
+  $('stationPage').classList.add('hidden');
+  $('rolePage').classList.remove('hidden');
+}
+
+// ---- reception actions ----
+function startTimer(st, mins){
+  if (!db || !mins || mins <= 0) return;
+  db.ref('timers/' + st).set({ endsAt: Date.now() + mins*60000, minutes: mins });
+}
+function startCustom(st){
+  const v = parseInt($('custom-' + st).value, 10);
+  if (v > 0) { startTimer(st, v); $('custom-' + st).value = ''; }
+}
+function cancelTimer(st){ if (db) db.ref('timers/' + st).remove(); }
+
+// ---- render loop ----
+function render(){
+  const now = Date.now();
+  if (role === 'reception') renderReception(now);
+  else if (role) renderStation(now);
+}
+setInterval(render, 500);
+
+function renderReception(now){
+  let html = '';
+  for (const st of STATIONS){
+    const tm = timers[st];
+    const rem = tm ? tm.endsAt - now : 0;
+    const running = tm && rem > 0, finished = tm && rem <= 0;
+    const cls = finished ? 'finished' : running ? 'running' : '';
+    const status = finished ? "Time's up" : running ? fmt(rem) + ' left' : 'Idle';
+    const sCls = finished ? 'finished' : running ? 'running' : '';
+    html += `<div class="card ${cls}"><div class="card-top">
+      <div class="name">${NAMES[st] || 'Station ' + st}</div><div class="status ${sCls}">${status}</div></div>`;
+    if (running || finished){
+      html += `<button class="cancel" onclick="cancelTimer(${st})">${finished ? 'Clear' : 'Cancel timer'}</button>`;
+    } else {
+      html += `<div class="chips">`;
+      for (const m of [5,10,15,20,30,45]) html += `<button class="chip" onclick="startTimer(${st},${m})">${m} min</button>`;
+      html += `<input class="custom" id="custom-${st}" inputmode="numeric" placeholder="min">
+        <button class="send" onclick="startCustom(${st})">Send</button></div>`;
+    }
+    html += `</div>`;
+  }
+  // preserve typed custom values
+  const saved = {};
+  for (const st of STATIONS){ const el = $('custom-' + st); if (el) saved[st] = el.value; }
+  $('cards').innerHTML = html;
+  for (const st of STATIONS){ const el = $('custom-' + st); if (el && saved[st]) el.value = saved[st]; }
+}
+
+function renderStation(now){
+  const tm = timers[role];
+  const rem = tm ? tm.endsAt - now : 0;
+  const running = tm && rem > 0;
+  const finished = tm && rem <= 0 && tm.endsAt !== dismissedAt;
+  $('stRunning').classList.toggle('hidden', !running);
+  $('stAlarm').classList.toggle('hidden', !finished);
+  $('gotit').classList.toggle('hidden', !finished);
+  $('stIdle').classList.toggle('hidden', !!(running || finished));
+  const C = 754;
+  if (running){
+    $('timeBig').textContent = fmt(rem);
+    $('timeLabel').textContent = tm.minutes + ' min timer';
+    const frac = Math.max(0, rem / (tm.minutes * 60000));
+    $('ringProg').style.strokeDashoffset = C * (1 - frac);
+    $('ringProg').setAttribute('stroke', 'var(--gold)');
+  } else if (finished){
+    $('ringProg').style.strokeDashoffset = 0;
+    $('ringProg').setAttribute('stroke', 'var(--rose)');
+    if (Date.now() - lastRing > 2500){ lastRing = Date.now(); ring(); }
+  } else {
+    $('ringProg').style.strokeDashoffset = C;
+  }
+}
+function dismiss(){ const tm = timers[role]; if (tm) dismissedAt = tm.endsAt; render(); }
+
+// ---- utils ----
+function fmt(ms){
+  const s = Math.max(0, Math.ceil(ms/1000));
+  return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+}
+function unlockAudio(){
+  if (!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function ring(){
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  [0, .35, .7].forEach((off, i) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(i === 2 ? 1318 : 988, now + off);
+    g.gain.setValueAtTime(0.0001, now + off);
+    g.gain.exponentialRampToValueAtTime(0.4, now + off + .03);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + off + .32);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(now + off); o.stop(now + off + .35);
+  });
+}
+async function requestWake(){
+  try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch(e){}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && role && role !== 'reception') requestWake();
+});
+</script>
+</body>
+</html>
