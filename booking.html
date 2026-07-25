@@ -83,6 +83,9 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
 const SALON='905488933333';
 const SLOTS=(function(){var a=[];for(var m=8*60;m<=18*60+30;m+=30){a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2));}return a;})();
 const CAP=3;
+// ── URL parametreleri: ?src=instagram  ?svc=Jel Başlangıç ──
+const QP=new URLSearchParams(location.search);
+const SRC=((QP.get('src')||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,24))||'web';
 const FIREBASE_CONFIG={
   apiKey:"AIzaSyDHSIhzTf-zpOwh9ELe3DzpfHrxAffnz2k",
   authDomain:"royal-diamond-1031c.firebaseapp.com",
@@ -160,6 +163,17 @@ function renderTimes(){
     tEl.appendChild(c);
   });
 }
+// ── ?svc= ile gelen hizmeti otomatik seç ──
+(function(){
+  const want=String(QP.get('svc')||'').trim().toLowerCase();
+  if(!want)return;
+  const sel=document.getElementById('svc');
+  if(!sel)return;
+  let hit=null;
+  for(const o of sel.options){ if(o.value.toLowerCase()===want){hit=o;break;} }
+  if(!hit){ for(const o of sel.options){ if(o.value.toLowerCase().indexOf(want)!==-1){hit=o;break;} } }
+  if(hit)sel.value=hit.value;
+})();
 renderTimes();
 
 // ── Firebase: anonymous sign-in + live availability ──
@@ -200,7 +214,7 @@ function send(){
   const tarih=gunler[selDay.getDay()]+', '+selDay.getDate()+' '+aylar[selDay.getMonth()]+' '+selDay.getFullYear();
   const btn=document.getElementById('go');btn.disabled=true;btn.textContent='Kaydediliyor…';
   const req={name:nm,phone:ph,date:dKey(selDay),time:selTime,
-    service:document.getElementById('svc').value,ts:Date.now()};
+    service:document.getElementById('svc').value,ts:Date.now(),src:SRC};
   const fallback=()=>{window.location.href='https://wa.me/'+SALON+'?text='+encodeURIComponent(waMsg(tarih,nm,ph));};
   if(!ready||!db){fallback();return;}
   db.ref('rdns_booking_requests').push(req).then(()=>{
