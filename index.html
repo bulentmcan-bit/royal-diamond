@@ -11412,4 +11412,130 @@ window.addEventListener('load',function(){
 })();
 </script>
 
+<!-- ═══════ ONLINE TALEP KUYRUĞU · pending online booking requests ═══════ -->
+<style>
+#obq-btn{position:fixed;left:18px;bottom:18px;z-index:99990;display:none;align-items:center;gap:8px;
+  padding:10px 16px;border-radius:30px;background:#14120d;border:1.5px solid #d4a96a;color:#d4a96a;
+  font-family:Nunito,'Segoe UI',sans-serif;font-weight:800;font-size:.9rem;cursor:pointer;
+  box-shadow:0 6px 18px rgba(0,0,0,.28)}
+#obq-btn.on{display:flex}
+#obq-btn .n{background:#e04a4a;color:#fff;border-radius:20px;padding:1px 8px;font-size:.8rem}
+#obq-panel{position:fixed;left:18px;bottom:70px;z-index:99991;width:360px;max-width:calc(100vw - 36px);
+  max-height:min(70vh,560px);overflow-y:auto;display:none;background:#fff;border:1.5px solid #d4a96a;
+  border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.28);font-family:Nunito,'Segoe UI',sans-serif}
+#obq-panel.on{display:block}
+#obq-head{position:sticky;top:0;background:#14120d;color:#d4a96a;padding:11px 14px;font-weight:800;
+  display:flex;justify-content:space-between;align-items:center;font-size:.92rem}
+#obq-head .x{cursor:pointer;font-size:1.1rem}
+.obq-item{border-bottom:1px solid #eee;padding:11px 13px}
+.obq-item b{font-size:.95rem;color:#222}
+.obq-meta{font-size:.78rem;color:#777;margin:3px 0 7px;line-height:1.5}
+.obq-tag{display:inline-block;background:#f3ead9;color:#8a6d1f;border-radius:10px;padding:1px 7px;
+  font-size:.7rem;font-weight:800;margin-left:5px;text-transform:uppercase}
+.obq-btns{display:flex;gap:6px;flex-wrap:wrap}
+.obq-btns button{border:none;border-radius:8px;padding:6px 11px;font-size:.8rem;font-weight:800;
+  cursor:pointer;font-family:inherit}
+.obq-ok{background:#d4a96a;color:#14120d}
+.obq-wa{background:#25D366;color:#fff}
+.obq-no{background:#eee;color:#666}
+.obq-empty{padding:18px 14px;color:#888;font-size:.86rem;text-align:center}
+</style>
+<div id="obq-btn" onclick="obqToggle()">🌐 Online Talep <span class="n" id="obq-n">0</span></div>
+<div id="obq-panel">
+  <div id="obq-head">🌐 Bekleyen Online Talepler <span class="x" onclick="obqToggle()">✕</span></div>
+  <div id="obq-list"></div>
+</div>
+<script>
+(function(){
+  var _raw={}, _open=false, _started=false, _startTimer=null;
+  function esc(s){return String(s==null?'':s).replace(/[<>&"']/g,'');}
+  function fmtAge(ts){
+    if(!ts)return'';
+    var m=Math.floor((Date.now()-ts)/60000);
+    if(m<1)return'şimdi';
+    if(m<60)return m+' dk önce';
+    var h=Math.floor(m/60);
+    if(h<24)return h+' sa önce';
+    return Math.floor(h/24)+' gün önce';
+  }
+  function pending(){
+    return Object.keys(_raw).filter(function(k){
+      var r=_raw[k];return r&&!r.handled&&r.date&&r.time;
+    }).sort(function(a,b){return (_raw[a].ts||0)-(_raw[b].ts||0);});
+  }
+  window.obqToggle=function(){
+    _open=!_open;
+    var p=document.getElementById('obq-panel');
+    if(p)p.classList.toggle('on',_open);
+    if(_open)render();
+  };
+  function render(){
+    var ids=pending(), list=document.getElementById('obq-list');
+    var n=document.getElementById('obq-n'), btn=document.getElementById('obq-btn');
+    if(!list||!n||!btn)return;
+    n.textContent=ids.length;
+    btn.classList.toggle('on',ids.length>0);
+    if(!ids.length){
+      if(_open)list.innerHTML='<div class="obq-empty">Bekleyen talep yok ✅</div>';
+      return;
+    }
+    list.innerHTML=ids.map(function(id){
+      var r=_raw[id];
+      return '<div class="obq-item"><b>'+esc(r.name)+'</b>'+
+        (r.src&&r.src!=='web'?'<span class="obq-tag">'+esc(r.src)+'</span>':'')+
+        '<div class="obq-meta">📅 '+esc(r.date)+' · 🕐 '+esc(r.time)+
+        '<br>💅 '+esc(r.service)+
+        '<br>📞 '+esc(r.phone)+' · '+fmtAge(r.ts)+'</div>'+
+        '<div class="obq-btns">'+
+        '<button class="obq-ok" onclick="obqBook(\''+esc(id)+'\')">✅ Kaydet</button>'+
+        '<button class="obq-wa" onclick="obqWa(\''+esc(id)+'\')">💬 WhatsApp</button>'+
+        '<button class="obq-no" onclick="obqDismiss(\''+esc(id)+'\')">✖ Kapat</button>'+
+        '</div></div>';
+    }).join('');
+  }
+  window.obqBook=function(id){
+    var r=_raw[id];
+    if(!r)return;
+    try{
+      _obProcessRequest(id,r);
+    }catch(e){
+      console.warn('[OBQ] book error:',e);
+      try{toast('⚠️','KAYIT HATASI','Talep kaydedilemedi — randevuyu manuel ekleyin.','r');}catch(_){}
+    }
+  };
+  window.obqWa=function(id){
+    var r=_raw[id];
+    if(!r)return;
+    var p=(typeof normalizeWaPhone==='function')?normalizeWaPhone(String(r.phone||'')):String(r.phone||'');
+    p=String(p).replace(/\D/g,'');
+    if(p.length===10&&p.charAt(0)==='0')p='90'+p.slice(1);
+    else if(p.length===9)p='90'+p;
+    var msg='💎 Royal Diamond — Merhaba '+(r.name||'')+', '+r.date+' '+r.time+
+      ' için online randevu talebinizi aldık. Onaylamak için size yazıyorum. 😊';
+    window.open('https://wa.me/'+p+'?text='+encodeURIComponent(msg),'_blank');
+  };
+  window.obqDismiss=function(id){
+    if(!confirm('Bu talebi kapatmak istediğinize emin misiniz?'))return;
+    try{
+      _fbDb.ref('rdns_booking_requests/'+id).update({handled:'dismissed',handledAt:Date.now()})
+        .catch(function(e){console.warn('[OBQ] dismiss denied:',e);});
+    }catch(e){console.warn('[OBQ] dismiss error:',e);}
+  };
+  function start(){
+    try{
+      if(_started)return;
+      if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled)return;
+      _started=true;
+      clearInterval(_startTimer);
+      _fbDb.ref('rdns_booking_requests').limitToLast(80).on('value',function(s){
+        _raw=s.val()||{};
+        render();
+      },function(e){console.warn('[OBQ] read denied:',e);});
+    }catch(e){console.warn('[OBQ] start error:',e);}
+  }
+  _startTimer=setInterval(start,3000);
+  setInterval(function(){if(_open)render();},60000);
+})();
+</script>
+
 </html>
