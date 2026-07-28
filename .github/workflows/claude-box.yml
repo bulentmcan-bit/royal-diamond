@@ -1,4 +1,3 @@
-yaml
 name: Change Box
 run-name: "Box · ${{ inputs.ticket }} · ${{ inputs.request }}"
 
