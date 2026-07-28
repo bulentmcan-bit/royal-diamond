@@ -263,6 +263,34 @@
           if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
         }catch(e){console.warn('deductions sync error:',e);}
       });
+      _fbDb.ref('rdns_advances_v1').on('value',snap=>{
+        if(_isSyncing['rdns_advances_v1'])return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          if(!Array.isArray(rObj.items)) rObj.items=[];
+          // Merge with local by item id — newest edit wins, so devices never erase each other
+          try{
+            const local=JSON.parse(localStorage.getItem('rdns_advances_v1')||'{"items":[]}');
+            const byId={};
+            (rObj.items||[]).forEach(it=>{ if(it&&it.id!=null) byId[it.id]=it; });
+            (local.items||[]).forEach(it=>{
+              if(!it||it.id==null) return;
+              const r=byId[it.id];
+              if(!r || (it.ts||0)>(r.ts||0)) byId[it.id]=it;
+            });
+            rObj.items=Object.values(byId);
+          }catch(e){}
+          _isSyncing['rdns_advances_v1']=true;
+          localStorage.setItem('rdns_advances_v1',JSON.stringify(rObj));
+          setTimeout(()=>{_isSyncing['rdns_advances_v1']=false;},800);
+          if(typeof advLoad==='function'){ try{ advState=advLoad(); }catch(e){} }
+          const pg=document.querySelector('.page.active');
+          if(pg&&pg.id==='page-advance')try{renderAdvancePage();}catch(e){}
+          if(pg&&pg.id==='page-salary')try{renderSalaryPage();}catch(e){}
+          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+        }catch(e){console.warn('advances sync error:',e);}
+      });
       _fbDb.ref('rdns_r24_sent_log_v1').on('value',snap=>{
         if(_isSyncing['rdns_r24_sent_log_v1'])return;
         const val=snap.val();if(!val)return;
@@ -1612,6 +1640,7 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;cashcheck&#39;,this)" onclick="goto(&#39;cashcheck&#39;,this)"><span class="nav-icon">🧾</span><span>Kasa Kontrol</span><span id="dp-nav-badge" style="display:none;margin-left:auto;background:#e87a7a;color:#fff;font-size:0.68rem;font-weight:800;min-width:18px;height:18px;line-height:18px;text-align:center;border-radius:9px;padding:0 5px;">0</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;salary&#39;,this)" onclick="goto(&#39;salary&#39;,this)"><span class="nav-icon">💼</span><span>Salary</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;deductions&#39;,this)" onclick="goto(&#39;deductions&#39;,this)"><span class="nav-icon">✂️</span><span>Kesintiler</span></div>
+    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;advance&#39;,this)" onclick="goto(&#39;advance&#39;,this)"><span class="nav-icon">💵</span><span>Avans</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;gapreport&#39;,this)" onclick="goto(&#39;gapreport&#39;,this)"><span class="nav-icon">📋</span><span>Gap Report</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;reception&#39;,this)" onclick="goto(&#39;reception&#39;,this)"><span class="nav-icon">📈</span><span>Resepsiyon Komisyon</span></div>
 
@@ -1819,6 +1848,17 @@ p, span, div, label, h1, h2, h3, h4 {
       <div id="ded-form-box" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;"></div>
       <div id="ded-summary" style="margin-bottom:18px;"></div>
       <div id="ded-list"></div>
+    </div>
+
+    <!-- ════ MONEY ADVANCE (AVANS) PAGE ════ -->
+    <div class="page" id="page-advance">
+      <div style="margin-bottom:20px;">
+        <div style="font-weight:700;font-size:1.1rem;color:var(--gold);margin-bottom:4px;">💵 Avans — Maaştan Kesilecek</div>
+        <div style="font-size:0.78rem;color:#666;">Personele peşin verilen para. Girilen tutar o ayki maaştan otomatik düşülür.</div>
+      </div>
+      <div id="adv-form-box" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;"></div>
+      <div id="adv-summary" style="margin-bottom:18px;"></div>
+      <div id="adv-list"></div>
     </div>
 
     <div class="page" id="page-salary">
@@ -3095,6 +3135,7 @@ const PAGE_INFO={
   cashcheck:["Kasa Kontrol","Önceki günün müşteri listesi — personel fişleriyle karşılaştırın"],
   monthly:["Aylık P&L","Aylık ciro analizi, karlılık & döviz kurları"],
   reception:["Resepsiyon Komisyon","Günlük hedef 30 — ayda 900 müşteri & net %2 komisyon"],
+  advance:["Avans","Personele verilen avanslar — maaştan kesilir"],
 };
 
 // ── Owner Security ───────────────────────────────────────────
@@ -3350,6 +3391,7 @@ function _gotoActual(page,el){
   if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
   if(page==="deductions"){ renderDeductionsPage(); }
+  if(page==="advance"){ renderAdvancePage(); }
   if(page==="gapreport"){ renderGapReport(); }
   if(page==="reception"){ renderReception(); }
   if(window.innerWidth <= 768) closeSidebar();
@@ -4225,6 +4267,114 @@ function dedMonthShift(dir){
   renderDeductionsPage();
 }
 
+// ══════════════════════════════════════════════
+// 💵 AVANS — money advances deducted from salary
+// A staff member is given money in advance; the entered
+// amount (₺) is deducted from that month's salary.
+// Mirrors the Kesintiler (deductions) store & page.
+// ══════════════════════════════════════════════
+const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Zebo','Nihal'];
+function advLoad(){
+  try{
+    const d = JSON.parse(localStorage.getItem('rdns_advances_v1')||'{"items":[]}');
+    if(!Array.isArray(d.items)) d.items = [];
+    return d;
+  }catch(e){ return {items:[]}; }
+}
+let advState = advLoad();
+function advSave(){
+  localStorage.setItem('rdns_advances_v1', JSON.stringify(advState));
+  if(typeof syncPush==='function') syncPush('rdns_advances_v1', advState);
+}
+function advTotalsForMonth(monthKey){
+  const t = {};
+  (advState.items||[]).forEach(it=>{
+    if(it.removed) return;
+    if((it.date||'').slice(0,7)!==monthKey) return;
+    t[it.staff] = (t[it.staff]||0) + (it.amount||0);
+  });
+  return t;
+}
+let advViewMonth = null;
+function advAdd(){
+  const date = document.getElementById('adv-date').value;
+  const staff = document.getElementById('adv-staff').value;
+  const amount = parseFloat(document.getElementById('adv-amount').value);
+  const note = document.getElementById('adv-note').value.trim();
+  if(!date || !staff || !amount || amount<=0){ alert('Tarih, personel ve tutar gerekli.'); return; }
+  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, note, ts:Date.now()});
+  advSave();
+  document.getElementById('adv-amount').value='';
+  document.getElementById('adv-note').value='';
+  renderAdvancePage();
+  if(typeof toast==='function') toast('💵','Avans Kaydedildi', staff+' — maaştan kesilecek: ₺'+amount.toLocaleString('tr-TR'),'g');
+}
+function advDelete(id){
+  if(!ownerPin()) return;
+  if(!confirm('Bu avans kaydını silmek istiyor musunuz?')) return;
+  const it = (advState.items||[]).find(x=>String(x.id)===String(id));
+  if(it){ it.removed = true; it.ts = Date.now(); }
+  advSave();
+  renderAdvancePage();
+}
+function advMonthShift(dir){
+  const p=advViewMonth.split('-');
+  const d=new Date(parseInt(p[0]), parseInt(p[1])-1+dir, 1);
+  advViewMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  renderAdvancePage();
+}
+function renderAdvancePage(){
+  const fb=document.getElementById('adv-form-box'), sm=document.getElementById('adv-summary'), ls=document.getElementById('adv-list');
+  if(!fb) return;
+  const now=new Date();
+  const curMonth=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  if(!advViewMonth) advViewMonth=curMonth;
+  const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  const inp='padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;';
+  // Form
+  let opts=''; ADV_STAFF.forEach(t=>{opts+='<option value="'+t+'">'+t+'</option>';});
+  fb.innerHTML =
+    '<div style="font-weight:700;color:#333;margin-bottom:12px;">➕ Yeni Avans Kaydı</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'+
+    '<input type="date" id="adv-date" value="'+today+'" style="'+inp+'">'+
+    '<select id="adv-staff" style="'+inp+'">'+opts+'</select>'+
+    '<input type="number" id="adv-amount" placeholder="Avans tutarı ₺" style="'+inp+'">'+
+    '<input type="text" id="adv-note" placeholder="Not (isteğe bağlı)" style="'+inp+'grid-column:span 2;">'+
+    '</div>'+
+    '<button onclick="advAdd()" style="margin-top:12px;padding:10px 22px;background:var(--rose);border:none;border-radius:9px;color:#fff;font-weight:700;cursor:pointer;font-family:\'Nunito\',sans-serif;">Kaydet</button>';
+  // Month nav + summary
+  const items=(advState.items||[]).filter(it=>!it.removed && (it.date||'').slice(0,7)===advViewMonth).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const totals=advTotalsForMonth(advViewMonth);
+  const grand=Object.values(totals).reduce((s,v)=>s+v,0);
+  let cards='';
+  ADV_STAFF.forEach(t=>{
+    if(!(totals[t]>0)) return;
+    cards+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+
+      '<div style="font-size:0.8rem;font-weight:700;color:#555;">'+t+'</div>'+
+      '<div style="font-size:1.15rem;font-weight:800;color:#c94040;">−₺'+(totals[t]||0).toLocaleString('tr-TR')+'</div>'+
+      '<div style="font-size:0.65rem;color:#888;">bu ay maaştan kesilecek</div></div>';
+  });
+  sm.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'+
+    '<button onclick="advMonthShift(-1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">‹</button>'+
+    '<b style="color:#333;">'+advViewMonth+'</b>'+
+    '<button onclick="advMonthShift(1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">›</button>'+
+    '<span style="margin-left:auto;font-weight:800;color:#c94040;">Toplam: −₺'+grand.toLocaleString('tr-TR')+'</span></div>'+
+    (cards?'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">'+cards+'</div>':'');
+  // List
+  if(items.length===0){ ls.innerHTML='<div style="color:#888;font-size:0.85rem;padding:14px;">Bu ay avans kaydı yok.</div>'; return; }
+  let rows='';
+  items.forEach(it=>{
+    rows+='<div style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px;flex-wrap:wrap;">'+
+      '<span style="font-size:0.78rem;color:#666;min-width:84px;">'+it.date+'</span>'+
+      '<b style="color:#333;min-width:70px;">'+it.staff+'</b>'+
+      '<span style="font-size:0.78rem;color:#555;flex:1;">'+(it.note?it.note:'Avans')+'</span>'+
+      '<b style="color:#c94040;">−₺'+(it.amount||0).toLocaleString('tr-TR')+'</b>'+
+      '<button onclick="advDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button></div>';
+  });
+  ls.innerHTML='<div style="font-weight:700;color:#333;margin-bottom:10px;">📋 Kayıtlar</div>'+rows;
+}
+
 function renderSalaryPage(){
   const cardsEl  = document.getElementById('sal-cards');
   const totalsEl = document.getElementById('sal-totals');
@@ -4307,13 +4457,17 @@ function renderSalaryPage(){
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
-    var totalSalaries=0, totalComms=0, grandTotal=0;
+    // Money advances given this month — deducted from each person's salary
+    var advTotals = (typeof advTotalsForMonth==='function') ? advTotalsForMonth(monthKey) : {};
+
+    var totalSalaries=0, totalComms=0, totalAdvances=0, grandTotal=0;
     var cardsHtml='';
 
     staff.forEach(function(s){
       var salTRY=Math.round(toTRY(s.salary,s.cur));
-      var total=salTRY+s.comm;
-      totalSalaries+=salTRY; totalComms+=s.comm; grandTotal+=total;
+      var adv=Math.round(advTotals[s.name]||0);
+      var total=salTRY+s.comm-adv;
+      totalSalaries+=salTRY; totalComms+=s.comm; totalAdvances+=adv; grandTotal+=total;
 
       cardsHtml+='<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+s.color+';border-radius:12px;padding:18px;">';
       // Header
@@ -4338,6 +4492,11 @@ function renderSalaryPage(){
       if(s.comm===0 && s.commLabel!=='Fixed salary only'){
         cardsHtml+='<div style="font-size:0.72rem;color:#888;margin-top:6px;font-style:italic;font-weight:500;">'+s.commLabel+' — no earnings this month</div>';
       }
+      if(adv>0){
+        cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
+        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">💵 Advance (deducted)</span>';
+        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#c94040;">−'+fmt(adv)+'</span></div>';
+      }
       cardsHtml+='</div>';
     });
 
@@ -4351,6 +4510,7 @@ function renderSalaryPage(){
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;">'+
       _salCard('Total Salaries',    totalSalaries, 'var(--blue)')+
       _salCard('Total Commissions', totalComms,    'var(--purple)')+
+      (totalAdvances>0 ? _salCard('Total Advances', -totalAdvances, '#c94040', 'Deducted from salaries') : '')+
       _salCard('Accommodation',     totalAccom,    'var(--mint)',  'Business expense &bull; &pound;450/mo')+
       _salCard('National Insurance',totalNI,       'var(--orange)','Business expense &bull; $1,460/mo (4 staff)')+
       _salCard('GRAND TOTAL PAYROLL',grandTotal,   'var(--gold)',  '', true)+
