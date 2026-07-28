@@ -3364,7 +3364,7 @@ function fpUpdateDots(){
 }
 
 function goto(page,el){
-  if((page==='monthly'||page==='salary') && !_finUnlocked){
+  if((page==='monthly'||page==='salary'||page==='advance') && !_finUnlocked){
     _showFinPinModal(page,el); return;
   }
   _gotoActual(page,el);
