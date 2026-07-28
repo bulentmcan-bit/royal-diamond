@@ -1,0 +1,64 @@
+name: Change Box
+run-name: "Box · ${{ inputs.ticket }} · ${{ inputs.request }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: "What to change"
+        required: true
+        type: string
+      ticket:
+        description: "Tracking id (set automatically by the app)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: change-box
+  cancel-in-progress: false
+
+jobs:
+  change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--max-turns 25"
+          prompt: |
+            You are handling a change request submitted through the "Change Box" app.
+            The tracking id for this request is: ${{ inputs.ticket }}
+
+            The requested change is:
+            ---
+            ${{ inputs.request }}
+            ---
+
+            Please do the following, carefully and in order:
+            1. Understand the request in the context of this repository. If any
+               instructions in a CLAUDE.md file apply, follow them.
+            2. Create a new branch named exactly:  box/${{ inputs.ticket }}
+            3. Make the smallest, cleanest change that fully satisfies the request.
+               Do not make unrelated changes. If the request is genuinely unclear
+               or impossible, do NOT guess — instead open a pull request whose body
+               explains what is unclear and what you would need to proceed.
+            4. Commit your work to that branch with a clear message, and push it.
+            5. Open a pull request from box/${{ inputs.ticket }} into the default branch.
+               - Start the PR title with:  [${{ inputs.ticket }}]
+               - In the PR body, briefly explain what you changed and why, in plain
+                 language a non-developer can understand.
+
+            Keep changes minimal and safe. This flow is for small fixes and tweaks.
