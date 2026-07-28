@@ -16,6 +16,21 @@
 
   <link href="./💎 Royal Diamond Nail Studio — Gönyeli K.K.T.C._files/css2" rel="stylesheet">
 
+  <!-- Apply the saved colour theme before first paint (no flash) -->
+  <script>
+  function rdSetTheme(name){
+    if(!name||name==='classic'){ document.documentElement.removeAttribute('data-theme'); name='classic'; }
+    else { document.documentElement.setAttribute('data-theme', name); }
+    try{ localStorage.setItem('rdTheme', name); }catch(e){}
+    var sel = document.getElementById('theme-picker');
+    if(sel && sel.value !== name) sel.value = name;
+  }
+  try{ rdSetTheme(localStorage.getItem('rdTheme') || 'classic'); }catch(e){}
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ rdSetTheme(localStorage.getItem('rdTheme') || 'classic'); }catch(e){}
+  });
+  </script>
+
   <!-- ROYAL DIAMOND REAL-TIME SYNC -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
@@ -474,6 +489,29 @@
   --blue:#7aaae8;
   --purple:#c4a8f5;
   --orange:#f5c27a;
+}
+
+/* ── Selectable colour themes (see the theme picker in the header) ── */
+/* Classic = default :root above. The blocks below only override the
+   base surface + accent variables so every component follows along. */
+html[data-theme="dark"]{
+  --bg:#0d0f0d; --panel:#181c18; --card:#181c18; --border:#2a2f2a;
+  --text:#ececec; --muted:#9a9a9a;
+}
+html[data-theme="rose"]{
+  --bg:#fdf1f2; --panel:#fffafa; --card:#fffafa; --border:#f2d6d8;
+  --text:#3a2226; --muted:#a9808a;
+  --gold:#c9605a; --goldLight:#b34a5c; --rose:#e8847a; --roseDark:#c9605a;
+}
+html[data-theme="emerald"]{
+  --bg:#f0f6f2; --panel:#ffffff; --card:#ffffff; --border:#d3e6da;
+  --text:#12281d; --muted:#6f8a7b;
+  --gold:#2f8f6b; --goldLight:#1f7a58; --rose:#3fae82; --roseDark:#2f8f6b;
+}
+html[data-theme="midnight"]{
+  --bg:#0e1220; --panel:#182034; --card:#182034; --border:#28324c;
+  --text:#e6ecf5; --muted:#8b97b0;
+  --gold:#7aaae8; --goldLight:#5a8fd8; --rose:#8fb4f0; --roseDark:#5a8fd8;
 }
 
 body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
@@ -1653,6 +1691,13 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="ch-sub" id="page-sub">Hoş geldiniz — salonunuza genel bakış</div>
       </div>
       <div style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,0.07);margin-right:8px;white-space:nowrap;" id="sync-indicator">💾 Local</div>
+      <select id="theme-picker" title="Tema Seç / Choose theme" onchange="rdSetTheme(this.value)" style="margin-right:8px;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:20px;padding:4px 10px;font-family:inherit;font-size:0.72rem;font-weight:700;cursor:pointer;">
+        <option value="classic">🎨 Classic</option>
+        <option value="dark">🌙 Dark</option>
+        <option value="rose">🌸 Rose</option>
+        <option value="emerald">💚 Emerald</option>
+        <option value="midnight">🌌 Midnight</option>
+      </select>
       <div class="ch-actions" id="ch-actions"><button class="btn btn-ghost btn-sm" onclick="openModal(&#39;mClient&#39;)">+ Yeni Müşteri</button><button class="btn btn-rose btn-sm" onclick="openModal(&#39;mAppt&#39;)">+ Randevu</button><button class="btn btn-wa btn-sm" onclick="goto(&#39;whatsapp&#39;,null)">💬 WhatsApp</button></div>
     </div>
 
