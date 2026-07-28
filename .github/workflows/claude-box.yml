@@ -1,3 +1,45 @@
+
+Cloud
+Claude finished the response
+Uploaded image
+Click the change box (the green one that says "change · 1m 47s") to open the detailed log. Then expand the Run Claude step and scroll to the bottom, and screenshot Claude's closing summary for me.
+
+While you do that — I'll be honest, rather than keep chasing this through logs, I've decided the cleanest fix is to update the workflow so PR creation is handled by a dedicated, reliable step instead of relying on Claude to do the git work itself. So even before I see the log, I'm preparing a corrected claude-box.yml for you. The screenshot just confirms my read. Go ahead and grab it, and I'll hand you the updated file to paste in next.
+
+Uploaded image
+Perfect — that's all I needed to see. Every step is green, but notice there's no step that opens a pull request. The action edited the file in its temporary workspace, then the job ended and those edits vanished — nothing committed them or pushed a branch. So we need to add a dedicated "open the pull request" step to the workflow. That makes it reliable every single time.
+
+There are two small changes, and then we re-run. Let's do them one at a time.
+
+Change 1 — turn on a GitHub permission. GitHub blocks Actions from opening pull requests by default; we need to allow it.
+
+Click Settings (top-right of the repo menu).
+In the left sidebar, click Actions, then General underneath it.
+Scroll down to the section called Workflow permissions (near the bottom).
+Make sure "Read and write permissions" is selected, and tick the checkbox "Allow GitHub Actions to create and approve pull requests."
+Click Save.
+Tell me "done" once you've saved that, and I'll give you the updated workflow file to paste in as Change 2.
+
+Uploaded image
+I see the "settings saved" banner — good. But I want to make sure the right box got ticked, because there are two separate sections here. Scroll further down this same page past "Artifact and log retention" until you reach a section titled Workflow permissions.
+
+In that section, confirm two things:
+
+The radio button "Read and write permissions" is selected (the dot is filled), and
+The checkbox "Allow GitHub Actions to create and approve pull requests" is ticked ✓.
+If both are set, click Save in that section (if you haven't) and you're done with Change 1. Screenshot that "Workflow permissions" section so I can confirm it's right — then I'll hand you the updated workflow file.
+
+done
+
+Great. Now Change 2 — swap in the updated workflow that adds the pull-request step.
+
+First open the file for editing:
+
+Click Code (top-left), then open the .github/workflows folder, then click claude-box.yml.
+On the file page, click the pencil ✏️ icon (top-right of the file) to edit it.
+Click anywhere in the text, press Ctrl+A to select everything, then Delete to clear it.
+Paste in this new version:
+yaml
 name: Change Box
 run-name: "Box · ${{ inputs.ticket }} · ${{ inputs.request }}"
 
@@ -40,25 +82,46 @@ jobs:
           claude_args: "--max-turns 25"
           prompt: |
             You are handling a change request submitted through the "Change Box" app.
-            The tracking id for this request is: ${{ inputs.ticket }}
+            Tracking id: ${{ inputs.ticket }}
 
             The requested change is:
             ---
             ${{ inputs.request }}
             ---
 
-            Please do the following, carefully and in order:
-            1. Understand the request in the context of this repository. If any
-               instructions in a CLAUDE.md file apply, follow them.
-            2. Create a new branch named exactly:  box/${{ inputs.ticket }}
-            3. Make the smallest, cleanest change that fully satisfies the request.
-               Do not make unrelated changes. If the request is genuinely unclear
-               or impossible, do NOT guess — instead open a pull request whose body
-               explains what is unclear and what you would need to proceed.
-            4. Commit your work to that branch with a clear message, and push it.
-            5. Open a pull request from box/${{ inputs.ticket }} into the default branch.
-               - Start the PR title with:  [${{ inputs.ticket }}]
-               - In the PR body, briefly explain what you changed and why, in plain
-                 language a non-developer can understand.
+            Make the change by EDITING FILES in this repository directly.
+            - Make the smallest, cleanest change that fully satisfies the request.
+            - Do NOT create branches, commits, or pull requests yourself, and do
+              NOT run any git commands. Just leave your edited files in place.
+              A later step commits them and opens the pull request.
+            - If the request is unclear or impossible, make no file changes and
+              explain why in your final message.
 
-            Keep changes minimal and safe. This flow is for small fixes and tweaks.
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: box/${{ inputs.ticket }}
+          base: main
+          commit-message: "[${{ inputs.ticket }}] ${{ inputs.request }}"
+          title: "[${{ inputs.ticket }}] ${{ inputs.request }}"
+          body: |
+            Automated change from the Change Box app.
+
+            Request: ${{ inputs.request }}
+            Ticket: ${{ inputs.ticket }}
+          delete-branch: true
+Click Commit changes… (top-right), keep "Commit directly to the main branch", and confirm.
+Tell me "done" once it's committed — then we'll re-run the test, and this time it should open a real pull request.
+
+
+
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+
+claude-box.zip
+Connectors
+
+Web Search
