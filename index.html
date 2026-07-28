@@ -10044,6 +10044,17 @@ function renderMonthly(){
       );
     }
 
+    // ── AVANS (korumalı — maaştan geri alınır) ──
+    // Advances are protected in the P&L: they are recovered from staff
+    // salaries, so they do NOT reduce the salon net profit.
+    var mAdvTotals = (typeof advTotalsForMonth==='function') ? advTotalsForMonth(mViewMonth) : {};
+    var mAdvTotal  = Object.values(mAdvTotals).reduce(function(s,v){return s+v;},0);
+    if(mAdvTotal>0){
+      html += mkGroup('💵 Avans (Korumalı)',
+        mkCard('Toplam Avans', mFmtTRY(mAdvTotal), 'var(--gold)', false, 'Maaşlardan kesilir — net kâra etkisi yok (korumalı)')
+      );
+    }
+
     cardsEl.innerHTML = html;
   }
 
