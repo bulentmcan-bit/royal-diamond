@@ -1,1 +1,48 @@
-
+{
+  "name": "Royal Diamond Nail Studio",
+  "short_name": "Royal Diamond",
+  "description": "Royal Diamond Nail Studio — randevu, müşteri ve salon yönetim sistemi. Gönyeli, K.K.T.C.",
+  "lang": "tr",
+  "dir": "ltr",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f5f5",
+  "theme_color": "#f5f5f5",
+  "categories": ["business", "productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "/crown-gold.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/crown.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Randevu Al",
+      "short_name": "Randevu",
+      "description": "Yeni randevu oluştur",
+      "url": "/booking.html"
+    },
+    {
+      "name": "Station Timers",
+      "short_name": "Timers",
+      "description": "İstasyon zamanlayıcıları",
+      "url": "/timers.html"
+    },
+    {
+      "name": "Resepsiyon Komisyon",
+      "short_name": "Resepsiyon",
+      "description": "Resepsiyon komisyon takibi",
+      "url": "/reception.html"
+    }
+  ]
+}
