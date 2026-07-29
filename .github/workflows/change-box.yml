@@ -37,30 +37,114 @@ jobs:
           node-version: "20"
 
       - name: Run Claude Code
+        id: claude
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REQUEST: ${{ inputs.request }}
         run: |
           npm install -g @anthropic-ai/claude-code
-          claude -p "You are working inside a git repository in the current directory. Edit the files to satisfy this change request, then stop. Make the smallest, cleanest change that fully satisfies it. Do not run git, do not commit, and do not push — another step does that. Change request: ${REQUEST}" --dangerously-skip-permissions
 
-      - name: Commit and open pull request
+          PROMPT="You are working inside the git repository for the Royal Diamond nail studio website, in the current directory.
+
+          The shop owner sent this message through the Change Box app:
+          \"${REQUEST}\"
+
+          Decide which of these it is:
+          1) A concrete change to the website (wording, prices, colours, layout, an image, a bug fix, etc). If so, edit the files to satisfy it. Make the smallest, cleanest change that fully does the job. Do NOT run git, do NOT commit, do NOT push — a later step handles that.
+          2) A question, or feedback about the Change Box tool itself, or anything that cannot be done as a website edit. If so, DO NOT edit any files — just answer the person.
+
+          No matter which, your FINAL message must be a short, friendly reply to the shop owner (2 to 4 sentences) in plain English: say what you changed, or if you could not, say why not and what to try instead. Talk to the owner, not to a developer."
+
+          # Never let this step hard-fail the run — we always want to reply.
+          set +e
+          claude -p "$PROMPT" --dangerously-skip-permissions > /tmp/reply.txt 2>/tmp/claude.err
+          CODE=$?
+          set -e
+          echo "claude_exit=$CODE"
+
+          # Guarantee there is always some reply text to send back.
+          if [ ! -s /tmp/reply.txt ]; then
+            if [ "$CODE" -ne 0 ] && [ -s /tmp/claude.err ]; then
+              {
+                echo "The automated editor hit an error on this request, so nothing was changed."
+                echo "Please try again, or reword it as a specific website change."
+                echo
+                echo "Details:"
+                tail -c 800 /tmp/claude.err
+              } > /tmp/reply.txt
+            else
+              echo "The request was received but produced no reply. Please try rewording it as a specific website change." > /tmp/reply.txt
+            fi
+          fi
+
+          echo "----- reply -----"
+          cat /tmp/reply.txt
+
+      - name: Reply to the owner (always runs)
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUEST: ${{ inputs.request }}
           TICKET: ${{ inputs.ticket }}
         run: |
+          set -e
           git config user.name "Change Box"
           git config user.email "actions@users.noreply.github.com"
-          echo "----- changed files -----"
-          git status --porcelain
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "No file changes were made — nothing to open a PR for."
-            exit 0
-          fi
+
+          [ -s /tmp/reply.txt ] || echo "No reply was produced for this request." > /tmp/reply.txt
+
           BRANCH="box/${TICKET}"
-          git checkout -b "$BRANCH"
-          git add -A
-          git commit -m "[${TICKET}] ${REQUEST}"
-          git push -u origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" --title "[${TICKET}] ${REQUEST}" --body "Automated change from the Change Box app. Request: ${REQUEST} (ticket ${TICKET})"
+          # -B so re-running the same ticket doesn't fail on an existing branch.
+          git checkout -B "$BRANCH"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            # --- Real website changes were made: open a change PR ("OK, done"). ---
+            git add -A
+            git commit -m "[${TICKET}] ${REQUEST}"
+            git push -u origin "$BRANCH" --force
+
+            {
+              cat /tmp/reply.txt
+              echo
+              echo "---"
+              echo "Automated change from the Change Box · request: ${REQUEST} · ticket ${TICKET}"
+            } > /tmp/pr_body.md
+
+            gh pr create --base main --head "$BRANCH" \
+              --title "OK · [${TICKET}] ${REQUEST}" \
+              --body-file /tmp/pr_body.md \
+            || gh pr edit "$BRANCH" \
+              --title "OK · [${TICKET}] ${REQUEST}" \
+              --body-file /tmp/pr_body.md \
+            || true
+          else
+            # --- No file changes: it was a question or couldn't be done. Reply anyway. ---
+            mkdir -p change-box-replies
+            {
+              echo "# Reply to ticket ${TICKET}"
+              echo
+              echo "**You asked:** ${REQUEST}"
+              echo
+              cat /tmp/reply.txt
+            } > "change-box-replies/${TICKET}.md"
+
+            git add -A
+            git commit -m "[${TICKET}] Reply: ${REQUEST}"
+            git push -u origin "$BRANCH" --force
+
+            {
+              cat /tmp/reply.txt
+              echo
+              echo "---"
+              echo "No website change was needed for this one — it was a question or couldn't be done as an edit. You can just close this PR once you've read it."
+              echo "Request: ${REQUEST} · ticket ${TICKET}"
+            } > /tmp/pr_body.md
+
+            gh pr create --base main --head "$BRANCH" \
+              --title "Reply · [${TICKET}] ${REQUEST}" \
+              --body-file /tmp/pr_body.md \
+            || gh pr edit "$BRANCH" \
+              --title "Reply · [${TICKET}] ${REQUEST}" \
+              --body-file /tmp/pr_body.md \
+            || true
+          fi
