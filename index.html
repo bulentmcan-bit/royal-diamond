@@ -7224,8 +7224,12 @@ async function renderDash24h(){
   // Gönderilmiş hatırlatmaları listeden gizle
   const pending = groups.filter(g => dash24hMessages["c"+g[0].clientId]?.status !== "sent");
 
-  if(countEl) countEl.textContent = pending.length;
-  if(modalCount) modalCount.textContent = pending.length;
+  // Count operations (each service appointment), not customers — so a client
+  // with a manicure + pedicure + eyelash booking counts as 3, not 1. This
+  // keeps the badge in step with the calendar, which counts each appointment.
+  const opCount = pending.reduce((s,g) => s + g.length, 0);
+  if(countEl) countEl.textContent = opCount;
+  if(modalCount) modalCount.textContent = opCount;
   if(sendBtn) sendBtn.style.display = pending.length > 0 ? "inline-flex" : "none";
 
   const html = pending.length === 0
