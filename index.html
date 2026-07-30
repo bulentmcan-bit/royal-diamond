@@ -4324,6 +4324,32 @@ function advTotalsByCurrency(monthKey){
 function advFmtByCurrency(map){
   return ADV_CURRENCIES.filter(c=>map[c]>0).map(c=>'−'+advFmt(map[c],c)).join(' · ');
 }
+function advRateNow(cur){
+  cur=(cur||'TRY').toUpperCase(); if(cur==='TL') cur='TRY';
+  if(cur==='TRY') return 1;
+  var r=(typeof mRates!=='undefined'&&mRates)?mRates:{};
+  if(cur==='USD') return +(r.USD||46.65);
+  if(cur==='GBP') return +(r.GBP||61.6);
+  if(cur==='EUR') return +(r.EUR||53.05);
+  return 1;
+}
+// Bir avansin TL karsiligi — doviz ise KAYDEDILDIGI GUNUN kuruyla (it.fxRate).
+function advTRY(it){
+  if(!it) return 0;
+  var cur=advCur(it);
+  var rate=(it.fxRate&&it.fxRate>0)?it.fxRate:advRateNow(cur);
+  return (it.amount||0)*rate;
+}
+// Personel bazinda, secilen ayin TL cinsinden avans toplami.
+function advTRYTotalsForMonth(monthKey){
+  var t={};
+  (advState.items||[]).forEach(function(it){
+    if(it.removed) return;
+    if((it.date||'').slice(0,7)!==monthKey) return;
+    t[it.staff]=(t[it.staff]||0)+advTRY(it);
+  });
+  return t;
+}
 let advViewMonth = null;
 function advAdd(){
   const date = document.getElementById('adv-date').value;
@@ -4333,7 +4359,7 @@ function advAdd(){
   const currency = (curEl && ADV_CUR_SYMBOL[curEl.value]) ? curEl.value : 'TRY';
   const note = document.getElementById('adv-note').value.trim();
   if(!date || !staff || !amount || amount<=0){ alert('Tarih, personel ve tutar gerekli.'); return; }
-  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, currency, note, ts:Date.now()});
+  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, currency, note, fxRate: advRateNow(currency), ts:Date.now()});
   advSave();
   document.getElementById('adv-amount').value='';
   document.getElementById('adv-note').value='';
@@ -10034,9 +10060,35 @@ function renderMonthly(){
       return '<div class="m-card'+(highlight?' highlight':'')+'"><div class="m-card-label">'+label+'</div><div class="m-card-val" style="color:'+color+';line-height:1.3;">'+value+'</div>'+(sub?'<div style="font-size:0.62rem;color:var(--muted);margin-top:3px;">'+sub+'</div>':'')+'</div>';
     }
     function mkGroup(title, cardsHtml){
-      return '<div style="grid-column:1/-1;margin-top:10px;margin-bottom:2px;font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;border-bottom:1px solid var(--border);padding-bottom:4px;">'+title+'</div>'+cardsHtml;
+      return '<div style="grid-column:1/-1;margin-top:10px;margin-bottom:2px;font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;font-weight:700;border-bottom:1px solid var(--border);padding-bottom:4px;">'+title+'</div>'+cardsHtml+plAdvForGroup(title);
     }
 
+    // ── AVANS → her personel icin (net maastan dusulur) ──
+    var mAdvTRY = (typeof advTRYTotalsForMonth==='function') ? advTRYTotalsForMonth(mViewMonth) : {};
+    var mAdvShown = {};
+    var staffBase = {
+      'Helen': (c.starTotal||0),
+      'Hannah': hannahTotal,
+      'Lissa': lissaTotal,
+      'Zara': (techComms['Zara']||0),
+      'Lilly': (techComms['Lilly']||0),
+      'Nihal': nihalSalTRY,
+      'Zebo': zeboSalTRY,
+      'Saeideh': (techComms['Saeideh']||0)
+    };
+    function plAdv(staff, baseTotalTRY){
+      var adv = mAdvTRY[staff]||0;
+      if(adv<=0) return '';
+      mAdvShown[staff]=true;
+      var net = (baseTotalTRY||0) - adv;
+      return mkCard(staff+' — \uD83D\uDCB5 Avans', '\u2212 '+mFmtTRY(adv)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Avans sayfasındaki bu ayın kayıtları \u00b7 döviz ise avans günü kuruyla TL</div>', 'var(--gold)', false)
+           + mkCard(staff+' — NET \u00d6DENECEK', mFmtTRY(net)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Hakediş '+mFmtTRY(baseTotalTRY||0)+' \u2212 Avans '+mFmtTRY(adv)+'</div>', net>=0?'var(--mint)':'var(--red)', true);
+    }
+    function plAdvForGroup(title){
+      var name = String(title||'').replace(/[^A-Za-z\u00c0-\u024f]/g,' ').trim().split(/\s+/).pop();
+      if(staffBase[name]==null) return '';
+      return plAdv(name, staffBase[name]);
+    }
     var html = '';
 
     // ── OVERVIEW ──
@@ -10125,6 +10177,12 @@ function renderMonthly(){
       );
     }
 
+    // Maas listesindeki HERKES: grup render edilmese bile avansi olan personeli goster
+    (typeof ADV_STAFF!=='undefined'?ADV_STAFF:Object.keys(mAdvTRY)).forEach(function(st){
+      if((mAdvTRY[st]||0)>0 && !mAdvShown[st]){
+        html += mkGroup('\uD83D\uDCB5 '+st, plAdv(st, staffBase[st]||0));
+      }
+    });
     cardsEl.innerHTML = html;
   }
 
