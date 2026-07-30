@@ -4276,6 +4276,13 @@ function dedMonthShift(dir){
 // Mirrors the Kesintiler (deductions) store & page.
 // ══════════════════════════════════════════════
 const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Zebo','Nihal'];
+// Para birimleri — birbirine ÇEVRİLMEZ, TOPLANMAZ. Her tutar kendi sembolüyle gösterilir.
+const ADV_CURRENCIES = ['TRY','USD','EUR','GBP'];
+const ADV_CUR_SYMBOL = {TRY:'₺', USD:'$', EUR:'€', GBP:'£'};
+// Eski kayıtlar (para birimi olmayanlar) ₺ (TL) kabul edilir.
+function advCur(it){ var c=((it&&it.currency)||'TRY').toUpperCase(); return c==='TL'?'TRY':(ADV_CUR_SYMBOL[c]?c:'TRY'); }
+function advSym(cur){ return ADV_CUR_SYMBOL[(cur||'TRY').toUpperCase()]||'₺'; }
+function advFmt(amount,cur){ return advSym(cur)+Number(amount||0).toLocaleString('tr-TR'); }
 function advLoad(){
   try{
     const d = JSON.parse(localStorage.getItem('rdns_advances_v1')||'{"items":[]}');
@@ -4288,6 +4295,7 @@ function advSave(){
   localStorage.setItem('rdns_advances_v1', JSON.stringify(advState));
   if(typeof syncPush==='function') syncPush('rdns_advances_v1', advState);
 }
+// Report page uses this (TRY-legacy). Kept for backwards compatibility.
 function advTotalsForMonth(monthKey){
   const t = {};
   (advState.items||[]).forEach(it=>{
@@ -4297,19 +4305,40 @@ function advTotalsForMonth(monthKey){
   });
   return t;
 }
+// Per-currency breakdown — currencies are NEVER summed together.
+// Returns { staff: {CUR: amount}, __grand: {CUR: amount} }
+function advTotalsByCurrency(monthKey){
+  const byStaff = {}, grand = {};
+  (advState.items||[]).forEach(it=>{
+    if(it.removed) return;
+    if((it.date||'').slice(0,7)!==monthKey) return;
+    const cur = advCur(it), amt = it.amount||0;
+    if(!byStaff[it.staff]) byStaff[it.staff] = {};
+    byStaff[it.staff][cur] = (byStaff[it.staff][cur]||0) + amt;
+    grand[cur] = (grand[cur]||0) + amt;
+  });
+  byStaff.__grand = grand;
+  return byStaff;
+}
+// Format a {CUR: amount} map as "−₺20.000 · −$150 · −€200" (fixed currency order).
+function advFmtByCurrency(map){
+  return ADV_CURRENCIES.filter(c=>map[c]>0).map(c=>'−'+advFmt(map[c],c)).join(' · ');
+}
 let advViewMonth = null;
 function advAdd(){
   const date = document.getElementById('adv-date').value;
   const staff = document.getElementById('adv-staff').value;
   const amount = parseFloat(document.getElementById('adv-amount').value);
+  const curEl = document.getElementById('adv-currency');
+  const currency = (curEl && ADV_CUR_SYMBOL[curEl.value]) ? curEl.value : 'TRY';
   const note = document.getElementById('adv-note').value.trim();
   if(!date || !staff || !amount || amount<=0){ alert('Tarih, personel ve tutar gerekli.'); return; }
-  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, note, ts:Date.now()});
+  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, currency, note, ts:Date.now()});
   advSave();
   document.getElementById('adv-amount').value='';
   document.getElementById('adv-note').value='';
   renderAdvancePage();
-  if(typeof toast==='function') toast('💵','Avans Kaydedildi', staff+' — maaştan kesilecek: ₺'+amount.toLocaleString('tr-TR'),'g');
+  if(typeof toast==='function') toast('💵','Avans Kaydedildi', staff+' — maaştan kesilecek: '+advFmt(amount,currency),'g');
 }
 function advDelete(id){
   if(!ownerPin()) return;
@@ -4340,20 +4369,27 @@ function renderAdvancePage(){
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'+
     '<input type="date" id="adv-date" value="'+today+'" style="'+inp+'">'+
     '<select id="adv-staff" style="'+inp+'">'+opts+'</select>'+
-    '<input type="number" id="adv-amount" placeholder="Avans tutarı ₺" style="'+inp+'">'+
+    '<input type="number" id="adv-amount" placeholder="Avans tutarı" style="'+inp+'">'+
+    '<select id="adv-currency" title="Para birimi" style="'+inp+'">'+
+      ADV_CURRENCIES.map(function(c){return '<option value="'+c+'">'+ADV_CUR_SYMBOL[c]+' '+c+'</option>';}).join('')+
+    '</select>'+
     '<input type="text" id="adv-note" placeholder="Not (isteğe bağlı)" style="'+inp+'grid-column:span 2;">'+
     '</div>'+
     '<button onclick="advAdd()" style="margin-top:12px;padding:10px 22px;background:var(--rose);border:none;border-radius:9px;color:#fff;font-weight:700;cursor:pointer;font-family:\'Nunito\',sans-serif;">Kaydet</button>';
   // Month nav + summary
   const items=(advState.items||[]).filter(it=>!it.removed && (it.date||'').slice(0,7)===advViewMonth).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const totals=advTotalsForMonth(advViewMonth);
-  const grand=Object.values(totals).reduce((s,v)=>s+v,0);
+  const totals=advTotalsByCurrency(advViewMonth);
+  const grand=totals.__grand||{};
+  const grandStr=advFmtByCurrency(grand);
   let cards='';
   ADV_STAFF.forEach(t=>{
-    if(!(totals[t]>0)) return;
+    const cur=totals[t];
+    if(!cur) return;
+    const staffStr=advFmtByCurrency(cur);
+    if(!staffStr) return;
     cards+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+
       '<div style="font-size:0.8rem;font-weight:700;color:#555;">'+t+'</div>'+
-      '<div style="font-size:1.15rem;font-weight:800;color:#c94040;">−₺'+(totals[t]||0).toLocaleString('tr-TR')+'</div>'+
+      '<div style="font-size:1.15rem;font-weight:800;color:#c94040;">'+staffStr+'</div>'+
       '<div style="font-size:0.65rem;color:#888;">bu ay maaştan kesilecek</div></div>';
   });
   sm.innerHTML =
@@ -4361,7 +4397,7 @@ function renderAdvancePage(){
     '<button onclick="advMonthShift(-1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">‹</button>'+
     '<b style="color:#333;">'+advViewMonth+'</b>'+
     '<button onclick="advMonthShift(1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">›</button>'+
-    '<span style="margin-left:auto;font-weight:800;color:#c94040;">Toplam: −₺'+grand.toLocaleString('tr-TR')+'</span></div>'+
+    '<span style="margin-left:auto;font-weight:800;color:#c94040;">Toplam: '+(grandStr||'−₺0')+'</span></div>'+
     (cards?'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">'+cards+'</div>':'');
   // List
   if(items.length===0){ ls.innerHTML='<div style="color:#888;font-size:0.85rem;padding:14px;">Bu ay avans kaydı yok.</div>'; return; }
@@ -4371,7 +4407,7 @@ function renderAdvancePage(){
       '<span style="font-size:0.78rem;color:#666;min-width:84px;">'+it.date+'</span>'+
       '<b style="color:#333;min-width:70px;">'+it.staff+'</b>'+
       '<span style="font-size:0.78rem;color:#555;flex:1;">'+(it.note?it.note:'Avans')+'</span>'+
-      '<b style="color:#c94040;">−₺'+(it.amount||0).toLocaleString('tr-TR')+'</b>'+
+      '<b style="color:#c94040;">−'+advFmt(it.amount||0, advCur(it))+'</b>'+
       '<button onclick="advDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button></div>';
   });
   ls.innerHTML='<div style="font-weight:700;color:#333;margin-bottom:10px;">📋 Kayıtlar</div>'+rows;
