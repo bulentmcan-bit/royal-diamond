@@ -4495,16 +4495,31 @@ function renderSalaryPage(){
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
-    // Money advances given this month — deducted from each person's salary
-    var advTotals = (typeof advTotalsForMonth==='function') ? advTotalsForMonth(monthKey) : {};
+    // Money advances given this month — deducted from each person's salary.
+    // Foreign-currency advances are converted to TRY at today's rate.
+    var advByCur = (typeof advTotalsByCurrency==='function') ? advTotalsByCurrency(monthKey) : {};
+    function advToTRY(map){
+      if(!map) return 0;
+      var t=0;
+      ['TRY','USD','EUR','GBP'].forEach(function(c){ if(map[c]>0) t+=toTRY(map[c], c==='TRY'?'TL':c); });
+      return t;
+    }
+    function advOrigStr(map){
+      if(!map) return '';
+      var parts=[];
+      ['USD','EUR','GBP'].forEach(function(c){ if(map[c]>0) parts.push(fmtOrig(map[c],c)); });
+      return parts.join(' + ');
+    }
 
     var totalSalaries=0, totalComms=0, totalAdvances=0, grandTotal=0;
     var cardsHtml='';
 
     staff.forEach(function(s){
       var salTRY=Math.round(toTRY(s.salary,s.cur));
-      var adv=Math.round(advTotals[s.name]||0);
-      var total=salTRY+s.comm-adv;
+      var advMap=advByCur[s.name]||{};
+      var adv=Math.round(advToTRY(advMap));
+      var earnings=salTRY+s.comm;
+      var total=earnings-adv;
       totalSalaries+=salTRY; totalComms+=s.comm; totalAdvances+=adv; grandTotal+=total;
 
       cardsHtml+='<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+s.color+';border-radius:12px;padding:18px;">';
@@ -4531,9 +4546,19 @@ function renderSalaryPage(){
         cardsHtml+='<div style="font-size:0.72rem;color:#888;margin-top:6px;font-style:italic;font-weight:500;">'+s.commLabel+' — no earnings this month</div>';
       }
       if(adv>0){
+        var origStr=advOrigStr(advMap);
+        // Earnings (hakediş) subtotal — shown before the advance is deducted
+        cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(255,255,255,0.08);margin-top:2px;">';
+        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:700;">Hakediş (Earnings)</span>';
+        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#333;">'+fmt(earnings)+'</span></div>';
+        // Advance deducted (foreign amounts converted at today\'s rate)
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
-        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">💵 Advance (deducted)</span>';
-        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#c94040;">−'+fmt(adv)+'</span></div>';
+        cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">&#128181; Avans (Advance)'+(origStr?' <span style="font-size:0.65rem;color:var(--muted);">'+origStr+' &bull; günün kuru</span>':'')+'</span>';
+        cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#c94040;">&minus;'+fmt(adv)+'</span></div>';
+        // Net salary (net maaş) — earnings minus advance
+        cardsHtml+='<div style="display:flex;justify-content:space-between;padding:8px 0 0;">';
+        cardsHtml+='<span style="font-size:0.82rem;color:#333;font-weight:700;">Net Maaş (Net Salary)</span>';
+        cardsHtml+='<span style="font-size:0.9rem;font-weight:800;color:'+s.color+';">'+fmt(total)+'</span></div>';
       }
       cardsHtml+='</div>';
     });
