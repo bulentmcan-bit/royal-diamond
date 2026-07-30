@@ -272,6 +272,7 @@ function send(){
   .rdw-row span{color:#3d382c}
   .rdw-row i{flex:1;border-bottom:1px dotted #cdbd93;transform:translateY(-3px);min-width:12px}
   .rdw-row b{color:var(--rd-gold-dark);font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .rdw-conv{font-size:11px;color:#8a6d1f;text-align:right;margin:-3px 0 3px;font-variant-numeric:tabular-nums;opacity:.85}
   .rdw-note{font-family:Georgia,serif;font-style:italic;color:var(--rd-gold-dark);font-size:12.5px;text-align:center;margin-top:10px}
   .rdw-foot-note{color:#7d7460;font-size:12px;text-align:center;margin-top:6px;line-height:1.55}
   .rdw-center{text-align:center;font-size:13.5px;color:#3d382c;line-height:1.85}
@@ -409,6 +410,29 @@ function send(){
   var lang="tr";
   try{ var saved=localStorage.getItem("rdw-lang"); if(saved && T[saved]) lang=saved; }catch(e){}
 
+  // Show each price in GBP · EUR · USD too. Values are TRY per 1 unit of
+  // foreign currency; KKTC (Sun Döviz) fallbacks, refreshed live below.
+  var RATES={GBP:62.44,EUR:53.82,USD:47.18};
+  var curView="";
+  function conv(tlStr){
+    var tl=parseInt(String(tlStr).replace(/[^0-9]/g,""),10)||0;
+    if(!tl) return "";
+    return '<div class="rdw-conv">≈ £'+Math.round(tl/RATES.GBP)
+      +' · €'+Math.round(tl/RATES.EUR)
+      +' · $'+Math.round(tl/RATES.USD)+'</div>';
+  }
+  function fetchRates(){
+    try{
+      fetch('https://api.exchangerate-api.com/v4/latest/TRY').then(function(r){return r.json();}).then(function(d){
+        if(!d||!d.rates) return;
+        if(d.rates.GBP) RATES.GBP=1/d.rates.GBP;
+        if(d.rates.EUR) RATES.EUR=1/d.rates.EUR;
+        if(d.rates.USD) RATES.USD=1/d.rates.USD;
+        if(curView==="price") show("price");
+      }).catch(function(){});
+    }catch(e){}
+  }
+
   var bubble=document.getElementById("rdw-bubble"),
       panel=document.getElementById("rdw-panel"),
       body=document.getElementById("rdw-body"),
@@ -442,17 +466,27 @@ function send(){
     return out;
   }
 
+  function priceRows(list){
+    var out="";
+    for(var i=0;i<list.length;i++){
+      out+='<div class="rdw-row"><span>'+list[i][0]+'</span><i></i><b>'+list[i][1]+'</b></div>'+conv(list[i][1]);
+    }
+    return out;
+  }
+
   function home(){
+    curView="home";
     var t=T[lang]; subline.textContent=t.sub; body.innerHTML="";
     body.appendChild(el("div","rdw-msg",'<img src="helen.jpg" onerror="this.style.display=\'none\'" alt="" style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid #b9974b;display:block;margin:0 auto 9px">'+t.hello));
     body.appendChild(menu());
   }
 
   function show(key){
+    curView=key;
     var t=T[lang]; body.innerHTML="";
     var c=el("div","rdw-card");
     if(key==="price"){
-      c.innerHTML='<div class="rdw-eh">'+t.ph+'</div>'+rows(PRICES[lang])
+      c.innerHTML='<div class="rdw-eh">'+t.ph+'</div>'+priceRows(PRICES[lang])
         +'<div class="rdw-note">'+t.pnote+'</div>'
         +'<div class="rdw-foot-note">'+t.pfoot+'</div>';
     }
@@ -495,7 +529,7 @@ function send(){
   bubble.onclick=toggle;
   closeBtn.onclick=function(){ panel.classList.remove("rdw-open"); };
 
-  setLabel(); home();
+  setLabel(); home(); fetchRates();
 })();
 </script>
 </div>
