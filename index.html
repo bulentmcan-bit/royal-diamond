@@ -105,7 +105,8 @@
           }
           _isSyncing['rdns_main_v1']=true;
           clients=remote.clients||[];
-          appointments=remote.appointments||[];
+          remote.appointments=_preserveLocalApptPrices(remote.appointments||[]);
+          appointments=remote.appointments;
           payments=remote.payments||[];
           deferredPayments=remote.deferredPayments||[];
           ccOverrides=remote.ccOverrides||{};
@@ -318,6 +319,28 @@
     }catch(e){console.warn('syncPush error:',e);}
     setTimeout(()=>{_isSyncing[key]=false;},600);
   }
+  // When a fresh copy of the shared DB arrives from the cloud, another device
+  // may still be holding an OLD version of an appointment — e.g. from before a
+  // Fiyat was typed in here. Overwriting wholesale would then wipe a price that
+  // was just entered, even though it already reached Daily Takings. Guard it:
+  // for any appointment the cloud reports with no price, keep the price (and the
+  // takings-tracking marker) we already have locally so the Fiyat sticks.
+  function _preserveLocalApptPrices(remoteAppts){
+    try{
+      if(!Array.isArray(remoteAppts)||!Array.isArray(appointments)) return remoteAppts;
+      const localById={};
+      appointments.forEach(function(a){ if(a&&a.id!=null) localById[String(a.id)]=a; });
+      remoteAppts.forEach(function(r){
+        if(!r||r.id==null) return;
+        const loc=localById[String(r.id)];
+        if(loc&&(parseFloat(loc.price)||0)>0&&!(parseFloat(r.price)||0)){
+          r.price=loc.price;
+          if(loc._takingsAmount!=null&&r._takingsAmount==null) r._takingsAmount=loc._takingsAmount;
+        }
+      });
+    }catch(e){ console.warn('preserve appt prices error:',e); }
+    return remoteAppts;
+  }
   function showSyncStatus(s){
     const el=document.getElementById('sync-indicator');if(!el)return;
     const m={local:{t:'💾 Local',c:'#888'},connecting:{t:'🔄 Syncing...',c:'#f0a500'},synced:{t:'☁️ Synced',c:'#4caf50'},error:{t:'⚠️ Sync Error',c:'#f44'}};
@@ -459,7 +482,8 @@
       if(!val||!val.appointments||val.appointments.length===0)return;
       _isSyncing['rdns_main_v1']=true;
       clients=val.clients||[];
-      appointments=val.appointments||[];
+      val.appointments=_preserveLocalApptPrices(val.appointments||[]);
+      appointments=val.appointments;
       payments=val.payments||[];
       deferredPayments=val.deferredPayments||[];
       ccOverrides=val.ccOverrides||{};
