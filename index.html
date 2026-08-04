@@ -112,8 +112,10 @@
           ccOverrides=remote.ccOverrides||{};
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
-          // If we corrected the cloud copy, push the cleaned version back (once)
-          if(phonesFixed){
+          // If we corrected the cloud copy (cleaned phones or restored a price
+          // the cloud had dropped to 0), push the corrected version back once so
+          // the cloud truth is healed and the price actually sticks everywhere.
+          if(phonesFixed||_apptPricesHealed){
             setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
           }
           const pg=document.querySelector('.page.active');
@@ -325,7 +327,12 @@
   // was just entered, even though it already reached Daily Takings. Guard it:
   // for any appointment the cloud reports with no price, keep the price (and the
   // takings-tracking marker) we already have locally so the Fiyat sticks.
+  // Set true whenever the guard below has to restore a price the cloud lost, so
+  // the caller can push the healed copy back — otherwise the cloud keeps serving
+  // 0 and the next sync (or another device) clobbers the price straight back.
+  let _apptPricesHealed=false;
   function _preserveLocalApptPrices(remoteAppts){
+    _apptPricesHealed=false;
     try{
       if(!Array.isArray(remoteAppts)||!Array.isArray(appointments)) return remoteAppts;
       const localById={};
@@ -336,6 +343,7 @@
         if(loc&&(parseFloat(loc.price)||0)>0&&!(parseFloat(r.price)||0)){
           r.price=loc.price;
           if(loc._takingsAmount!=null&&r._takingsAmount==null) r._takingsAmount=loc._takingsAmount;
+          _apptPricesHealed=true;
         }
       });
     }catch(e){ console.warn('preserve appt prices error:',e); }
@@ -489,6 +497,11 @@
       ccOverrides=val.ccOverrides||{};
       localStorage.setItem('rdns_main_v1',JSON.stringify(val));
       setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
+      // If the cloud had lost a price we still knew locally, push the healed
+      // copy back so the cloud stops serving 0 on the next sync.
+      if(_apptPricesHealed){
+        setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
+      }
       try{renderDash();}catch(e){}
       try{renderAppts();}catch(e){}
       try{dpUpdateBadges();}catch(e){}
