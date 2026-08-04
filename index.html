@@ -3771,9 +3771,17 @@ function dashEditAppt(id){
     if(saveBtn){
       saveBtn.textContent = '✓ Update';
       saveBtn.onclick = function(){
-        a.service   = document.getElementById('a-service').value;
-        a.datetime  = document.getElementById('a-dt').value;
-        a.duration  = parseInt(document.getElementById('a-dur').value)||60;
+        // Always write to the LIVE appointment object held in the array right
+        // now — not the one captured when the popup opened. A cloud sync can
+        // swap the whole appointments array out from under us while this popup
+        // is open, leaving the captured `a` detached. Mutating that detached
+        // copy would let Daily Takings get the money (passed by value below)
+        // yet lose the price on the appointment itself, so the Fiyat box shows
+        // 0 again on reopen. Re-finding by id makes the price actually stick.
+        const live = appointments.find(function(x){ return x.id===a.id; }) || a;
+        live.service   = document.getElementById('a-service').value;
+        live.datetime  = document.getElementById('a-dt').value;
+        live.duration  = parseInt(document.getElementById('a-dur').value)||60;
         let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
         // 💚 Family discount: full price is typed, 30% comes off automatically
         if(cl && cl.familyDiscount && enteredPrice > 0){
@@ -3787,37 +3795,37 @@ function dashEditAppt(id){
           try{saveAll();}catch(e){}
           if(typeof toast==='function') toast('🚀','Reaktivasyon İndirimi Uygulandı','₺'+_full.toLocaleString('tr-TR')+' → ₺'+enteredPrice.toLocaleString('tr-TR')+' (%10) — hak kullanıldı','g');
         }
-        const oldPrice = a.price||0;
+        const oldPrice = live.price||0;
         // If the price field was left blank, don't erase a price that was
         // already recorded — only overwrite it when a new value is typed in.
         const newPrice = enteredPrice > 0 ? enteredPrice : oldPrice;
-        a.price     = newPrice;
-        a.staff     = document.getElementById('a-staff').value;
+        live.price     = newPrice;
+        live.staff     = document.getElementById('a-staff').value;
 
         // How much has actually been sent to Daily Takings for this
         // appointment so far (separate from a.status, so correcting the
         // price on an already-completed appointment still works correctly
         // instead of being silently skipped).
-        const alreadyRecorded = a._takingsAmount || 0;
+        const alreadyRecorded = live._takingsAmount || 0;
 
-        if(enteredPrice > 0 && a.staff){
-          if(a.status !== 'completed'){
-            a.status = 'completed';
-            const cl2 = clients.find(function(c){ return String(c.id)===String(a.clientId); });
+        if(enteredPrice > 0 && live.staff){
+          if(live.status !== 'completed'){
+            live.status = 'completed';
+            const cl2 = clients.find(function(c){ return String(c.id)===String(live.clientId); });
             if(cl2){ cl2.visits = (cl2.visits||0)+1; cl2.lastVisit = dtLocal(new Date()).slice(0,10); }
             // 🔄 Offer the automatic 3-week follow-up from this path too
-            try{ setTimeout(function(){ if(typeof showRebookModal==='function') showRebookModal(a, cl2); }, 300); }catch(e){}
+            try{ setTimeout(function(){ if(typeof showRebookModal==='function') showRebookModal(live, cl2); }, 300); }catch(e){}
           }
           if(alreadyRecorded === 0){
-            diAutoAdd(a.staff, enteredPrice, a.datetime, a.id);
-            a._takingsAmount = enteredPrice;
+            diAutoAdd(live.staff, enteredPrice, live.datetime, live.id);
+            live._takingsAmount = enteredPrice;
           } else if(alreadyRecorded !== enteredPrice){
             // Price was corrected — adjust Daily Takings by the difference
             // instead of adding the full amount again.
             const delta = enteredPrice - alreadyRecorded;
-            if(delta > 0) diAutoAdd(a.staff, delta, a.datetime, a.id);
-            else if(delta < 0) diAutoRemove(a.staff, -delta, a.datetime, a.id);
-            a._takingsAmount = enteredPrice;
+            if(delta > 0) diAutoAdd(live.staff, delta, live.datetime, live.id);
+            else if(delta < 0) diAutoRemove(live.staff, -delta, live.datetime, live.id);
+            live._takingsAmount = enteredPrice;
           }
         }
 
