@@ -105,12 +105,15 @@
           }
           _isSyncing['rdns_main_v1']=true;
           clients=remote.clients||[];
+          mergeRemotePriceOverrides(remote.priceOverrides);
           remote.appointments=_preserveLocalApptPrices(remote.appointments||[]);
           const moneyKept=_apptMoneyKept;
           appointments=remote.appointments;
+          applyPriceOverrides(appointments);
           payments=remote.payments||[];
           deferredPayments=remote.deferredPayments||[];
           ccOverrides=remote.ccOverrides||{};
+          remote.priceOverrides=priceOverrides;
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
@@ -320,6 +323,106 @@
     }catch(e){console.warn('syncPush error:',e);}
     setTimeout(()=>{_isSyncing[key]=false;},600);
   }
+  // ═══════ PERSISTENT PRICE OVERRIDES ═══════
+  // The appointments array is replaced wholesale every time a cloud snapshot
+  // arrives, so a Fiyat typed here only survives if something OUTSIDE that
+  // array remembers it. The _pts stamp below is not enough on its own: the
+  // salon's devices don't share a clock, so a tablet running a minute ahead
+  // pushes its price-less copy and wins — wiping a price that had already
+  // gone through to Daily Takings, which is exactly the "price won't stick"
+  // symptom.
+  // This map is that outside memory: one entry per appointment id, written
+  // whenever money is saved on this device, re-applied after every merge and
+  // before anything is drawn. A snapshot can still carry a genuinely newer
+  // price (someone corrected it elsewhere), but nothing can silently reset a
+  // saved price back to 0.
+  const PRICE_OVR_KEY='rdns_price_ovr_v1';
+  let priceOverrides=(function(){
+    try{ const o=JSON.parse(localStorage.getItem(PRICE_OVR_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }
+    catch(e){ return {}; }
+  })();
+  let _priceOvrRestored=false;
+  function priceOvrPersist(){
+    try{ localStorage.setItem(PRICE_OVR_KEY, JSON.stringify(priceOverrides)); }catch(e){}
+  }
+  // Record the money now on an appointment. Called from every path that writes
+  // a price — including a deliberate reset to 0 (undoComplete) — so the map
+  // always states what this device last decided about this appointment.
+  function priceOvrSet(a){
+    if(!a||a.id==null) return;
+    priceOverrides[String(a.id)]={
+      p:parseFloat(a.price)||0,
+      t:(a._takingsAmount==null?null:(parseFloat(a._takingsAmount)||0)),
+      st:a.status||'',
+      ts:Date.now()
+    };
+    priceOvrPersist();
+  }
+  function priceOvrDrop(id){
+    if(id==null) return;
+    if(priceOverrides[String(id)]!==undefined){ delete priceOverrides[String(id)]; priceOvrPersist(); }
+  }
+  // A remote record only outranks a saved override when it is BOTH stamped
+  // later AND actually carries money. A 0 never beats a saved price.
+  function _ovrBeaten(ovr,r){
+    return (parseFloat(r&&r.price)||0)>0 && (r._pts||0) > (ovr.ts||0);
+  }
+  function applyPriceOverrides(list){
+    _priceOvrRestored=false;
+    try{
+      if(!Array.isArray(list)) return list;
+      let adopted=false;
+      list.forEach(function(r){
+        if(!r||r.id==null) return;
+        const ovr=priceOverrides[String(r.id)];
+        if(!ovr) return;
+        if(_ovrBeaten(ovr,r)){
+          // Genuinely re-priced later somewhere else — adopt it so the two
+          // copies stop fighting over the record.
+          ovr.p=parseFloat(r.price)||0;
+          ovr.t=(r._takingsAmount==null?null:(parseFloat(r._takingsAmount)||0));
+          ovr.st=r.status||ovr.st;
+          ovr.ts=r._pts||Date.now();
+          adopted=true;
+          return;
+        }
+        if((parseFloat(r.price)||0)!==ovr.p){ r.price=ovr.p; _priceOvrRestored=true; }
+        if(ovr.t!=null){
+          if((parseFloat(r._takingsAmount)||0)!==ovr.t){ r._takingsAmount=ovr.t; _priceOvrRestored=true; }
+        } else if(r._takingsAmount!==undefined){
+          // Recorded as never sent to Daily Takings (e.g. after undoComplete).
+          delete r._takingsAmount; _priceOvrRestored=true;
+        }
+        if(ovr.st==='completed' && r.status!=='completed'){ r.status='completed'; _priceOvrRestored=true; }
+        // A deliberate reset (undoComplete) also un-completes the appointment —
+        // don't let an old snapshot mark it done again with no money on it.
+        else if(ovr.st==='confirmed' && ovr.p===0 && r.status==='completed'){ r.status='confirmed'; _priceOvrRestored=true; }
+        if((r._pts||0) < (ovr.ts||0)) r._pts=ovr.ts;
+      });
+      if(adopted||_priceOvrRestored) priceOvrPersist();
+    }catch(e){ console.warn('applyPriceOverrides error:',e); }
+    return list;
+  }
+  // Overrides travel with the shared DB, so a device that never typed the
+  // price still knows not to reset it. Newest entry that carries money wins.
+  function mergeRemotePriceOverrides(remoteOvr){
+    try{
+      if(!remoteOvr||typeof remoteOvr!=='object') return;
+      let changed=false;
+      Object.keys(remoteOvr).forEach(function(k){
+        const rv=remoteOvr[k]; if(!rv||typeof rv!=='object') return;
+        const lv=priceOverrides[k];
+        if(!lv || ((rv.ts||0) > (lv.ts||0) && (parseFloat(rv.p)||0)>0)){
+          priceOverrides[k]={p:parseFloat(rv.p)||0,
+                             t:(rv.t==null?null:(parseFloat(rv.t)||0)),
+                             st:rv.st||'', ts:rv.ts||0};
+          changed=true;
+        }
+      });
+      if(changed) priceOvrPersist();
+    }catch(e){ console.warn('mergeRemotePriceOverrides error:',e); }
+  }
+
   // When a fresh copy of the shared DB arrives from the cloud, another device
   // may still be holding an OLD version of an appointment — e.g. from before a
   // Fiyat was typed in here. Overwriting wholesale would then wipe a price that
@@ -329,6 +432,8 @@
   // a stamped local price beats an older/unstamped cloud copy, and a genuinely
   // newer cloud price still wins. Unstamped legacy records fall back to the
   // old rule — a local price beats a cloud copy that has none.
+  // The override map above then has the final say, since _pts alone loses to a
+  // device whose clock runs ahead.
   let _apptMoneyKept=false;
   function _preserveLocalApptPrices(remoteAppts){
     _apptMoneyKept=false;
@@ -356,6 +461,11 @@
         }
       });
     }catch(e){ console.warn('preserve appt prices error:',e); }
+    // Last word on the money, whatever the merge above decided: the saved
+    // override map. This runs for the live listener and syncForceLoad alike,
+    // since both go through here.
+    applyPriceOverrides(remoteAppts);
+    if(_priceOvrRestored) _apptMoneyKept=true;
     return remoteAppts;
   }
   function showSyncStatus(s){
@@ -499,11 +609,14 @@
       if(!val||!val.appointments||val.appointments.length===0)return;
       _isSyncing['rdns_main_v1']=true;
       clients=val.clients||[];
+      mergeRemotePriceOverrides(val.priceOverrides);
       val.appointments=_preserveLocalApptPrices(val.appointments||[]);
       appointments=val.appointments;
+      applyPriceOverrides(appointments);
       payments=val.payments||[];
       deferredPayments=val.deferredPayments||[];
       ccOverrides=val.ccOverrides||{};
+      val.priceOverrides=priceOverrides;
       localStorage.setItem('rdns_main_v1',JSON.stringify(val));
       setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
       try{renderDash();}catch(e){}
@@ -3115,7 +3228,10 @@ function dbLoad(){
 
 function dbSave(){
   try{
-    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides};
+    // Re-assert the saved prices on the way out too, so a snapshot that landed
+    // between the last merge and this save can't push a 0 back to the cloud.
+    try{ applyPriceOverrides(appointments); }catch(e){}
+    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides};
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
@@ -3134,6 +3250,9 @@ let appointments = _dbLoaded?.appointments || [];
 let payments     = _dbLoaded?.payments     || [];
 let deferredPayments = _dbLoaded?.deferredPayments || [];
 let ccOverrides = _dbLoaded?.ccOverrides || {};
+// Fold in anything the stored DB carries (e.g. after a backup restore) — the
+// standalone rdns_price_ovr_v1 key stays the primary copy.
+try{ mergeRemotePriceOverrides(_dbLoaded?.priceOverrides); applyPriceOverrides(appointments); }catch(e){}
 
 function cObj(id){return clients.find(c=>String(c.id)===String(id));}
 function cName(id){return cObj(id)?.name||"Unknown";}
@@ -3738,6 +3857,9 @@ function apptById(id){
 }
 
 function dashEditAppt(id){
+  // A snapshot may have landed since this list was drawn — re-assert the saved
+  // prices so the Fiyat box opens with the real figure, never a reset 0.
+  try{ applyPriceOverrides(appointments); }catch(e){}
   const a = apptById(id);
   if(!a) return;
   openModal('mAppt');
@@ -3872,6 +3994,10 @@ function dashEditAppt(id){
             live._pts = Date.now();
           }
         }
+
+        // Remember this figure outside the appointments array — that array
+        // gets replaced wholesale by the next cloud snapshot.
+        priceOvrSet(live);
 
         // Persist first, then always close the popup — even if a rendering
         // step below throws, the save already happened and the modal must
@@ -4029,6 +4155,7 @@ function undoComplete(id){
   delete a._ptsAdded;
   delete a._prevLastVisit;
   delete a._takingsAmount;
+  priceOvrSet(a);      // record the reset, or the override would restore the price
   saveAll();renderAppts();renderDash();renderPayments();updateApptBadge();
   toast("↩️","Geri Alındı",`${cObj(a.clientId)?.name} tekrar Onaylandı durumunda.`,"g");
 }
@@ -5024,6 +5151,7 @@ function diEditDay(date){
 }
 
 function renderDash(){
+  try{ applyPriceOverrides(appointments); }catch(e){}
   renderDashGrid();
   try{ renderReviewCard(); }catch(e){}
   // Birthday banner
@@ -5425,6 +5553,7 @@ let apptFilter="all";
 function fAppt(f,el){apptFilter=f;document.querySelectorAll("#page-appointments .tab").forEach(t=>t.classList.remove("active"));if(el)el.classList.add("active");renderAppts();}
 
 function renderAppts(){
+  try{ applyPriceOverrides(appointments); }catch(e){}
   let list=[...appointments];
   if(apptFilter==="confirmed")list=list.filter(a=>a.status==="confirmed");
   else if(apptFilter==="completed")list=list.filter(a=>a.status==="completed");
@@ -5657,6 +5786,7 @@ function confirmRebook(){
   // Save price to the completed appointment and add to daily takings
   if(price > 0){ appt.price = price; appt._pts = Date.now(); }
   if(price > 0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount = price; appt._pts = Date.now(); }
+  if(price > 0) priceOvrSet(appt);
   // Create the rebooked appointment
   const newApptId=Date.now();
   const newAppt={id:newApptId,clientId:appt.clientId,service:appt.service,datetime:dt,duration:(typeof rdSvcDur==='function'?rdSvcDur(appt.service):60),price:appt.price,staff:appt.staff,status:"confirmed",r24:false,r1:false,autoRebooked:true,parentId:appt.id};
@@ -5711,6 +5841,7 @@ function skipRebook(){
       diAutoAdd(appt.staff, price, appt.datetime, appt.id);
       appt._takingsAmount = price;
       appt._pts = Date.now();
+      priceOvrSet(appt);
       saveAll();renderAppts();renderDash();renderPayments();
       toast("💰","Fiyat Kaydedildi",`₺${price} Daily Takings'e eklendi.`,"g");
     }
@@ -5719,7 +5850,7 @@ function skipRebook(){
 }
 
 function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;a.status="cancelled";cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
-function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
+function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
@@ -8175,6 +8306,7 @@ function ccDeleteAppt(id){
   if(!confirm("Bu kaydı KALICI olarak silmek istiyor musunuz?\n"+cName(a.clientId)+" — "+(a.service||"")+" — ₺"+(a.price||0)+"\n(Para kaydı da kasadan düşülecek)"))return;
   if(a.status==="completed"&&a.price>0&&a.staff){try{diAutoRemove(a.staff,a.price,a.datetime,a.id);}catch(e){}}
   appointments=appointments.filter(x=>x.id!==id);
+  priceOvrDrop(id);
   saveAll();
   renderCashCheck();
   if(typeof renderDash==="function")renderDash();
@@ -8196,6 +8328,7 @@ function ccDeleteWalkin(opNameEnc,idx){
   toast("🗑","Silindi","Elden giriş kaldırıldı.","r");
 }
 function renderCashCheck(){
+  try{ applyPriceOverrides(appointments); }catch(e){}
   const body=document.getElementById("cc-body");if(!body)return;
   const day=ccDateVal();if(!day){body.innerHTML="";return;}
   const ticks=new Set(JSON.parse(localStorage.getItem('rdns_cc_'+day)||"[]"));
@@ -11063,7 +11196,7 @@ function rvSendAll(){
       if(ap._takingsAmount>0){
         const newAmt=Math.round(ap._takingsAmount*(100-d.pct)/100);
         const delta=ap._takingsAmount-newAmt;
-        try{ if(delta>0 && typeof diAutoRemove==='function'){ diAutoRemove(ap.staff, delta, ap.datetime, ap.id); ap._takingsAmount=newAmt; if(ap.price)ap.price=newAmt; ap._pts=Date.now(); } }catch(e){}
+        try{ if(delta>0 && typeof diAutoRemove==='function'){ diAutoRemove(ap.staff, delta, ap.datetime, ap.id); ap._takingsAmount=newAmt; if(ap.price)ap.price=newAmt; ap._pts=Date.now(); if(typeof priceOvrSet==='function') priceOvrSet(ap); } }catch(e){}
         toast('✅','İndirim Uygulandı', '%'+d.pct+' düşüldü — kasadan ₺'+delta+' azaltıldı.','g');
       }else{
         toast('✅','İndirim Uygulandı', 'Ücreti %'+d.pct+' İNDİRİMLİ tahsil edin ve fiyatı indirimli girin.','g');
