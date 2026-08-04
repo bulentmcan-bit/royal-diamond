@@ -8,9 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#faf8f5; --panel:#ffffff; --panel2:#f2ede4; --line:#e8e3db;
-    --gold:#b0842f; --gold-soft:#8a6420; --blush:#d4738c;
-    --ink:#241f2b; --muted:#7a7285; --green:#2e8b57; --red:#c94040;
+    --bg:#14101c; --panel:#1e1828; --panel2:#261e33; --line:#3a2f4d;
+    --gold:#d4af37; --gold-soft:#e8cf7a; --blush:#e8a0b4;
+    --ink:#f3eef8; --muted:#9c8fb0; --green:#7ed491; --red:#e57373;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--ink);font-family:'Manrope',sans-serif;min-height:100vh;padding:20px 14px 60px}
@@ -26,7 +26,7 @@
   .mode{display:inline-flex;align-items:center;gap:7px;margin-top:12px;font-size:12px;padding:6px 14px;border-radius:20px;border:1px solid var(--line);background:var(--panel);color:var(--muted)}
   .mode .dot{width:8px;height:8px;border-radius:50%;background:var(--red)}
   .mode.live .dot{background:var(--green)}
-  .mode.live{color:var(--green);border-color:rgba(46,139,87,.45)}
+  .mode.live{color:var(--green);border-color:rgba(126,212,145,.4)}
 
   .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
   @media(max-width:640px){.cards{grid-template-columns:1fr 1fr}}
@@ -87,7 +87,7 @@
 
   .rules{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;font-size:14px;line-height:1.7}
   .rules h2{font-family:'Marcellus',serif;font-weight:400;font-size:18px;letter-spacing:.05em;margin-bottom:10px}
-  .rules p{margin-bottom:8px;color:#4a4453}
+  .rules p{margin-bottom:8px;color:#cfc4de}
   .rules b{color:var(--gold-soft)}
   .backlink{display:block;text-align:center;margin-top:18px;color:var(--muted);font-size:13px;text-decoration:none}
   .backlink:hover{color:var(--gold)}
