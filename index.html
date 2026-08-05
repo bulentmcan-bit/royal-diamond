@@ -253,6 +253,22 @@
           }
         }catch(e){}
       });
+      // The owner password is the boss's alone, so it has to work wherever the
+      // boss is standing — including the reception laptop, which keeps its own
+      // PIN. Only the hash travels, and it lands in its own key so it can never
+      // overwrite the PIN a device already has.
+      _fbDb.ref('rdns_owner_pin_v1').on('value',snap=>{
+        if(_isSyncing['rdns_owner_pin_v1'])return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          // Only ever accept a real hash. A blank or half-written value must not
+          // be allowed to wipe the master password off every device at once.
+          if(rObj && typeof rObj.hash==='string' && rObj.hash.length===64){
+            localStorage.setItem('rdns_owner_cloud_hash', rObj.hash);
+          }
+        }catch(e){}
+      });
       _fbDb.ref('rdns_deductions_v1').on('value',snap=>{
         if(_isSyncing['rdns_deductions_v1'])return;
         const val=snap.val();if(!val)return;
@@ -3433,11 +3449,25 @@ function rdSha256(ascii){
   return res;
 }
 function rdPinHash(){return localStorage.getItem('rdns_pin_hash')||'';}
+// ── Owner password, shared across devices ──────────────────────────────
+// rdns_pin_hash is whatever PIN was set on THIS device. rdns_owner_cloud_hash
+// is the boss's password, mirrored from the cloud, and every device accepts it
+// as a master override. Two separate keys on purpose: a device that already has
+// its own PIN keeps it, and gains the master rather than being overwritten by it.
+function rdOwnerCloudHash(){return localStorage.getItem('rdns_owner_cloud_hash')||'';}
+function rdOwnerCloudPush(h){
+  if(typeof h!=='string'||h.length!==64) return;
+  localStorage.setItem('rdns_owner_cloud_hash',h);
+  if(typeof syncPush==='function') try{ syncPush('rdns_owner_pin_v1',{hash:h}); }catch(e){}
+}
 function rdRecHash(){return localStorage.getItem('rdns_recovery_hash')||'';}
-function rdPinSet(){return !!rdPinHash();}
+// A device that has never had a PIN of its own is still covered once the master
+// has arrived — otherwise it would ask the boss to invent a brand new PIN and
+// quietly end up with yet another password nobody else knows.
+function rdPinSet(){return !!(rdPinHash()||rdOwnerCloudHash());}
 var _rdJustSetup=false;
 function rdSetupPin(isChange){
-  var p1=prompt(isChange?'\ud83d\udd12 YEN\u0130 patron PIN belirleyin (4-8 rakam):':'\ud83d\udd12 \u0130LK KURULUM \u2014 Patron PIN belirleyin (4-8 rakam).\\nBu PIN sadece bu cihazda saklan\u0131r:');
+  var p1=prompt(isChange?'\ud83d\udd12 YEN\u0130 patron PIN belirleyin (4-8 rakam).\\nBu PIN t\u00fcm cihazlarda ge\u00e7erli olacak:':'\ud83d\udd12 \u0130LK KURULUM \u2014 Patron PIN belirleyin (4-8 rakam).\\nBu PIN t\u00fcm cihazlarda ge\u00e7erli olacak:');
   if(p1===null)return false;
   p1=String(p1).trim();
   if(!/^\d{4,8}$/.test(p1)){alert('PIN 4 ile 8 rakam aras\u0131nda olmal\u0131.');return rdSetupPin(isChange);}
@@ -3445,6 +3475,9 @@ function rdSetupPin(isChange){
   if(p2===null)return false;
   if(String(p2).trim()!==p1){alert('\u274c PIN e\u015fle\u015fmedi \u2014 tekrar deneyin.');return rdSetupPin(isChange);}
   localStorage.setItem('rdns_pin_hash',rdSha256(p1));
+  // Setting or changing the owner PIN sets it everywhere — that is the point of
+  // it being the owner's password rather than this laptop's password.
+  rdOwnerCloudPush(rdSha256(p1));
   var rec='';for(var i=0;i<8;i++)rec+=Math.floor(Math.random()*10);
   localStorage.setItem('rdns_recovery_hash',rdSha256(rec));
   _rdJustSetup=true;
@@ -3455,7 +3488,15 @@ function rdVerify(entry){
   entry=String(entry===undefined||entry===null?'':entry).trim();
   if(!entry)return false;
   var hh=rdSha256(entry);
-  if(rdPinHash()&&hh===rdPinHash())return true;
+  if(rdPinHash()&&hh===rdPinHash()){
+    // Proving this device's own PIN is proof enough to publish it as the shared
+    // master, but only into an empty slot — never overwriting a master already
+    // agreed by the other devices.
+    if(!rdOwnerCloudHash()) rdOwnerCloudPush(hh);
+    return true;
+  }
+  // The boss's password, from whichever device it was set on.
+  if(rdOwnerCloudHash()&&hh===rdOwnerCloudHash())return true;
   if(rdRecHash()&&hh===rdRecHash()){
     alert('\ud83c\udd98 Kurtarma kodu kabul edildi. \u015eimdi yeni bir PIN belirleyin.');
     rdSetupPin(true);
@@ -4443,7 +4484,7 @@ function rdSetRecepPin(){
   if(p1===null) return;
   p1 = String(p1).trim();
   if(!/^\d{4,8}$/.test(p1)){ alert('Şifre 4 ile 8 rakam arasında olmalı.'); return rdSetRecepPin(); }
-  if(rdPinHash() && rdSha256(p1)===rdPinHash()){ alert('⚠️ Bu, patron PIN ile aynı — resepsiyon için FARKLI bir şifre seçin.'); return rdSetRecepPin(); }
+  if((rdPinHash() && rdSha256(p1)===rdPinHash()) || (rdOwnerCloudHash() && rdSha256(p1)===rdOwnerCloudHash())){ alert('⚠️ Bu, patron şifresi ile aynı — resepsiyon için FARKLI bir şifre seçin.'); return rdSetRecepPin(); }
   var p2 = prompt('Şifre tekrar:');
   if(p2===null) return;
   if(String(p2).trim()!==p1){ alert('❌ Eşleşmedi — tekrar deneyin.'); return rdSetRecepPin(); }
@@ -11698,14 +11739,19 @@ function rvSendAll(){
 })();
 </script>
 </body><script>
-// 🔒 First-run owner PIN setup — runs once per device
+// 🔒 First-run owner PIN setup — only for a device the owner password has not
+// reached. That password arrives from the cloud a few seconds after sign-in, so
+// asking at 800ms was the very thing that spawned a separate PIN per device:
+// staff were prompted before the real one landed and invented a new one. Wait
+// for it, and only offer setup if nothing turns up.
 window.addEventListener('load',function(){
-  setTimeout(function(){
-    if(!rdPinSet()){
-      alert('🔒 Güvenlik güncellemesi: Lütfen şimdi patron PIN\'inizi belirleyin.\n(Bu ekranı personel değil, salon sahibi doldurmalıdır.)');
-      rdSetupPin(false);
-    }
-  },800);
+  var waited=0;
+  (function check(){
+    if(rdPinSet()) return;               // local PIN, or the shared owner password arrived
+    if(waited<15000){ waited+=500; return setTimeout(check,500); }
+    alert('🔒 Güvenlik güncellemesi: Lütfen şimdi patron PIN\'inizi belirleyin.\n(Bu ekranı personel değil, salon sahibi doldurmalıdır.)');
+    rdSetupPin(false);
+  })();
 });
 </script>
 <script>
