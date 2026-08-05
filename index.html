@@ -345,19 +345,69 @@
   function priceOvrPersist(){
     try{ localStorage.setItem(PRICE_OVR_KEY, JSON.stringify(priceOverrides)); }catch(e){}
   }
-  // Record the money now on an appointment. Called from every path that writes
-  // a price — including a deliberate reset to 0 (undoComplete) — so the map
-  // always states what this device last decided about this appointment.
-  function priceOvrSet(a){
+  // An override is only ever a record of money that WAS saved, never of money
+  // being absent. A zero entry here is a price eraser: applyPriceOverrides
+  // forces the record back down to it on every render and every save, on this
+  // device and on any device that merges it. That is how re-entering a Fiyat on
+  // an old appointment could never stick — one stray Update on an empty box
+  // pinned the appointment at 0 for good.
+  // The single exception is undoComplete, which really does mean "this
+  // appointment has no money on it"; it is written with reset:true and marked
+  // r:1 so it stays distinguishable from an accidental zero forever.
+  function priceOvrIsReset(o){ return !!(o&&o.r); }
+  function priceOvrHasMoney(o){ return !!(o && (parseFloat(o.p)||0)>0); }
+  // Stamp a new override so it outranks whatever it replaces. Wall-clock alone
+  // is not enough: the salon's devices don't share a clock, so a tablet running
+  // a few minutes ahead would otherwise keep winning forever and no price typed
+  // on a slower device could ever take hold.
+  function priceOvrStamp(a,prev){
+    let ts=Date.now();
+    if(prev && (prev.ts||0) >= ts) ts=(prev.ts||0)+1;
+    if(a && (a._pts||0) >= ts) ts=(a._pts||0)+1;
+    return ts;
+  }
+  // Record the money now on an appointment. Called from every path that saves a
+  // price, and from undoComplete with {reset:true} for a deliberate clear.
+  function priceOvrSet(a,opts){
     if(!a||a.id==null) return;
-    priceOverrides[String(a.id)]={
-      p:parseFloat(a.price)||0,
+    const key=String(a.id);
+    const prev=priceOverrides[key];
+    const p=parseFloat(a.price)||0;
+    const reset=!!(opts&&opts.reset);
+    if(p<=0 && !reset){
+      // Nothing to protect. Never store this as an override — storing it would
+      // turn the map into an eraser for a price another device may hold.
+      if(prev && !priceOvrIsReset(prev)){ delete priceOverrides[key]; priceOvrPersist(); }
+      return;
+    }
+    const ovr={
+      p:p,
       t:(a._takingsAmount==null?null:(parseFloat(a._takingsAmount)||0)),
       st:a.status||'',
-      ts:Date.now()
+      ts:priceOvrStamp(a,prev)
     };
+    if(reset) ovr.r=1;
+    priceOverrides[key]=ovr;
     priceOvrPersist();
+    // Keep the record's own stamp in step, so the merge guards below and the
+    // one in _preserveLocalApptPrices agree on which copy is the newer one.
+    if((a._pts||0) < ovr.ts) a._pts=ovr.ts;
   }
+  // Drop the zero entries written before the rule above existed. They carry no
+  // money and no reset flag, so they can only ever do damage — and they are
+  // sitting in localStorage and in the shared DB on every salon device.
+  (function purgeZeroOverrides(){
+    try{
+      let changed=false;
+      Object.keys(priceOverrides).forEach(function(k){
+        const o=priceOverrides[k];
+        if(!o || typeof o!=='object' || (!priceOvrHasMoney(o) && !priceOvrIsReset(o))){
+          delete priceOverrides[k]; changed=true;
+        }
+      });
+      if(changed) priceOvrPersist();
+    }catch(e){}
+  })();
   function priceOvrDrop(id){
     if(id==null) return;
     if(priceOverrides[String(id)]!==undefined){ delete priceOverrides[String(id)]; priceOvrPersist(); }
@@ -386,17 +436,32 @@
           adopted=true;
           return;
         }
-        if((parseFloat(r.price)||0)!==ovr.p){ r.price=ovr.p; _priceOvrRestored=true; }
+        const rPrice=parseFloat(r.price)||0;
+        const isReset=priceOvrIsReset(ovr);
+        // Only a deliberate reset is ever allowed to take money OFF a record.
+        // Anything else may raise a price or restore one that was wiped, never
+        // lower it to 0 — that direction is what kept erasing re-entered Fiyats.
+        if(!isReset && ovr.p<=0) return;
+        if(isReset && rPrice>0 && (r._pts||0) > (ovr.ts||0)){
+          // Re-priced after the reset — the money is the newer fact, so let the
+          // override step aside instead of clearing the record again.
+          delete priceOverrides[String(r.id)];
+          adopted=true;
+          return;
+        }
+        if(rPrice!==ovr.p){ r.price=ovr.p; _priceOvrRestored=true; }
         if(ovr.t!=null){
           if((parseFloat(r._takingsAmount)||0)!==ovr.t){ r._takingsAmount=ovr.t; _priceOvrRestored=true; }
-        } else if(r._takingsAmount!==undefined){
-          // Recorded as never sent to Daily Takings (e.g. after undoComplete).
+        } else if(isReset && r._takingsAmount!==undefined){
+          // Recorded as never sent to Daily Takings (undoComplete). Only a
+          // reset may forget an amount already sent through — otherwise the
+          // next Update would read "nothing recorded" and add the money twice.
           delete r._takingsAmount; _priceOvrRestored=true;
         }
         if(ovr.st==='completed' && r.status!=='completed'){ r.status='completed'; _priceOvrRestored=true; }
         // A deliberate reset (undoComplete) also un-completes the appointment —
         // don't let an old snapshot mark it done again with no money on it.
-        else if(ovr.st==='confirmed' && ovr.p===0 && r.status==='completed'){ r.status='confirmed'; _priceOvrRestored=true; }
+        else if(isReset && ovr.st==='confirmed' && r.status==='completed'){ r.status='confirmed'; _priceOvrRestored=true; }
         if((r._pts||0) < (ovr.ts||0)) r._pts=ovr.ts;
       });
       if(adopted||_priceOvrRestored) priceOvrPersist();
@@ -405,19 +470,26 @@
   }
   // Overrides travel with the shared DB, so a device that never typed the
   // price still knows not to reset it. Newest entry that carries money wins.
+  // A remote entry with no money is only ever taken when it is a flagged reset
+  // that is genuinely newer — an unflagged zero is one of the old eraser
+  // entries (or a device still running the previous build) and is ignored.
   function mergeRemotePriceOverrides(remoteOvr){
     try{
       if(!remoteOvr||typeof remoteOvr!=='object') return;
       let changed=false;
       Object.keys(remoteOvr).forEach(function(k){
         const rv=remoteOvr[k]; if(!rv||typeof rv!=='object') return;
+        const hasMoney=priceOvrHasMoney(rv), isReset=priceOvrIsReset(rv);
+        if(!hasMoney && !isReset) return;
         const lv=priceOverrides[k];
-        if(!lv || ((rv.ts||0) > (lv.ts||0) && (parseFloat(rv.p)||0)>0)){
-          priceOverrides[k]={p:parseFloat(rv.p)||0,
-                             t:(rv.t==null?null:(parseFloat(rv.t)||0)),
-                             st:rv.st||'', ts:rv.ts||0};
-          changed=true;
-        }
+        // Fill an empty slot, or replace an entry this one genuinely post-dates.
+        if(lv && (rv.ts||0) <= (lv.ts||0)) return;
+        const ovr={p:parseFloat(rv.p)||0,
+                   t:(rv.t==null?null:(parseFloat(rv.t)||0)),
+                   st:rv.st||'', ts:rv.ts||0};
+        if(isReset) ovr.r=1;
+        priceOverrides[k]=ovr;
+        changed=true;
       });
       if(changed) priceOvrPersist();
     }catch(e){ console.warn('mergeRemotePriceOverrides error:',e); }
@@ -446,8 +518,13 @@
         const loc=localById[String(r.id)];
         if(!loc) return;
         if((loc._pts||0) > (r._pts||0)){
-          // Our edit is the newer one — carry the whole money picture over,
-          // including a deliberate reset to 0 (undoComplete).
+          // Our edit is the newer one — carry the whole money picture over.
+          // A local 0 is only allowed to erase a cloud price when this device
+          // really did clear it (undoComplete leaves a flagged reset). Without
+          // that check, a device that simply never saw the Fiyat would keep
+          // pushing its empty copy over one, and the price would never stick.
+          if(!(parseFloat(loc.price)||0) && (parseFloat(r.price)||0)>0
+             && !priceOvrIsReset(priceOverrides[String(r.id)])) return;
           r.price=loc.price;
           if(loc._takingsAmount!==undefined) r._takingsAmount=loc._takingsAmount;
           r._pts=loc._pts;
@@ -3588,7 +3665,7 @@ function openModal(id){
     // (Editing an appointment temporarily rewires this button; if that edit
     // gets cancelled instead of saved, this guarantees it can't stay stuck
     // pointing at the old appointment the next time this modal opens.)
-    const svc=document.getElementById('a-service'); if(svc) svc.value='';
+    try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
     const pr=document.getElementById('a-price'); if(pr) pr.value='';
@@ -3788,7 +3865,10 @@ function renderDashGrid(){
         html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       } else {
         html += '<span style="font-size:0.68rem;font-weight:800;color:#c9584a;padding:2px 4px;">✓ Completed</span>';
-        html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;margin-left:auto;">↩ Undo</button>';
+        // A completed appointment used to lose its Edit button, so a price that
+        // went in wrong could never be corrected from here.
+        html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;margin-left:auto;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fiyat</button>';
+        html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       }
       html += '</div>';
       html += '</div>';
@@ -3856,6 +3936,57 @@ function apptById(id){
   return appointments.find(function(x){ return String(x.id)===String(id); }) || null;
 }
 
+// Put a service name into the Hizmet dropdown, whatever it is.
+// Most of the appointments in the book were booked under the old English menu
+// ("Acrylic Infill", "Gel Pedicure"…) and those names are not options any more.
+// Assigning one just leaves the select on nothing, and Update then wrote that
+// empty value back over the record — which is how appointments ended up with no
+// Hizmet at all. Carry the name in as its own option instead, so it shows and
+// survives the round trip untouched.
+function apptSvcSet(value){
+  const svc = document.getElementById('a-service');
+  if(!svc) return;
+  const old = svc.querySelector('option[data-legacy="1"]');
+  if(old) old.remove();
+  const v = value || '';
+  svc.value = v;
+  if(svc.selectedIndex >= 0 && svc.value === v) return;
+  const opt = document.createElement('option');
+  opt.setAttribute('data-legacy','1');
+  opt.value = v;
+  opt.textContent = v || '— Hizmet seçin —';
+  svc.insertBefore(opt, svc.firstChild);
+  svc.value = v;
+}
+
+// Every place the money for an appointment can still be found, best first.
+// An appointment written before the price stuck properly often has price 0 on
+// the record while the amount is sitting in Daily Takings — so the Fiyat box
+// opens with the real figure instead of a 0 the salon has to retype.
+function apptKnownPrice(a){
+  if(!a) return 0;
+  const onRecord = parseFloat(a.price)||0;
+  if(onRecord>0) return onRecord;
+  const takings = parseFloat(a._takingsAmount)||0;
+  if(takings>0) return takings;
+  try{
+    const ovr = (typeof priceOverrides!=='undefined') ? priceOverrides[String(a.id)] : null;
+    if(ovr && !ovr.r && (parseFloat(ovr.p)||0)>0) return parseFloat(ovr.p);
+  }catch(e){}
+  try{
+    // Today's Daily Takings entries record the appointment id alongside the
+    // amount; past days are only kept as a per-staff rollup, so this can only
+    // help for today — but when it does, it is the money that was really taken.
+    if(typeof dtState!=='undefined' && dtState && Array.isArray(dtState.operators)){
+      for(const op of dtState.operators){
+        const hit = (op.entries||[]).find(function(e){ return e && e.apptId!=null && String(e.apptId)===String(a.id); });
+        if(hit && (parseFloat(hit.amount)||0)>0) return parseFloat(hit.amount);
+      }
+    }
+  }catch(e){}
+  return 0;
+}
+
 function dashEditAppt(id){
   // A snapshot may have landed since this list was drawn — re-assert the saved
   // prices so the Fiyat box opens with the real figure, never a reset 0.
@@ -3871,16 +4002,24 @@ function dashEditAppt(id){
     if(hv) hv.value = a.clientId;
     if(cs && cl) cs.value = cl.name;
     const svc = document.getElementById('a-service');
-    if(svc) svc.value = a.service;
+    // Most of the appointments in the book were booked under the old English
+    // service menu ("Acrylic Infill", "Gel Pedicure"…), and those names are not
+    // options in this dropdown any more. Assigning one just leaves the select
+    // on nothing, and pressing Update then writes that empty value straight
+    // over the record — which is how appointments end up with a blank Hizmet.
+    // Carry the appointment's own name in as an option so it shows, and so it
+    // survives the round trip untouched.
+    apptSvcSet(a.service);
     const dt = document.getElementById('a-dt');
     if(dt) dt.value = dtLocal(new Date(a.datetime));
     const dur = document.getElementById('a-dur');
     if(dur) dur.value = a.duration || 60;
     const pr = document.getElementById('a-price');
-    // Show the price that was recorded for this appointment. Fall back to the
-    // amount actually sent to Daily Takings so an older completed appointment
-    // (saved before the price stuck properly) still opens with its figure.
-    const shownPrice = (a.price>0) ? a.price : ((a._takingsAmount>0) ? a._takingsAmount : 0);
+    // Show the price that was recorded for this appointment. Old appointments
+    // may have lost it off the record itself, so look everywhere the money can
+    // still be: the amount sent to Daily Takings, the saved override, and
+    // finally today's Daily Takings entries, which carry the appointment id.
+    const shownPrice = apptKnownPrice(a);
     if(pr) pr.value = shownPrice || '';
     // 💚 Family discount reminder — show it right on the popup
     try{
@@ -3935,8 +4074,16 @@ function dashEditAppt(id){
         // The client can have been replaced by that same snapshot — re-resolve
         // it too, so a discount is taken off (and used up) on the live record.
         const cl = clients.find(function(c){ return String(c.id)===String(live.clientId); });
+        // Read what this appointment is worth BEFORE anything below rewrites
+        // it, so the Daily Takings adjustment can be worked out as a delta.
+        const priorKnown = apptKnownPrice(live);
+        const wasCompleted = live.status === 'completed';
 
-        live.service   = document.getElementById('a-service').value;
+        // Never let an empty select wipe a service name. Old appointments carry
+        // names that are no longer in the dropdown, and writing that blank back
+        // is what left records with no Hizmet at all.
+        const _svcVal = document.getElementById('a-service').value;
+        if(_svcVal) live.service = _svcVal;
         live.datetime  = document.getElementById('a-dt').value;
         live.duration  = parseInt(document.getElementById('a-dur').value)||60;
         let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
@@ -3959,18 +4106,25 @@ function dashEditAppt(id){
         const oldPrice = live.price||0;
         // If the price field was left blank, don't erase a price that was
         // already recorded — only overwrite it when a new value is typed in.
-        const newPrice = enteredPrice > 0 ? enteredPrice : oldPrice;
+        // For an old appointment that lost its price off the record, fall back
+        // to whatever money we could still find for it rather than to 0.
+        const newPrice = enteredPrice > 0 ? enteredPrice : (oldPrice > 0 ? oldPrice : priorKnown);
         live.price     = newPrice;
         // Stamp the moment this price was written so an older cloud snapshot
         // can't overwrite it (see the money guard in the sync listener).
-        if(newPrice !== oldPrice) live._pts = Date.now();
+        if(newPrice !== oldPrice) live._pts = Math.max(Date.now(), (live._pts||0)+1);
         live.staff     = document.getElementById('a-staff').value;
 
         // How much has actually been sent to Daily Takings for this
         // appointment so far (separate from a.status, so correcting the
         // price on an already-completed appointment still works correctly
         // instead of being silently skipped).
-        const alreadyRecorded = live._takingsAmount || 0;
+        // An old appointment can have money in Daily Takings with no marker
+        // left on the record; fall back to what it was worth before this edit
+        // rather than assume nothing was sent, or a completed appointment gets
+        // its amount added to Daily Takings a second time on every correction.
+        let alreadyRecorded = live._takingsAmount || 0;
+        if(!alreadyRecorded && wasCompleted && priorKnown>0) alreadyRecorded = priorKnown;
 
         if(enteredPrice > 0 && live.staff){
           if(live.status !== 'completed'){
@@ -3983,7 +4137,7 @@ function dashEditAppt(id){
           if(alreadyRecorded === 0){
             diAutoAdd(live.staff, enteredPrice, live.datetime, live.id);
             live._takingsAmount = enteredPrice;
-            live._pts = Date.now();
+            live._pts = Math.max(Date.now(), (live._pts||0)+1);
           } else if(alreadyRecorded !== enteredPrice){
             // Price was corrected — adjust Daily Takings by the difference
             // instead of adding the full amount again.
@@ -3991,12 +4145,17 @@ function dashEditAppt(id){
             if(delta > 0) diAutoAdd(live.staff, delta, live.datetime, live.id);
             else if(delta < 0) diAutoRemove(live.staff, -delta, live.datetime, live.id);
             live._takingsAmount = enteredPrice;
-            live._pts = Date.now();
+            live._pts = Math.max(Date.now(), (live._pts||0)+1);
+          } else {
+            // Same figure, already through to Daily Takings — just re-assert
+            // the marker so the record stops looking like it owes money.
+            live._takingsAmount = enteredPrice;
           }
         }
 
         // Remember this figure outside the appointments array — that array
-        // gets replaced wholesale by the next cloud snapshot.
+        // gets replaced wholesale by the next cloud snapshot. Only money is
+        // recorded: a zero here would pin the appointment at 0 on every device.
         priceOvrSet(live);
 
         // Persist first, then always close the popup — even if a rendering
@@ -4155,7 +4314,9 @@ function undoComplete(id){
   delete a._ptsAdded;
   delete a._prevLastVisit;
   delete a._takingsAmount;
-  priceOvrSet(a);      // record the reset, or the override would restore the price
+  // Flag it as a deliberate clear — the only kind of zero the override map is
+  // allowed to keep, and the only one permitted to take money off a record.
+  priceOvrSet(a,{reset:true});
   saveAll();renderAppts();renderDash();renderPayments();updateApptBadge();
   toast("↩️","Geri Alındı",`${cObj(a.clientId)?.name} tekrar Onaylandı durumunda.`,"g");
 }
@@ -5569,13 +5730,14 @@ function renderAppts(){
       <td>${a.service}</td>
       <td style="font-size:0.81rem">${fDT(a.datetime)}</td>
       <td style="color:var(--muted)">${a.duration}m</td>
-      <td style="font-weight:700">₺${a.price}</td>
+      <td style="font-weight:700">₺${apptKnownPrice(a)}</td>
       <td><span class="badge ${a.r24?"badge-green":"badge-muted"}">${a.r24?"✓":"—"}</span></td>
       <td><span class="badge ${a.r1?"badge-green":"badge-muted"}">${a.r1?"✓":"—"}</span></td>
       <td>${a.autoRebooked?'<span class="badge badge-mint">🔄Auto</span>':'<span class="badge badge-muted">Manual</span>'}</td>
       <td>${statusBadge(a.status)}</td>
       <td><div style="display:flex;gap:4px">
         ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${a.id})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${a.id})">✕</button>`:""}
+        ${a.status!=="cancelled"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dashEditAppt(${a.id})">✏ Düzenle</button>`:""}
         ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dpFromAppt(${a.id})">📆 Vadeli</button>`:""}
         ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(150,150,150,0.15);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="undoComplete(${a.id})">↩ Undo</button>`:""}
         ${(a.status==="cancelled"||a.status==="completed")?`<button class="btn btn-red btn-sm" style="opacity:0.7" onclick="deleteAppt(${a.id})">🗑 Delete</button>`:""}
