@@ -8500,6 +8500,26 @@ function ccDeleteWalkin(opNameEnc,idx){
   if(typeof dtRender==="function")dtRender();
   toast("🗑","Silindi","Elden giriş kaldırıldı.","r");
 }
+// An entry whose appointment no longer exists (deleted / moved / un-completed)
+// still carries money in the Kasa total. Delete it by appointment id, never by
+// row index — staff keep adding entries while this screen is open, so an index
+// captured at render time can point at the wrong row by the time it is clicked.
+function ccDeleteOrphan(opNameEnc,apptId){
+  const opName=decodeURIComponent(opNameEnc);
+  if(!dtState||!dtState.operators)return;
+  const op=dtState.operators.find(o=>o.name===opName);
+  if(!op||!op.entries)return;
+  const idx=op.entries.findIndex(e=>String(e.apptId)===String(apptId));
+  if(idx<0)return;
+  const e=op.entries[idx];
+  if(!confirm("Bu kasa girişinin randevusu artık yok — silinsin mi?\n"+(e.service||"")+" — ₺"+(e.amount||0)+"\n(Randevu silinmiş ama parası kasada kalmış)"))return;
+  op.entries.splice(idx,1);
+  dtSaveState();
+  renderCashCheck();
+  if(typeof renderDashTakings==="function")renderDashTakings();
+  if(typeof dtRender==="function")dtRender();
+  toast("🗑","Silindi","Karşılıksız kasa girişi kaldırıldı.","r");
+}
 function renderCashCheck(){
   try{ applyPriceOverrides(appointments); }catch(e){}
   const body=document.getElementById("cc-body");if(!body)return;
@@ -8518,7 +8538,14 @@ function renderCashCheck(){
   // If today: enrich with payment method from live Daily Takings entries, and add walk-in entries
   if(isToday&&typeof dtState!=="undefined"&&dtState&&dtState.operators){
     dtState.operators.forEach(op=>{(op.entries||[]).forEach((e,i)=>{
-      if(e.apptId){const r=rows.find(x=>String(x.apptId)===String(e.apptId));if(r){r.pay=e.pay||null;r.splits=e.splits||null;if(e.amount)r.amount=e.amount;}}
+      if(e.apptId){
+        const r=rows.find(x=>String(x.apptId)===String(e.apptId));
+        if(r){r.pay=e.pay||null;r.splits=e.splits||null;if(e.amount)r.amount=e.amount;}
+        // No appointment behind this money. Silently skipping it used to leave the
+        // amount inside the Kasa total with no row to explain it and no way to
+        // remove it — the Fark could never be cleared. Show it and let it be deleted.
+        else rows.push({rid:"o"+op.name+"_"+e.apptId, wOp:op.name, oApptId:e.apptId, apptId:null, time:e.time||"", client:(e.service||"Karşılıksız giriş"), service:"(Randevusu silinmiş kasa girişi)", staff:op.name, amount:e.amount||0, pay:e.pay||null, splits:e.splits||null, orphan:true});
+      }
       else rows.push({rid:"w"+op.name+"_"+i, wOp:op.name, wIdx:i, apptId:null, time:e.time||"", client:(e.service||"Elden giriş"), service:"(Daily Takings girişi)", staff:op.name, amount:e.amount||0, pay:e.pay||null, splits:e.splits||null, walkin:true});
     });});
   }
@@ -8545,7 +8572,10 @@ function renderCashCheck(){
   if(dtTotals)Object.keys(dtTotals).forEach(n=>{if(!byStaff[n])staffNames.push(n);});
   staffNames.sort((a,b)=>a.localeCompare(b,"tr"));
 
-  const grand=rows.reduce((s,r)=>s+r.amount,0);
+  // Orphans are deliberately NOT counted here. They have no appointment behind
+  // them, so leaving them out is what keeps the Fark showing — the flagged row
+  // below is the explanation for it rather than a figure that hides it.
+  const grand=rows.reduce((s,r)=>s+(r.orphan?0:r.amount),0);
   const dtGrand=dtTotals?Object.values(dtTotals).reduce((s,v)=>s+v,0):null;
   const ticked=rows.filter(r=>ticks.has(r.rid)).length;
 
@@ -8557,7 +8587,7 @@ function renderCashCheck(){
 
   staffNames.forEach(st=>{
     const list=(byStaff[st]||[]).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
-    const sub=list.reduce((s,r)=>s+r.amount,0);
+    const sub=list.reduce((s,r)=>s+(r.orphan?0:r.amount),0);
     const dtv=dtTotals&&(st in dtTotals)?dtTotals[st]:null;
     const diff=(dtv!==null)?(dtv-sub):null;
     html+='<div style="margin-bottom:16px;">'
@@ -8573,15 +8603,20 @@ function renderCashCheck(){
     if(list.length){
       html+='<table class="tbl"><thead><tr><th style="width:36px;">✔</th><th>Saat</th><th>Müşteri</th><th>Hizmet</th><th>Tutar</th><th>Ödeme</th><th style=\"width:150px;\"></th></tr></thead><tbody>';
       list.forEach(r=>{
-        html+='<tr style="'+(ticks.has(r.rid)?"opacity:0.5;":"")+(r.walkin?"background:rgba(122,170,232,0.06);":"")+'">'
+        html+='<tr style="'+(ticks.has(r.rid)?"opacity:0.5;":"")+(r.walkin?"background:rgba(122,170,232,0.06);":"")+(r.orphan?"background:rgba(217,83,79,0.09);":"")+'">'
           +'<td><input type="checkbox" style="width:17px;height:17px;accent-color:var(--gold);cursor:pointer;" '+(ticks.has(r.rid)?"checked":"")+' onclick="ccToggle(\''+r.rid+'\')"></td>'
           +'<td style="font-size:0.8rem;color:var(--muted)">'+(r.time||"—")+'</td>'
-          +'<td style="font-weight:600;">'+r.client+(r.walkin?' <span class="badge badge-blue" style="font-size:0.6rem;">Elden</span>':'')+'</td>'
+          +'<td style="font-weight:600;">'+r.client
+            +(r.walkin?' <span class="badge badge-blue" style="font-size:0.6rem;">Elden</span>':'')
+            +(r.orphan?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Bu paranın randevusu silinmiş. Kasa toplamına giriyor ama randevu toplamına girmiyor — Fark bu yüzden oluşuyor. Silmek için 🗑">⚠️ Karşılıksız</span>':'')
+            +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
           +'<td>'+(r.collect==='deferred'?'<span class="badge" style="background:rgba(212,169,106,0.16);color:var(--gold);">📆 Vadeli</span>':(r.collect==='unpaid'?'<span class="badge badge-rose">⛔ Ödenmedi</span>':ccPayBadge(r.pay,r.splits)))+'</td>'
           +'<td style="white-space:nowrap;">'
-          +(r.walkin
+          +(r.orphan
+            ?'<button class="btn btn-sm" style="background:rgba(217,83,79,0.14);border:1px solid rgba(217,83,79,0.45);color:#d9534f;" title="Randevusu silinmiş bu kasa girişini kaldır — Fark kapanır" onclick="ccDeleteOrphan(\''+encodeURIComponent(r.wOp)+'\',\''+r.oApptId+'\')">🗑 Kaldır</button>'
+            :r.walkin
             ?'<button class="btn btn-ghost btn-sm" title="Bu elden girişi sil" onclick="ccDeleteWalkin(\''+encodeURIComponent(r.wOp)+'\','+r.wIdx+')">🗑</button>'
             :'<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)'+(r.collect==='deferred'?';box-shadow:0 0 0 2px rgba(212,169,106,0.5)':'')+'" title="Vadeli ödeme olarak ekle (müşteri sonra ödeyecek)" onclick="dpFromAppt('+r.apptId+')">📆</button>'
             +'<button class="btn btn-sm" style="'+(r.collect==='unpaid'?'background:rgba(232,122,122,0.22);border:1px solid rgba(232,122,122,0.6);color:#e87a7a':'background:rgba(232,122,122,0.10);border:1px solid rgba(232,122,122,0.3);color:#e87a7a')+'" title="Ödenmedi olarak işaretle (para alınmadı)" onclick="ccToggleUnpaid('+r.apptId+')">⛔</button>'
@@ -8598,7 +8633,7 @@ function renderCashCheck(){
 
   // Amounts explained by per-job flags (auto mode): Vadeli = pay later, Ödenmedi = not collected.
   let dpDeferredSum=0, dpUnpaidSum=0, dpDeferredNames=[], dpUnpaidNames=[];
-  rows.forEach(r=>{ if(r.walkin) return;
+  rows.forEach(r=>{ if(r.walkin||r.orphan) return;
     if(r.collect==='deferred'){ dpDeferredSum+=r.amount; dpDeferredNames.push(r.client+' (₺'+r.amount.toLocaleString()+')'); }
     else if(r.collect==='unpaid'){ dpUnpaidSum+=r.amount; dpUnpaidNames.push(r.client+' (₺'+r.amount.toLocaleString()+')'); }
   });
