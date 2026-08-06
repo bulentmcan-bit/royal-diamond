@@ -117,14 +117,17 @@
           _isSyncing['rdns_main_v1']=true;
           clients=remote.clients||[];
           mergeRemotePriceOverrides(remote.priceOverrides);
+          mergeRemotePayMethods(remote.payMethods);
           remote.appointments=_preserveLocalApptPrices(remote.appointments||[]);
           const moneyKept=_apptMoneyKept;
           appointments=remote.appointments;
           applyPriceOverrides(appointments);
+          applyPayMethods(appointments);
           payments=remote.payments||[];
           deferredPayments=remote.deferredPayments||[];
           ccOverrides=remote.ccOverrides||{};
           remote.priceOverrides=priceOverrides;
+          remote.payMethods=payMethods;
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
@@ -200,6 +203,9 @@
           setTimeout(()=>{_isSyncing['rdns_takings_v3']=false;},800);
           // Always refresh the in-memory state, not only when Takings page is open
           try{ dtState = dtLoadState(); }catch(e){}
+          // A method picked on another device arrives with these entries — put it
+          // on the customer's record here too, so every device keeps the answer.
+          try{ if(typeof pmSyncApptPay==='function'&&pmSyncApptPay()) saveAll(); }catch(e){}
           const pg=document.querySelector('.page.active');
           if(pg&&pg.id==='page-takings')try{dtRender();renderDashTakings();}catch(e){}
           if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
@@ -520,6 +526,116 @@
       });
       if(changed) priceOvrPersist();
     }catch(e){ console.warn('mergeRemotePriceOverrides error:',e); }
+  }
+
+  // ═══════ PERSISTENT PAYMENT METHODS (Nakit / Kart / IBAN) ═══════
+  // How a customer paid is picked on the Daily Takings entry, and those entries
+  // only ever describe TODAY: the day rollover empties them and history keeps
+  // nothing but per-technician totals. That is why Kasa Kontrol showed a proper
+  // badge this morning and a bare "—" on every past day — the answer was never
+  // written down anywhere permanent.
+  // The method belongs on the appointment, and — exactly like the price above —
+  // it also needs a copy OUTSIDE the appointments array, because that array is
+  // replaced wholesale by every cloud snapshot and a device that never saw the
+  // payment would otherwise push its blank copy over it. One entry per
+  // appointment id, stamped, re-applied after every merge and before every draw.
+  const PAY_OVR_KEY='rdns_pay_ovr_v1';
+  let payMethods=(function(){
+    try{ const o=JSON.parse(localStorage.getItem(PAY_OVR_KEY)||'{}'); return (o&&typeof o==='object')?o:{}; }
+    catch(e){ return {}; }
+  })();
+  function payOvrPersist(){
+    try{ localStorage.setItem(PAY_OVR_KEY, JSON.stringify(payMethods)); }catch(e){}
+  }
+  // Only a real method is ever stored. A blank is the absence of an answer, not
+  // an answer — storing it would let an untagged copy erase a tagged one.
+  function payOvrClean(v){
+    if(!v||typeof v!=='object'||!v.pay) return null;
+    const o={pay:String(v.pay), ts:Number(v.ts)||0};
+    if(o.pay==='split'){
+      if(!Array.isArray(v.splits)) return null;
+      o.splits=v.splits.filter(function(s){return s&&s.pay;})
+                       .map(function(s){return {pay:String(s.pay), amount:parseFloat(s.amount)||0};});
+      if(!o.splits.length) return null;
+    }
+    if(v.payNote) o.payNote=String(v.payNote);
+    return o;
+  }
+  function paySame(a,b){
+    if(!a||!b) return false;
+    return a.pay===b.pay && JSON.stringify(a.splits||null)===JSON.stringify(b.splits||null)
+           && (a.payNote||'')===(b.payNote||'');
+  }
+  function _payStampOn(a,v){
+    a.pay=v.pay;
+    if(v.splits) a.splits=v.splits; else delete a.splits;
+    if(v.payNote) a.payNote=v.payNote; else delete a.payNote;
+    if((a._payTs||0)<(v.ts||0)) a._payTs=v.ts;
+  }
+  // Record how one appointment was paid. Called the moment the method is picked,
+  // so it is safe long before the day rolls over.
+  function payOvrSet(apptId,src){
+    if(apptId==null) return false;
+    const key=String(apptId);
+    const v=payOvrClean(src);
+    if(!v) return false;
+    const prev=payMethods[key];
+    // Wall-clock alone can't decide between devices whose clocks differ, so a
+    // new answer is always stamped past the one it replaces.
+    let ts=Date.now();
+    if(prev&&(prev.ts||0)>=ts) ts=(prev.ts||0)+1;
+    v.ts=ts;
+    payMethods[key]=v;
+    payOvrPersist();
+    try{
+      const a=(typeof appointments!=='undefined'&&Array.isArray(appointments))
+        ? appointments.find(function(x){return x&&String(x.id)===key;}) : null;
+      if(a) _payStampOn(a,v);
+    }catch(e){}
+    return true;
+  }
+  function payOvrDrop(id){
+    if(id==null) return;
+    if(payMethods[String(id)]!==undefined){ delete payMethods[String(id)]; payOvrPersist(); }
+  }
+  // Put the saved methods back on the records. A snapshot may carry a genuinely
+  // newer method (someone corrected it on another device) — that one is adopted
+  // rather than overwritten, so the two copies stop fighting over the record.
+  function applyPayMethods(list){
+    try{
+      if(!Array.isArray(list)) return list;
+      let mapChanged=false;
+      list.forEach(function(r){
+        if(!r||r.id==null) return;
+        const key=String(r.id);
+        const ovr=payMethods[key];
+        if(r.pay&&(r._payTs||0)>((ovr&&ovr.ts)||0)){
+          const v=payOvrClean({pay:r.pay,splits:r.splits,payNote:r.payNote,ts:r._payTs});
+          if(v&&!paySame(v,ovr)){ payMethods[key]=v; mapChanged=true; }
+          return;
+        }
+        if(!ovr) return;
+        if(!paySame(ovr,{pay:r.pay,splits:r.splits,payNote:r.payNote})) _payStampOn(r,ovr);
+        else if((r._payTs||0)<(ovr.ts||0)) r._payTs=ovr.ts;
+      });
+      if(mapChanged) payOvrPersist();
+    }catch(e){ console.warn('applyPayMethods error:',e); }
+    return list;
+  }
+  // Methods travel with the shared DB, so a device that never took the payment
+  // still knows how it was taken. Newest stamp wins.
+  function mergeRemotePayMethods(remoteMethods){
+    try{
+      if(!remoteMethods||typeof remoteMethods!=='object') return;
+      let changed=false;
+      Object.keys(remoteMethods).forEach(function(k){
+        const rv=payOvrClean(remoteMethods[k]); if(!rv) return;
+        const lv=payMethods[k];
+        if(lv&&(rv.ts||0)<=(lv.ts||0)) return;
+        payMethods[k]=rv; changed=true;
+      });
+      if(changed) payOvrPersist();
+    }catch(e){ console.warn('mergeRemotePayMethods error:',e); }
   }
 
   // When a fresh copy of the shared DB arrives from the cloud, another device
@@ -3335,7 +3451,10 @@ function dbSave(){
     // Re-assert the saved prices on the way out too, so a snapshot that landed
     // between the last merge and this save can't push a 0 back to the cloud.
     try{ applyPriceOverrides(appointments); }catch(e){}
-    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides};
+    // Same for the payment methods: a snapshot that landed since the last merge
+    // must not push a record with the ÖDEME answer missing back to the cloud.
+    try{ applyPayMethods(appointments); }catch(e){}
+    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods};
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
@@ -3357,6 +3476,7 @@ let ccOverrides = _dbLoaded?.ccOverrides || {};
 // Fold in anything the stored DB carries (e.g. after a backup restore) — the
 // standalone rdns_price_ovr_v1 key stays the primary copy.
 try{ mergeRemotePriceOverrides(_dbLoaded?.priceOverrides); applyPriceOverrides(appointments); }catch(e){}
+try{ mergeRemotePayMethods(_dbLoaded?.payMethods); applyPayMethods(appointments); }catch(e){}
 
 function cObj(id){return clients.find(c=>String(c.id)===String(id));}
 function cName(id){return cObj(id)?.name||"Unknown";}
@@ -4369,6 +4489,10 @@ function undoComplete(id){
   // Flag it as a deliberate clear — the only kind of zero the override map is
   // allowed to keep, and the only one permitted to take money off a record.
   priceOvrSet(a,{reset:true});
+  // The money is being taken back off the record, so how it was paid no longer
+  // describes anything. It is asked again the next time the job is completed.
+  delete a.pay; delete a.splits; delete a.payNote; delete a._payTs;
+  payOvrDrop(a.id);
   saveAll();renderAppts();renderDash();renderPayments();updateApptBadge();
   toast("↩️","Geri Alındı",`${cObj(a.clientId)?.name} tekrar Onaylandı durumunda.`,"g");
 }
@@ -8440,12 +8564,13 @@ function ccToggle(rid){
   localStorage.setItem(key,JSON.stringify(Array.from(t)));
   renderCashCheck();
 }
-function ccPayBadge(p,splits){
+function ccPayBadge(p,splits,note){
   const m={nakit:"💵 Nakit",kart:"💳 Kart",iban:"🏦 IBAN",diger:"📝 Diğer"};
+  const t=note?' title="'+String(note).replace(/"/g,'&quot;')+'"':'';
   if(p==='split'&&splits&&splits.length){
-    return '<span class="badge badge-blue">'+splits.map(function(s){var mm=m[s.pay]||s.pay;return mm.split(' ')[0]+' '+dtFmt(s.amount);}).join(' + ')+'</span>';
+    return '<span class="badge badge-blue"'+t+'>'+splits.map(function(s){var mm=m[s.pay]||s.pay;return mm.split(' ')[0]+' '+dtFmt(s.amount);}).join(' + ')+(note?' 📄':'')+'</span>';
   }
-  return p&&m[p]?'<span class="badge badge-blue">'+m[p]+'</span>':'<span style="color:var(--muted);font-size:0.75rem;">—</span>';
+  return p&&m[p]?'<span class="badge badge-blue"'+t+'>'+m[p]+(note?' 📄':'')+'</span>':'<span style="color:var(--muted);font-size:0.75rem;">—</span>';
 }
 function ccUndo(id){
   undoComplete(id);
@@ -8521,6 +8646,7 @@ function ccDeleteAppt(id){
   if(a.status==="completed"&&a.price>0&&a.staff){try{diAutoRemove(a.staff,a.price,a.datetime,a.id);}catch(e){}}
   appointments=appointments.filter(x=>x.id!==id);
   priceOvrDrop(id);
+  payOvrDrop(id);
   saveAll();
   renderCashCheck();
   if(typeof renderDash==="function")renderDash();
@@ -8563,6 +8689,8 @@ function ccDeleteOrphan(opNameEnc,apptId){
 }
 function renderCashCheck(){
   try{ applyPriceOverrides(appointments); }catch(e){}
+  try{ applyPayMethods(appointments); }catch(e){}
+  try{ if(pmSyncApptPay()) saveAll(); }catch(e){}
   const body=document.getElementById("cc-body");if(!body)return;
   const day=ccDateVal();if(!day){body.innerHTML="";return;}
   const ticks=new Set(JSON.parse(localStorage.getItem('rdns_cc_'+day)||"[]"));
@@ -8570,10 +8698,15 @@ function renderCashCheck(){
   const dayLabel=new Date(day+"T00:00").toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 
   // ── 1) Itemised rows: completed appointments of that day ──
+  // The payment method comes off the appointment itself, so it reads the same on
+  // the day it was taken and on any day afterwards. It used to start empty here
+  // and only get filled in from today's live Daily Takings entries below — which
+  // is exactly why every past day showed "—".
   const rows=appointments.filter(a=>a.status==="completed"&&String(a.datetime).slice(0,10)===day).map(a=>({
     rid:"a"+a.id, apptId:a.id, time:String(a.datetime).slice(11,16),
     client:cName(a.clientId), service:a.service||"—", staff:a.staff||"—",
-    amount:a.price||0, pay:null, walkin:false, collect:a.collect||null
+    amount:a.price||0, pay:a.pay||null, splits:a.splits||null, payNote:a.payNote||null,
+    walkin:false, collect:a.collect||null
   }));
 
   // If today: enrich with payment method from live Daily Takings entries, and add walk-in entries
@@ -8581,7 +8714,7 @@ function renderCashCheck(){
     dtState.operators.forEach(op=>{(op.entries||[]).forEach((e,i)=>{
       if(e.apptId){
         const r=rows.find(x=>String(x.apptId)===String(e.apptId));
-        if(r){r.pay=e.pay||null;r.splits=e.splits||null;if(e.amount)r.amount=e.amount;}
+        if(r){if(e.pay){r.pay=e.pay;r.splits=e.splits||null;r.payNote=e.payNote||null;}if(e.amount)r.amount=e.amount;}
         // No appointment behind this money. Silently skipping it used to leave the
         // amount inside the Kasa total with no row to explain it and no way to
         // remove it — the Fark could never be cleared. Show it and let it be deleted.
@@ -8598,7 +8731,27 @@ function renderCashCheck(){
     try{dtMethods=pmTotals();}catch(e){}
   }else if(typeof dtState!=="undefined"&&dtState&&dtState.history){
     const hd=dtState.history.find(x=>x.date===day);
-    if(hd){dtTotals={};(hd.ops||[]).forEach(o=>{dtTotals[o.name]=(typeof o.total==="number")?o.total:dtOpTotal(o);});dtMethods=hd.methods||null;}
+    if(hd){
+      dtTotals={};(hd.ops||[]).forEach(o=>{dtTotals[o.name]=(typeof o.total==="number")?o.total:dtOpTotal(o);});
+      dtMethods=hd.methods||null;
+      // A past day: the live entries were cleared at the rollover, so the day's
+      // archived transactions are what fill in the ÖDEME column and put the
+      // walk-ins back on the list. Days archived before this was recorded carry
+      // no entries and simply behave as they always did.
+      (hd.ops||[]).forEach(o=>{(o.entries||[]).forEach((e,i)=>{
+        if(!e) return;
+        if(e.apptId!=null){
+          const r=rows.find(x=>String(x.apptId)===String(e.apptId));
+          // The record's own method wins — it can have been corrected since.
+          if(r){ if(!r.pay&&e.pay){r.pay=e.pay;r.splits=e.splits||null;r.payNote=e.payNote||null;} return; }
+        }
+        rows.push({rid:"h"+o.name+"_"+i, apptId:null, time:e.time||"",
+          client:(e.service||"Elden giriş"),
+          service:(e.apptId!=null?"(Randevusu silinmiş kasa girişi)":"(Daily Takings girişi)"),
+          staff:o.name, amount:e.amount||0, pay:e.pay||null, splits:e.splits||null,
+          payNote:e.payNote||null, walkin:true, archived:true});
+      });});
+    }
   }
 
   if(!rows.length&&!dtTotals){
@@ -8653,9 +8806,13 @@ function renderCashCheck(){
             +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
-          +'<td>'+(r.collect==='deferred'?'<span class="badge" style="background:rgba(212,169,106,0.16);color:var(--gold);">📆 Vadeli</span>':(r.collect==='unpaid'?'<span class="badge badge-rose">⛔ Ödenmedi</span>':ccPayBadge(r.pay,r.splits)))+'</td>'
+          +'<td>'+(r.collect==='deferred'?'<span class="badge" style="background:rgba(212,169,106,0.16);color:var(--gold);">📆 Vadeli</span>':(r.collect==='unpaid'?'<span class="badge badge-rose">⛔ Ödenmedi</span>':ccPayBadge(r.pay,r.splits,r.payNote)))+'</td>'
           +'<td style="white-space:nowrap;">'
-          +(r.orphan
+          // An archived row is a read-only copy of a day that has already closed.
+          // The delete buttons all act on TODAY's live entries, so offering them
+          // here would remove the wrong transaction.
+          +(r.archived?''
+            :r.orphan
             ?'<button class="btn btn-sm" style="background:rgba(217,83,79,0.14);border:1px solid rgba(217,83,79,0.45);color:#d9534f;" title="Randevusu silinmiş bu kasa girişini kaldır — Fark kapanır" onclick="ccDeleteOrphan(\''+encodeURIComponent(r.wOp)+'\',\''+r.oApptId+'\')">🗑 Kaldır</button>'
             :r.walkin
             ?'<button class="btn btn-ghost btn-sm" title="Bu elden girişi sil" onclick="ccDeleteWalkin(\''+encodeURIComponent(r.wOp)+'\','+r.wIdx+')">🗑</button>'
@@ -8960,6 +9117,21 @@ function dtDateKey(){ return dtLocal(new Date()).slice(0,10); }
 function dtOpTotal(op){ return ((op&&op.entries)||[]).reduce((s,e)=>s+((e&&e.amount)||0),0); }
 function dtGrandTotal(){ return (((dtState||{}).operators)||[]).filter(o=>o&&o.active).reduce((s,o)=>s+dtOpTotal(o),0); }
 
+// Keep enough of each transaction to explain the day months later. A history
+// day used to hold per-technician totals and nothing else, so once the live
+// entries were cleared there was no way to say how any single job was paid —
+// Kasa Kontrol's ÖDEME column reads this archive back for every past day.
+function dtArchiveEntry(e){
+  var o={service:(e&&e.service)||'', amount:(parseFloat(e&&e.amount)||0), time:(e&&e.time)||''};
+  if(!e) return o;
+  if(e.apptId!=null) o.apptId=e.apptId;
+  if(e.pay) o.pay=e.pay;
+  if(e.pay==='split'&&Array.isArray(e.splits)) o.splits=e.splits.map(function(s){return {pay:s.pay, amount:parseFloat(s.amount)||0};});
+  if(e.payNote) o.payNote=e.payNote;
+  if(e.ded) o.ded=e.ded;
+  return o;
+}
+
 // ── Sanitize takings state (Firebase strips empty arrays — restore them) ──
 function dtSanitize(d){
   if(!d || typeof d!=='object') return d;
@@ -9050,7 +9222,7 @@ function dtLoadState(){
         if(ops.length>0){
           const total = ops.reduce((s,o)=>s+dtOpTotal(o),0);
           if(!d.history) d.history=[];
-          d.history.unshift({date:d.lastDate, ops:ops.map(o=>({name:o.name,total:dtOpTotal(o),count:o.entries.length})), total, sent:d.sentToday||false});
+          d.history.unshift({date:d.lastDate, ops:ops.map(o=>({name:o.name,total:dtOpTotal(o),count:o.entries.length,entries:(o.entries||[]).map(dtArchiveEntry)})), total, sent:d.sentToday||false, methods:(typeof pmDayTotals==='function'?pmDayTotals(ops):null)});
           if(d.history.length>60) d.history=d.history.slice(0,60);
         }
       }
@@ -9130,6 +9302,13 @@ let dtState = dtLoadState();
   }catch(e){}
 })();
 
+// Anything already tagged on today's live entries is written onto the customer's
+// record right away, so a method picked before this existed — or on a device that
+// is opened once and left — is not lost at the next rollover.
+(function(){
+  try{ if(pmSyncApptPay()) saveAll(); }catch(e){}
+})();
+
 // Fix commission values in history immediately after loading
 (function(){
   try {
@@ -9158,11 +9337,14 @@ function dtSaveState(){
     if(!dtState.history) dtState.history=[];
     // Remove ALL existing entries for today first to avoid duplicates
     dtState.history = dtState.history.filter(function(h){return h.date!==tk;});
-    dtState.history.unshift({date:tk,ops:ops.map(function(o){return{name:o.name,total:dtOpTotal(o),count:o.entries.length};}),total:tot,sent:dtState.sentToday||false,live:true,ts:Date.now(),methods:pmTotals()});
+    dtState.history.unshift({date:tk,ops:ops.map(function(o){return{name:o.name,total:dtOpTotal(o),count:o.entries.length,entries:(o.entries||[]).map(dtArchiveEntry)};}),total:tot,sent:dtState.sentToday||false,live:true,ts:Date.now(),methods:pmTotals()});
     dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
   }
   localStorage.setItem('rdns_takings_v3', JSON.stringify(dtState));
   syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
+  // The method just picked belongs to the customer's record, not only to
+  // today's screen — write it through before the day can roll over.
+  try{ if(pmSyncApptPay()) saveAll(); }catch(e){}
   var pl=document.getElementById('page-monthly');if(pl&&pl.classList.contains('active'))renderMonthly();
 }
 
@@ -9343,18 +9525,46 @@ function pmSplitSave(){
   toast('\u2797','B\u00f6l\u00fcnm\u00fc\u015f \u00f6deme kaydedildi', parts.map(function(p){return PM_TYPES[p.pay][0]+dtFmt(p.amount);}).join(' + '),'g');
   pmClose();
 }
-function pmTotals(){
+// Nakit / Kart / IBAN split for any set of operator cards — today's live ones or
+// a day being archived, which is why it takes the list rather than reading the
+// live state.
+function pmDayTotals(ops){
   var t={nakit:0,kart:0,iban:0,diger:0,yok:0};
-  (dtState.operators||[]).forEach(function(op){
-    if(!op.active&&op.active!==undefined&&op.entries===undefined)return;
+  (ops||[]).forEach(function(op){
+    if(!op)return;
     (op.entries||[]).forEach(function(e){
-      if(e.ded)return;
+      if(!e||e.ded)return;
       var a=parseFloat(e.amount)||0;
       if(e.pay==='split'&&e.splits){var used=0;e.splits.forEach(function(p){if(t[p.pay]!==undefined){t[p.pay]+=(parseFloat(p.amount)||0);used+=(parseFloat(p.amount)||0);}});if(a-used>0.01)t.yok+=(a-used);}
       else if(e.pay&&t[e.pay]!==undefined)t[e.pay]+=a; else t.yok+=a;
     });
   });
   return t;
+}
+function pmTotals(){
+  return pmDayTotals((typeof dtState!=='undefined'&&dtState&&dtState.operators)||[]);
+}
+// Copy every tagged Daily Takings entry that belongs to an appointment onto the
+// appointment record itself. Runs on load and on every takings save, so the
+// answer is written down while the entries are still live — which is the only
+// window there is, since the rollover empties them and history keeps totals
+// only. It also rescues anything tagged before this existed, and covers every
+// route that can set a method (the ödeme modal, split payments, auto entries).
+function pmSyncApptPay(){
+  try{
+    if(typeof dtState==='undefined'||!dtState||!Array.isArray(dtState.operators)) return false;
+    if(typeof appointments==='undefined'||!Array.isArray(appointments)) return false;
+    var changed=false;
+    dtState.operators.forEach(function(op){
+      (op.entries||[]).forEach(function(e){
+        if(!e||e.apptId==null||!e.pay) return;
+        var nv=payOvrClean(e); if(!nv) return;
+        if(paySame(payMethods[String(e.apptId)],nv)) return;
+        if(payOvrSet(e.apptId,nv)) changed=true;
+      });
+    });
+    return changed;
+  }catch(e){ console.warn('pmSyncApptPay error:',e); return false; }
 }
 function pmJumpUntagged(){
   var el=document.querySelector('.pm-untagged');
@@ -9668,7 +9878,7 @@ function dtResetDay(){
   if(ops.length>0){
     const total = dtGrandTotal();
     if(!dtState.history) dtState.history=[];
-    dtState.history.unshift({date:dtDateKey(), ops:ops.map(o=>({name:o.name,total:dtOpTotal(o),count:o.entries.length})), total, sent:dtState.sentToday||false, methods:pmTotals()});
+    dtState.history.unshift({date:dtDateKey(), ops:ops.map(o=>({name:o.name,total:dtOpTotal(o),count:o.entries.length,entries:(o.entries||[]).map(dtArchiveEntry)})), total, sent:dtState.sentToday||false, methods:pmTotals()});
     if(dtState.history.length>30) dtState.history=dtState.history.slice(0,30);
   }
   dtState.operators.forEach(o=>{ o.entries=[]; });
