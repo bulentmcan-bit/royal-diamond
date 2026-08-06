@@ -118,20 +118,27 @@
           clients=remote.clients||[];
           mergeRemotePriceOverrides(remote.priceOverrides);
           mergeRemotePayMethods(remote.payMethods);
-          remote.appointments=_preserveLocalApptPrices(remote.appointments||[]);
+          mergeRemoteApptTomb(remote.apptTomb);
+          // Merge, never replace — a booking made here seconds ago must not be
+          // wiped by a snapshot that was written before it existed.
+          let incoming=_mergeRemoteAppts(remote.appointments||[], remote._ts);
+          const apptsKept=_apptMergeKept;
+          remote.appointments=_preserveLocalApptPrices(incoming);
           const moneyKept=_apptMoneyKept;
           appointments=remote.appointments;
           applyPriceOverrides(appointments);
           applyPayMethods(appointments);
+          apptStampAdopt(appointments);
           payments=remote.payments||[];
           deferredPayments=remote.deferredPayments||[];
           ccOverrides=remote.ccOverrides||{};
           remote.priceOverrides=priceOverrides;
           remote.payMethods=payMethods;
+          remote.apptTomb=apptTomb;
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
-          if(phonesFixed||moneyKept){
+          if(phonesFixed||moneyKept||apptsKept){
             setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
           }
           const pg=document.querySelector('.page.active');
@@ -688,6 +695,203 @@
     if(_priceOvrRestored) _apptMoneyKept=true;
     return remoteAppts;
   }
+
+  // ═══════ A BOOKING MUST SURVIVE A STALE SNAPSHOT ═══════
+  // The appointments array used to be REPLACED wholesale by every cloud
+  // snapshot. That is fine until two devices talk at once: the tablet pushes its
+  // copy of the day — written a moment BEFORE the booking was typed in here —
+  // this device swallows it, and the appointment that was just made is simply
+  // gone. Nobody deleted it; nothing outside the array remembered it.
+  // So the array stops being the only record of what this device knows:
+  //   • every appointment carries _ats, the moment it last changed HERE, backed
+  //     by a small registry so the stamp survives a wholesale replace;
+  //   • every deliberate deletion writes a tombstone, which travels with the
+  //     shared DB.
+  // A snapshot then MERGES instead of replacing — newest change wins, a local
+  // booking the cloud hasn't caught up with is kept and pushed straight back,
+  // and an appointment genuinely deleted on another device stays deleted
+  // because its tombstone says so rather than its mere absence.
+  const APPT_STAMP_KEY='rdns_appt_stamp_v1';
+  const APPT_TOMB_KEY='rdns_appt_tomb_v1';
+  // The salon's devices don't share a clock. A fresh booking must not be thrown
+  // away just because the device that pushed the snapshot runs a few minutes
+  // ahead of this one.
+  const APPT_SKEW_MS=5*60*1000;
+  const APPT_TOMB_KEEP_MS=120*24*60*60*1000;
+  function _apptReadMap(key){
+    try{ const o=JSON.parse(localStorage.getItem(key)||'{}'); return (o&&typeof o==='object')?o:{}; }
+    catch(e){ return {}; }
+  }
+  let apptStamps=_apptReadMap(APPT_STAMP_KEY);   // {id:{ts,h,l}} — l:1 = edited on THIS device
+  let apptTomb=_apptReadMap(APPT_TOMB_KEY);      // {id:ts} — deleted on purpose
+  function apptStampPersist(){ try{ localStorage.setItem(APPT_STAMP_KEY, JSON.stringify(apptStamps)); }catch(e){} }
+  function apptTombPersist(){ try{ localStorage.setItem(APPT_TOMB_KEY, JSON.stringify(apptTomb)); }catch(e){} }
+  // A cheap fingerprint of what the record actually says. The stamps themselves
+  // are left out — they describe the edit, not the appointment, and including
+  // them would make every record look freshly changed on every pass.
+  function _apptSigHash(a){
+    let s='';
+    try{
+      const keys=Object.keys(a).sort();
+      for(let i=0;i<keys.length;i++){
+        const k=keys[i];
+        if(k==='_ats'||k==='_pts'||k==='_payTs') continue;
+        const v=a[k];
+        s+=k+':'+((v&&typeof v==='object')?JSON.stringify(v):String(v))+'|';
+      }
+    }catch(e){ return 0; }
+    let h=5381;
+    for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0;
+    return h;
+  }
+  function apptTombPrune(){
+    try{
+      const cut=Date.now()-APPT_TOMB_KEEP_MS;
+      let changed=false;
+      Object.keys(apptTomb).forEach(function(k){
+        if(!(apptTomb[k]>cut)){ delete apptTomb[k]; changed=true; }
+      });
+      if(changed) apptTombPersist();
+    }catch(e){}
+  }
+  // Called from every path that deletes an appointment for good. Without this a
+  // deletion is only an ABSENCE, and an absence is exactly what a snapshot that
+  // simply hasn't caught up looks like — the two have to stay distinguishable.
+  function apptTombAdd(id){
+    if(id==null) return;
+    const k=String(id);
+    let ts=Date.now();
+    const st=apptStamps[k];
+    if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
+    if((apptTomb[k]||0)>=ts) ts=apptTomb[k]+1;
+    apptTomb[k]=ts;
+    if(st){ delete apptStamps[k]; apptStampPersist(); }
+    apptTombPersist();
+  }
+  function apptTombAddMany(ids){
+    if(!ids||!ids.length) return;
+    ids.forEach(function(id){ apptTombAdd(id); });
+  }
+  // Tombstones travel with the shared DB, so a device that never saw the
+  // deletion still knows not to hand the record back. Newest wins.
+  function mergeRemoteApptTomb(remoteTomb){
+    try{
+      if(!remoteTomb||typeof remoteTomb!=='object') return;
+      let changed=false;
+      Object.keys(remoteTomb).forEach(function(k){
+        const ts=Number(remoteTomb[k])||0;
+        if(!ts) return;
+        if((apptTomb[k]||0)>=ts) return;
+        apptTomb[k]=ts; changed=true;
+      });
+      if(changed) apptTombPersist();
+      apptTombPrune();
+    }catch(e){ console.warn('mergeRemoteApptTomb error:',e); }
+  }
+  let _apptMergeKept=false;   // did this merge have to defend a local record?
+  let _apptMergeMeta=null;    // the stamp the merge decided on, per id
+  function _mergeRemoteAppts(remoteAppts, snapTs){
+    _apptMergeKept=false;
+    _apptMergeMeta={};
+    try{
+      if(!Array.isArray(remoteAppts)) return Array.isArray(appointments)?appointments:[];
+      const local=Array.isArray(appointments)?appointments:[];
+      const locById={};
+      local.forEach(function(a){ if(a&&a.id!=null) locById[String(a.id)]=a; });
+      const snap=Number(snapTs)||Date.now();
+      const out=[], took={};
+      // 1 — everything the snapshot carries, unless we hold a newer answer.
+      remoteAppts.forEach(function(r){
+        if(!r||r.id==null){ out.push(r); return; }
+        const k=String(r.id);
+        took[k]=1;
+        const rts=(Number(r._ats)||0)||snap;
+        // Deleted on purpose AFTER this snapshot was written — it stays gone.
+        if((apptTomb[k]||0)>rts){ _apptMergeKept=true; return; }
+        const loc=locById[k];
+        const st=apptStamps[k];
+        const lts=(st&&st.ts)||(loc&&Number(loc._ats))||0;
+        if(loc&&lts>rts){
+          out.push(loc);                                  // our edit is the newer one
+          _apptMergeMeta[k]={ts:lts,l:(st&&st.l)?1:0};
+          _apptMergeKept=true;
+        }else{
+          out.push(r);                                    // the cloud is at least as new
+          _apptMergeMeta[k]={ts:rts,l:0};
+        }
+      });
+      // 2 — what we hold that the snapshot doesn't carry yet.
+      local.forEach(function(a){
+        if(!a||a.id==null) return;
+        const k=String(a.id);
+        if(took[k]) return;
+        if(apptTomb[k]) return;            // deleted on purpose — never resurrect it
+        const st=apptStamps[k];
+        // Only ever defend what was actually written HERE. A record we only
+        // learned from the cloud is the cloud's to remove; treating those as
+        // ours too would undo deletions made on the other devices.
+        if(!st||!st.l) return;
+        // Written long enough ago that the cloud has certainly seen it — so its
+        // absence is a real deletion somewhere else, not a snapshot lagging.
+        if((st.ts||0)<=snap-APPT_SKEW_MS) return;
+        out.push(a);
+        _apptMergeMeta[k]={ts:st.ts,l:1};
+        _apptMergeKept=true;
+      });
+      return out;
+    }catch(e){ console.warn('appt merge error:',e); _apptMergeMeta=null; return remoteAppts; }
+  }
+  // Write the stamps the merge decided on, once the money and payment overrides
+  // have had their say and the array is final. Nothing is bumped here — this
+  // only records what the merged records now say, so the next save doesn't
+  // mistake a cloud edit for one made on this device.
+  function apptStampAdopt(list){
+    try{
+      if(!Array.isArray(list)) return;
+      const meta=_apptMergeMeta||{};
+      const now=Date.now();
+      const next={};
+      list.forEach(function(a){
+        if(!a||a.id==null) return;
+        const k=String(a.id);
+        const m=meta[k], prev=apptStamps[k];
+        const ts=(m&&m.ts)||(prev&&prev.ts)||Number(a._ats)||now;
+        next[k]={ts:ts, h:_apptSigHash(a), l:(m?(m.l?1:0):((prev&&prev.l)?1:0))};
+        if((Number(a._ats)||0)<ts) a._ats=ts;   // carry the stamp to the other devices
+      });
+      apptStamps=next;
+      apptStampPersist();
+    }catch(e){ console.warn('apptStampAdopt error:',e); }
+    _apptMergeMeta=null;
+  }
+  // Stamp whatever changed on this device. Called on every save, so it covers
+  // every path that touches an appointment without each of them having to know.
+  function apptStampSync(){
+    try{
+      if(!Array.isArray(appointments)) return;
+      const now=Date.now();
+      const next={};
+      appointments.forEach(function(a){
+        if(!a||a.id==null) return;
+        const k=String(a.id);
+        const h=_apptSigHash(a);
+        const prev=apptStamps[k];
+        if(prev&&prev.h===h&&prev.ts){ next[k]=prev; }
+        else{
+          // Wall-clock alone can't settle it between devices, so a new answer is
+          // always stamped past the one it replaces.
+          let ts=now;
+          if(prev&&(prev.ts||0)>=ts) ts=(prev.ts||0)+1;
+          if((Number(a._ats)||0)>=ts) ts=(Number(a._ats)||0)+1;
+          next[k]={ts:ts, h:h, l:1};
+        }
+        if((Number(a._ats)||0)<next[k].ts) a._ats=next[k].ts;
+      });
+      apptStamps=next;
+      apptStampPersist();
+      apptTombPrune();
+    }catch(e){ console.warn('apptStampSync error:',e); }
+  }
   function showSyncStatus(s){
     const el=document.getElementById('sync-indicator');if(!el)return;
     const m={local:{t:'💾 Local',c:'#888'},connecting:{t:'🔄 Syncing...',c:'#f0a500'},synced:{t:'☁️ Synced',c:'#4caf50'},error:{t:'⚠️ Sync Error',c:'#f44'}};
@@ -830,15 +1034,29 @@
       _isSyncing['rdns_main_v1']=true;
       clients=val.clients||[];
       mergeRemotePriceOverrides(val.priceOverrides);
-      val.appointments=_preserveLocalApptPrices(val.appointments||[]);
+      mergeRemotePayMethods(val.payMethods);
+      mergeRemoteApptTomb(val.apptTomb);
+      // Same rule as the live listener: this load merges, it never replaces.
+      const incoming=_mergeRemoteAppts(val.appointments||[], val._ts);
+      const apptsKept=_apptMergeKept;
+      val.appointments=_preserveLocalApptPrices(incoming);
       appointments=val.appointments;
       applyPriceOverrides(appointments);
+      applyPayMethods(appointments);
+      apptStampAdopt(appointments);
       payments=val.payments||[];
       deferredPayments=val.deferredPayments||[];
       ccOverrides=val.ccOverrides||{};
       val.priceOverrides=priceOverrides;
+      val.payMethods=payMethods;
+      val.apptTomb=apptTomb;
       localStorage.setItem('rdns_main_v1',JSON.stringify(val));
       setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
+      // Anything the cloud copy was still missing goes straight back up, so the
+      // other devices stop handing us the stale picture.
+      if(apptsKept||_apptMoneyKept){
+        setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
+      }
       try{renderDash();}catch(e){}
       try{renderAppts();}catch(e){}
       try{dpUpdateBadges();}catch(e){}
@@ -3454,7 +3672,10 @@ function dbSave(){
     // Same for the payment methods: a snapshot that landed since the last merge
     // must not push a record with the ÖDEME answer missing back to the cloud.
     try{ applyPayMethods(appointments); }catch(e){}
-    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods};
+    // Stamp whatever changed here before it leaves the device, so a snapshot
+    // written elsewhere can never quietly drop a booking made on this one.
+    try{ apptStampSync(); }catch(e){}
+    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods, apptTomb};
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
@@ -3477,6 +3698,9 @@ let ccOverrides = _dbLoaded?.ccOverrides || {};
 // standalone rdns_price_ovr_v1 key stays the primary copy.
 try{ mergeRemotePriceOverrides(_dbLoaded?.priceOverrides); applyPriceOverrides(appointments); }catch(e){}
 try{ mergeRemotePayMethods(_dbLoaded?.payMethods); applyPayMethods(appointments); }catch(e){}
+// Deletions travel the same way, so a restored backup can't hand back records
+// that were already thrown away.
+try{ mergeRemoteApptTomb(_dbLoaded?.apptTomb); }catch(e){}
 
 function cObj(id){return clients.find(c=>String(c.id)===String(id));}
 function cName(id){return cObj(id)?.name||"Unknown";}
@@ -5604,6 +5828,7 @@ function phoneCleanupDelete(){
   if(!confirm('\u26a0\ufe0f KALICI S\u0130LME \u2014 geri al\u0131namaz!\n\n'+ids.length+' m\u00fc\u015fteri ve t\u00fcm randevular\u0131 silinecek:\n\n\u2022 '+names.slice(0,15).join('\n\u2022 ')+(names.length>15?'\n\u2026':'')+'\n\nOnayl\u0131yor musunuz?'))return;
   const idset=new Set(ids.map(String));
   clients=clients.filter(c=>!idset.has(String(c.id)));
+  apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id));
   appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
   saveAll();
   renderClients();renderDash();renderAppts();updateApptBadge();
@@ -5623,6 +5848,7 @@ function deleteClient(id){
     return;
   }
   clients = clients.filter(x=>x.id!==id);
+  apptTombAddMany(appointments.filter(a=>a.clientId===id).map(a=>a.id));
   appointments = appointments.filter(a=>a.clientId!==id);
   saveAll();
   renderClients(); renderDash(); renderAppts(); updateApptBadge();
@@ -6188,7 +6414,7 @@ function skipRebook(){
 }
 
 function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;a.status="cancelled";cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
-function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
+function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);apptTombAdd(id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
@@ -8645,6 +8871,7 @@ function ccDeleteAppt(id){
   if(!confirm("Bu kaydı KALICI olarak silmek istiyor musunuz?\n"+cName(a.clientId)+" — "+(a.service||"")+" — ₺"+(a.price||0)+"\n(Para kaydı da kasadan düşülecek)"))return;
   if(a.status==="completed"&&a.price>0&&a.staff){try{diAutoRemove(a.staff,a.price,a.datetime,a.id);}catch(e){}}
   appointments=appointments.filter(x=>x.id!==id);
+  apptTombAdd(id);
   priceOvrDrop(id);
   payOvrDrop(id);
   saveAll();
@@ -11317,6 +11544,128 @@ if('serviceWorker' in navigator){
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+// AUTO-UPDATE — no device keeps running yesterday's app
+// ══════════════════════════════════════════════════════════════
+// The salon's tablet and phones are never really closed: the page is opened
+// once and left standing for weeks. A fix shipped today can therefore sit on
+// the server untouched while the floor keeps using the old copy — which is how
+// two devices end up disagreeing about the same appointment in the first place.
+// So the app watches the deployed file itself (its ETag changes the moment a
+// new version goes live) and brings the device forward on its own.
+// It refuses to do that at a bad moment. Never with a form open, never while
+// someone is typing, never within a minute and a half of the last touch, and
+// never before this device's own data has been pushed. When the moment isn't
+// right it just puts a small "Yeni sürüm — Yenile" pill in the corner and waits
+// — tapping it, or the next quiet minute, does the rest.
+(function(){
+  if(!/^https?:$/.test(location.protocol)) return;   // nothing to update from
+  const CHECK_MS = 10*60*1000;   // how often to ask the server
+  const RETRY_MS = 45*1000;      // once an update is waiting, how often to look for a quiet moment
+  const IDLE_MS  = 90*1000;      // "nobody is using it" = this long since the last touch
+  const MIN_GAP  = 5*60*1000;    // never reload twice in a row inside this window
+  const FILE     = location.pathname.replace(/[^/]*$/,'') + 'index.html';
+  let current=null, pending=false, lastCheck=0, lastTouch=Date.now(), snoozeUntil=0, waiting=false;
+
+  ['pointerdown','keydown','touchstart','wheel'].forEach(function(ev){
+    document.addEventListener(ev, function(){ lastTouch=Date.now(); }, {passive:true, capture:true});
+  });
+
+  // The version marker: whatever the server says identifies this build. ETag
+  // first, then the modification date, then the size — one of the three is
+  // always there, and any of them changes the moment a new file is deployed.
+  function marker(){
+    return fetch(FILE+'?v='+Date.now(), {method:'HEAD', cache:'no-store'}).then(function(r){
+      if(!r.ok) return null;
+      return r.headers.get('etag') || r.headers.get('last-modified') || r.headers.get('content-length') || null;
+    }).catch(function(){ return null; });
+  }
+
+  function check(){
+    if(pending || !navigator.onLine) return;
+    const now=Date.now();
+    if(now-lastCheck < 60000) return;
+    lastCheck=now;
+    marker().then(function(m){
+      if(!m) return;
+      // The first answer is only ever the baseline — what this session is running.
+      if(current===null){ current=m; return; }
+      if(m===current) return;
+      pending=true;
+      console.log('[update] newer version deployed:', m, '(was', current+')');
+      attempt();
+    });
+  }
+
+  // Is this a safe instant to pull the rug out from under the user?
+  function idle(){
+    try{
+      if(document.querySelector('.overlay.open')) return false;        // a form is open — mid-booking
+      const el=document.activeElement;
+      if(el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') || el.isContentEditable)) return false;
+      if(Date.now()-lastTouch < IDLE_MS) return false;                 // still in someone's hands
+      if(typeof _isSyncing==='object' && _isSyncing){                  // data still in flight
+        for(const k in _isSyncing) if(_isSyncing[k]) return false;
+      }
+      if(!navigator.onLine) return false;
+      return true;
+    }catch(e){ return false; }
+  }
+
+  // Everything on this device goes up before anything comes down.
+  function go(){
+    let last=0;
+    try{ last=Number(localStorage.getItem('rdns_last_auto_update'))||0; }catch(e){}
+    if(Date.now()-last < MIN_GAP) return false;   // belt and braces against a reload loop
+    try{ if(typeof saveAll==='function') saveAll(); }catch(e){}
+    try{ localStorage.setItem('rdns_last_auto_update', String(Date.now())); }catch(e){}
+    setTimeout(function(){ try{ location.reload(); }catch(e){} }, 2000);
+    return true;
+  }
+
+  function attempt(){
+    if(!pending || waiting) return;
+    if(idle() && go()) return;      // reloading in a moment
+    pill();                         // wasn't the right instant — offer it and keep watching
+    waiting=true;
+    setTimeout(function(){ waiting=false; attempt(); }, RETRY_MS);
+  }
+
+  function pill(){
+    if(Date.now()<snoozeUntil) return;
+    if(document.getElementById('rd-update-pill')) return;
+    const d=document.createElement('div');
+    d.id='rd-update-pill';
+    d.style.cssText='position:fixed;right:14px;bottom:14px;z-index:9998;display:flex;align-items:center;'+
+      'gap:9px;background:#181c18;color:#f3e3c8;border:1px solid rgba(212,169,106,0.55);'+
+      'border-radius:999px;padding:9px 15px;font-family:Nunito,sans-serif;font-size:0.85rem;'+
+      'box-shadow:0 6px 20px rgba(0,0,0,0.35);cursor:pointer;opacity:0.95;';
+    // The app's own stylesheet colours every span, so each one has to say what
+    // it wants outright — otherwise the pill renders dark text on dark glass.
+    d.innerHTML='<span style="color:#d4a96a!important;">💎</span>'+
+                '<span style="color:#f3e3c8!important;">Yeni sürüm — <b style="color:#d4a96a!important;">Yenile</b></span>'+
+                '<span id="rd-update-x" style="color:#f3e3c8!important;opacity:0.45;padding:0 2px;">✕</span>';
+    d.addEventListener('click', function(e){
+      if(e.target && e.target.id==='rd-update-x'){
+        e.stopPropagation();
+        snoozeUntil=Date.now()+30*60*1000;   // hidden, but the quiet-moment reload still stands
+        d.remove();
+        return;
+      }
+      if(go()) d.remove();
+    });
+    document.body.appendChild(d);
+  }
+
+  window.addEventListener('load', function(){
+    setTimeout(check, 20000);
+    setInterval(check, CHECK_MS);
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
+    window.addEventListener('online', check);
+  });
+  window.rdUpdateCheck=check;   // for a manual poke from the console
+})();
+
 // Show install prompt on Android Chrome
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', e => {
@@ -11873,6 +12222,7 @@ function rvSendAll(){
     const a=_ap()[i];
     if(!confirm(cname(a.clientId)+' — '+fmt(new Date(a.datetime))+'\nBu randevu silinsin mi?'))return;
     appointments.splice(i,1);
+    try{apptTombAdd(a.id);}catch(e){}
     try{saveAll();}catch(e){}
     try{publishAvailability();}catch(e){}
     try{renderDash();renderAppts();updateApptBadge();}catch(e){}
@@ -11886,7 +12236,7 @@ function rvSendAll(){
     if(typeof ownerPin==='function' && !ownerPin())return;
     const ids=list.map(a=>String(a.id));
     for(let i=appointments.length-1;i>=0;i--){
-      if(ids.indexOf(String(appointments[i].id))!==-1) appointments.splice(i,1);
+      if(ids.indexOf(String(appointments[i].id))!==-1){ try{apptTombAdd(appointments[i].id);}catch(e){} appointments.splice(i,1); }
     }
     try{saveAll();}catch(e){}
     try{publishAvailability();}catch(e){}
