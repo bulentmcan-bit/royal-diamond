@@ -4946,6 +4946,131 @@ const DED_TYPES = {
   unsat:    {label:'😞 Müşteri memnun değil — komisyon iptal', full:false},
   redo:     {label:'🔁 Ücretsiz tekrar (ödeme alınmadı) — tutar kesilir', full:true}
 };
+// Every rate the salon pays commission at, in one place. The Kesintiler form
+// only offers the two technicians on the scheme, but the commission maths has
+// to know about all of them.
+const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+function dedRateOf(tech){
+  if(DED_RATES[tech]!==undefined) return DED_RATES[tech];
+  return TECH_COMM_RATES[tech]||0;
+}
+
+// ── Which job is this deduction about? ────────────────────────────
+// A deduction is written the moment the incident happens, which is usually
+// BEFORE the customer pays and often before the price has even been decided —
+// prices here are settled during the procedure. So a record points at the
+// appointment rather than copying a number out of it, and the amount is read
+// back from that appointment whenever it is needed. A price typed in an hour
+// later therefore corrects the deduction on its own.
+function dedApptById(id){
+  if(id==null || typeof appointments==='undefined' || !Array.isArray(appointments)) return null;
+  return appointments.find(function(a){ return a && String(a.id)===String(id); }) || null;
+}
+function dedApptAmount(a){
+  if(!a) return 0;
+  const t = parseFloat(a._takingsAmount);
+  if(!isNaN(t) && t>0) return t;
+  return parseFloat(a.price)||0;
+}
+// The service amount this record is worth right now.
+function dedJobAmount(item){
+  if(!item) return 0;
+  if(item.apptId!=null){
+    const live = dedApptAmount(dedApptById(item.apptId));
+    if(live>0) return live;
+  }
+  return parseFloat(item.amount)||0;
+}
+function dedIsFull(item){ return !!(DED_TYPES[item&&item.type]||{}).full; }
+// How much actually comes off the technician's pay packet.
+// A cancelled commission is NOT taken off the salary here — it is left out of
+// the commission in the first place (see techCommFromDays), which is the same
+// money but the honest way round: the figure the technician is shown as having
+// earned no longer includes a job they were not paid for.
+function dedAmountOf(item){
+  if(!item) return 0;
+  if(dedIsFull(item)) return dedJobAmount(item);
+  return Math.round(dedJobAmount(item) * dedRateOf(item.tech));
+}
+function dedItemsForMonth(monthKey){
+  if(typeof dedState==='undefined' || !dedState) return [];
+  return (dedState.items||[]).filter(function(it){
+    return it && !it.removed && (it.date||'').slice(0,7)===monthKey;
+  });
+}
+// Salary cuts only — the free-redo type, where the salon took no money at all.
+function dedTotalsForMonth(monthKey){
+  const t = {};
+  dedItemsForMonth(monthKey).forEach(function(it){
+    if(!dedIsFull(it)) return;
+    t[it.tech] = (t[it.tech]||0) + dedAmountOf(it);
+  });
+  return t;
+}
+// Service amounts that must NOT earn commission this month, per technician.
+function dedNoCommByTech(monthKey){
+  const t = {};
+  dedItemsForMonth(monthKey).forEach(function(it){
+    if(dedIsFull(it)) return;         // free redo — no money came in to commission
+    t[it.tech] = (t[it.tech]||0) + dedJobAmount(it);
+  });
+  return t;
+}
+// The record the technician is entitled to see: every job they did not earn
+// commission on this month — customer, date and amount.
+function dedJobsForTech(tech, monthKey){
+  return dedItemsForMonth(monthKey)
+    .filter(function(it){ return it.tech===tech; })
+    .map(function(it){
+      const ap = dedApptById(it.apptId);
+      let who = it.client||'';
+      if(!who && ap && typeof cName==='function'){ const n=cName(ap.clientId); if(n&&n!=='Unknown') who=n; }
+      if(!who) who = it.note||'—';
+      return {
+        id: it.id, date: it.date, time: it.time || ((ap&&ap.datetime)?String(ap.datetime).slice(11,16):''),
+        client: who,
+        service: it.service || (ap?ap.service:'') || '',
+        amount: dedJobAmount(it),
+        type: it.type,
+        full: dedIsFull(it),
+        cut: dedAmountOf(it),
+        pending: it.apptId!=null && dedApptAmount(dedApptById(it.apptId))<=0 && !(parseFloat(it.amount)>0)
+      };
+    })
+    .sort(function(a,b){ return (b.date+(b.time||'')).localeCompare(a.date+(a.time||'')); });
+}
+
+// ── One place decides what each technician earned ─────────────────
+// The Salary page, the P&L breakdown, the monthly cards and the break-even sum
+// all used to work this out separately. They now share this, so a cancelled
+// commission cannot be honoured on one screen and withheld on another.
+// The cancelled job's amount is taken out of the commission BASE, which is why
+// the deduction can be recorded before the money ever arrives: whenever the
+// commission is next worked out, that job simply is not in it.
+function techCommFromDays(days, monthKey){
+  const raw = {};
+  (days||[]).forEach(function(d){
+    (d.ops||[]).forEach(function(op){
+      if(!op||!op.name) return;
+      const rate = TECH_COMM_RATES[op.name]||0;
+      const comm = (op.commission && op.commission>0) ? op.commission : (op.total||0)*rate;
+      if(comm>0) raw[op.name] = (raw[op.name]||0) + comm;
+    });
+  });
+  const excl = (typeof dedNoCommByTech==='function') ? dedNoCommByTech(monthKey) : {};
+  Object.keys(excl).forEach(function(name){
+    if(!(excl[name]>0)) return;
+    const rate = TECH_COMM_RATES[name]||dedRateOf(name);
+    const off = Math.round(excl[name]*rate);
+    if(raw[name]!==undefined) raw[name] = Math.max(0, raw[name]-off);
+  });
+  return raw;
+}
+function techCommForMonth(monthKey){
+  const days = (typeof dtState!=='undefined' && dtState && dtState.history)
+    ? dtState.history.filter(function(h){ return h.date && h.date.slice(0,7)===monthKey; }) : [];
+  return techCommFromDays(days, monthKey);
+}
 function dedLoad(){
   try{
     const d = JSON.parse(localStorage.getItem('rdns_deductions_v1')||'{"items":[]}');
@@ -4958,34 +5083,151 @@ function dedSave(){
   localStorage.setItem('rdns_deductions_v1', JSON.stringify(dedState));
   if(typeof syncPush==='function') syncPush('rdns_deductions_v1', dedState);
 }
-function dedAmountOf(item){
-  // How much actually comes off the technician's pay
-  if(item.type==='redo') return item.amount||0;
-  return Math.round((item.amount||0) * (DED_RATES[item.tech]||0));
-}
-function dedTotalsForMonth(monthKey){
-  const t = {};
-  (dedState.items||[]).forEach(it=>{
-    if(it.removed) return;
-    if((it.date||'').slice(0,7)!==monthKey) return;
-    t[it.tech] = (t[it.tech]||0) + dedAmountOf(it);
-  });
-  return t;
-}
 let dedViewMonth = null;
+
+// ── Finding the job on the calendar ───────────────────────────────
+// Staff + customer + date + time is enough to point at one appointment, so the
+// amount never has to be typed twice (and never has to be remembered wrongly).
+let _dedClientMap = {};   // dropdown label → client id
+let _dedMatch = null;     // the appointment the form is currently pointing at
+function dedClientLabels(){
+  _dedClientMap = {};
+  const list = (typeof clients!=='undefined' && Array.isArray(clients)) ? clients.slice() : [];
+  const nameCount = {};
+  list.forEach(function(c){ if(c&&c.name) nameCount[c.name]=(nameCount[c.name]||0)+1; });
+  const labels = [];
+  list.forEach(function(c){
+    if(!c||!c.name) return;
+    let label = c.name;
+    if(nameCount[c.name]>1){
+      const p = String(c.phone||'').replace(/\D/g,'');
+      label = c.name + (p ? ' · '+p.slice(-4) : ' · #'+c.id);
+    }
+    if(_dedClientMap[label]!==undefined) label = label+' · #'+c.id;
+    _dedClientMap[label] = c.id;
+    labels.push(label);
+  });
+  labels.sort(function(a,b){ return a.localeCompare(b,'tr'); });
+  return labels;
+}
+function dedClientIdFromLabel(label){
+  if(!label) return null;
+  if(_dedClientMap[label]!==undefined) return _dedClientMap[label];
+  // Typed by hand rather than picked — accept an exact name if it is unambiguous.
+  const hit = Object.keys(_dedClientMap).filter(function(k){
+    return k.toLocaleLowerCase('tr')===String(label).toLocaleLowerCase('tr') ||
+           k.toLocaleLowerCase('tr').indexOf(String(label).toLocaleLowerCase('tr')+' · ')===0;
+  });
+  return hit.length===1 ? _dedClientMap[hit[0]] : null;
+}
+function _dedMins(hhmm){
+  const p = String(hhmm||'').split(':');
+  return (parseInt(p[0],10)||0)*60 + (parseInt(p[1],10)||0);
+}
+// The real appointment on the calendar for this staff member, customer and day.
+// Payment state is deliberately ignored — the price is often set during the
+// procedure, long before any money changes hands.
+function dedFindAppt(tech, clientId, date, time){
+  if(clientId==null || !date) return null;
+  if(typeof appointments==='undefined' || !Array.isArray(appointments)) return null;
+  const sameDay = appointments.filter(function(a){
+    if(!a || a.clientId==null) return false;
+    if(String(a.clientId)!==String(clientId)) return false;
+    if(String(a.datetime||'').slice(0,10)!==date) return false;
+    if(a.status==='cancelled') return false;
+    if(tech && a.staff && String(a.staff).toLocaleLowerCase('tr')!==String(tech).toLocaleLowerCase('tr')) return false;
+    return true;
+  });
+  if(!sameDay.length) return null;
+  if(sameDay.length===1 || !time) return sameDay[0];
+  const want = _dedMins(time);
+  return sameDay.slice().sort(function(x,y){
+    return Math.abs(_dedMins(String(x.datetime).slice(11,16))-want) -
+           Math.abs(_dedMins(String(y.datetime).slice(11,16))-want);
+  })[0];
+}
+// Runs whenever staff / customer / date / time changes.
+function dedTryMatch(){
+  const g = function(id){ const e=document.getElementById(id); return e?e.value:''; };
+  const st = document.getElementById('ded-match');
+  const amtEl = document.getElementById('ded-amount');
+  const label = String(g('ded-client')).trim();
+  const date = g('ded-date'), time = g('ded-time'), tech = g('ded-tech');
+  _dedMatch = null;
+  if(st) st.innerHTML='';
+  if(!label || !date){
+    if(st) st.innerHTML = '<span style="color:#888;">Personel, müşteri, tarih ve saati seçin — tutar randevudan otomatik gelir.</span>';
+    dedPreview(); return;
+  }
+  const cid = dedClientIdFromLabel(label);
+  if(cid==null){
+    if(st) st.innerHTML = '<span style="color:#c98a2e;">⚠ Müşteri listeden seçilmedi — tutarı elle girebilirsiniz.</span>';
+    dedPreview(); return;
+  }
+  const a = dedFindAppt(tech, cid, date, time);
+  if(!a){
+    if(st) st.innerHTML = '<span style="color:#c98a2e;">⚠ Bu gün için '+dtEscHtml(tech)+' — '+dtEscHtml(label)+
+      ' randevusu bulunamadı. Tutarı elle girin.</span>';
+    if(amtEl){ amtEl.readOnly=false; amtEl.style.background=''; }
+    dedPreview(); return;
+  }
+  _dedMatch = a;
+  const amt = dedApptAmount(a);
+  const at = String(a.datetime||'').slice(11,16);
+  if(amtEl){
+    amtEl.value = amt>0 ? amt : '';
+    amtEl.readOnly = false;
+    amtEl.style.background = amt>0 ? 'rgba(37,211,102,0.10)' : '';
+  }
+  const paid = (a.status==='completed');
+  if(st){
+    st.innerHTML = '<span style="color:#2e7d4f;font-weight:700;">✔ Randevu bulundu:</span> '+
+      at+' · '+dtEscHtml(a.service||'Hizmet')+' · '+dtEscHtml(a.staff||tech)+' — '+
+      (amt>0
+        ? '<b>₺'+amt.toLocaleString('tr-TR')+'</b> '+(paid?'<span style="color:#888;">(tamamlandı)</span>':'<span style="color:#c98a2e;">(henüz ödenmedi — tutar kayıtlı fiyattan alındı)</span>')
+        : '<span style="color:#c98a2e;">fiyat henüz girilmemiş — işlem sırasında fiyat girilince kesinti tutarı kendiliğinden güncellenir</span>');
+  }
+  dedPreview();
+}
 function dedAdd(){
   const date = document.getElementById('ded-date').value;
+  const time = (document.getElementById('ded-time')||{}).value||'';
   const tech = document.getElementById('ded-tech').value;
-  const amount = parseFloat(document.getElementById('ded-amount').value);
   const type = document.getElementById('ded-type').value;
   const note = document.getElementById('ded-note').value.trim();
-  if(!date || !tech || !amount || amount<=0){ alert('Tarih, teknisyen ve tutar gerekli.'); return; }
-  dedState.items.push({id:Date.now()+Math.random(), date, tech, amount, type, note, ts:Date.now()});
+  const label = String((document.getElementById('ded-client')||{}).value||'').trim();
+  const typed = parseFloat(document.getElementById('ded-amount').value);
+  const ap = _dedMatch;
+  const amount = !isNaN(typed) && typed>0 ? typed : dedApptAmount(ap);
+  if(!date || !tech){ alert('Tarih ve teknisyen gerekli.'); return; }
+  if(!(amount>0) && !ap){
+    alert('Randevu eşleşmedi — hizmet tutarını elle girin.');
+    return;
+  }
+  const cid = dedClientIdFromLabel(label);
+  const item = {
+    id: Date.now()+Math.random(),
+    date, time, tech, amount: amount||0, type, note,
+    clientId: (cid!=null?cid:(ap?ap.clientId:null)),
+    client: label || (ap && typeof cName==='function' ? cName(ap.clientId) : ''),
+    apptId: ap ? ap.id : null,
+    service: ap ? (ap.service||'') : '',
+    ts: Date.now()
+  };
+  dedState.items.push(item);
   dedSave();
   document.getElementById('ded-amount').value='';
   document.getElementById('ded-note').value='';
+  const cl=document.getElementById('ded-client'); if(cl) cl.value='';
+  _dedMatch=null;
   renderDeductionsPage();
-  if(typeof toast==='function') toast('✂️','Kesinti Kaydedildi', tech+' — ₺'+dedAmountOf(dedState.items[dedState.items.length-1]).toLocaleString('tr-TR'),'g');
+  if(typeof toast==='function'){
+    const cut = dedAmountOf(item);
+    toast('✂️','Kesinti Kaydedildi',
+      tech+' — '+(item.client||'')+(dedIsFull(item)
+        ? ' · maaştan kesilecek: ₺'+cut.toLocaleString('tr-TR')
+        : ' · bu işin komisyonu verilmeyecek'+(cut>0?' (₺'+cut.toLocaleString('tr-TR')+')':' — fiyat girilince hesaplanır')),'g');
+  }
 }
 // 🔒 OWNER PIN — destructive actions require the boss's PIN.
 // Verification is hashed (see Owner Security core) — no secret in
@@ -5065,10 +5307,21 @@ function dedPreview(){
   const type = document.getElementById('ded-type').value;
   const el = document.getElementById('ded-preview');
   if(!el) return;
-  if(amount<=0){ el.textContent=''; return; }
-  const cut = (type==='redo') ? amount : Math.round(amount*(DED_RATES[tech]||0));
-  el.innerHTML = 'Maaştan kesilecek: <b style="color:#c94040;">₺'+cut.toLocaleString('tr-TR')+'</b>'+
-    (type==='redo' ? ' (tutarın tamamı)' : ' ('+tech+' komisyonu %'+Math.round((DED_RATES[tech]||0)*100)+')');
+  const full = !!(DED_TYPES[type]||{}).full;
+  if(amount<=0){
+    el.innerHTML = _dedMatch
+      ? '<span style="color:#c98a2e;">Fiyat girilince hesaplanacak — kayıt randevuya bağlı kalır.</span>'
+      : '';
+    return;
+  }
+  const rate = dedRateOf(tech);
+  if(full){
+    el.innerHTML = 'Maaştan kesilecek: <b style="color:#c94040;">₺'+amount.toLocaleString('tr-TR')+'</b> (tutarın tamamı)';
+  }else{
+    el.innerHTML = 'Bu işin komisyonu <b style="color:#c94040;">verilmeyecek</b> — '+tech+
+      ' komisyonundan ₺'+Math.round(amount*rate).toLocaleString('tr-TR')+
+      ' eksik hesaplanır (%'+Math.round(rate*100)+' × ₺'+amount.toLocaleString('tr-TR')+').';
+  }
 }
 function renderDeductionsPage(){
   const fb=document.getElementById('ded-form-box'), sm=document.getElementById('ded-summary'), ls=document.getElementById('ded-list');
@@ -5080,48 +5333,95 @@ function renderDeductionsPage(){
   // Form
   let opts=''; Object.keys(DED_RATES).forEach(t=>{opts+='<option value="'+t+'">'+t+' (%'+Math.round(DED_RATES[t]*100)+')</option>';});
   let topts=''; Object.keys(DED_TYPES).forEach(k=>{topts+='<option value="'+k+'">'+DED_TYPES[k].label+'</option>';});
+  const inpCss='padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;';
+  const nowTime=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  const clientOpts=dedClientLabels().map(function(l){ return '<option value="'+dtEscHtml(l)+'"></option>'; }).join('');
   fb.innerHTML =
-    '<div style="font-weight:700;color:#333;margin-bottom:12px;">➕ Yeni Kesinti Kaydı</div>'+
+    '<div style="font-weight:700;color:#333;margin-bottom:4px;">➕ Yeni Kesinti Kaydı</div>'+
+    '<div style="font-size:0.74rem;color:#888;margin-bottom:12px;">Personel · müşteri · tarih · saat seçin — hizmet tutarı randevudan otomatik gelir. Müşteri henüz ödemediyse de kaydedebilirsiniz.</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">'+
-    '<input type="date" id="ded-date" value="'+today+'" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;">'+
-    '<select id="ded-tech" onchange="dedPreview()" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;">'+opts+'</select>'+
-    '<input type="number" id="ded-amount" oninput="dedPreview()" placeholder="Hizmet tutarı ₺" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;">'+
-    '<select id="ded-type" onchange="dedPreview()" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;grid-column:span 2;">'+topts+'</select>'+
-    '<input type="text" id="ded-note" placeholder="Müşteri / not (isteğe bağlı)" style="padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;grid-column:span 2;">'+
+    '<input type="date" id="ded-date" value="'+today+'" onchange="dedTryMatch()" style="'+inpCss+'">'+
+    '<input type="time" id="ded-time" value="'+nowTime+'" onchange="dedTryMatch()" style="'+inpCss+'">'+
+    '<select id="ded-tech" onchange="dedTryMatch()" style="'+inpCss+'">'+opts+'</select>'+
+    '<input type="text" id="ded-client" list="ded-client-list" autocomplete="off" placeholder="Müşteri ara / seç…" oninput="dedTryMatch()" onchange="dedTryMatch()" style="'+inpCss+'">'+
+    '<datalist id="ded-client-list">'+clientOpts+'</datalist>'+
+    '<input type="number" id="ded-amount" oninput="dedPreview()" placeholder="Hizmet tutarı ₺ (otomatik)" style="'+inpCss+'">'+
+    '<select id="ded-type" onchange="dedPreview()" style="'+inpCss+'grid-column:span 2;">'+topts+'</select>'+
+    '<input type="text" id="ded-note" placeholder="Not (isteğe bağlı)" style="'+inpCss+'grid-column:span 2;">'+
     '</div>'+
-    '<div id="ded-preview" style="margin-top:10px;font-size:0.85rem;color:#555;"></div>'+
+    '<div id="ded-match" style="margin-top:9px;font-size:0.8rem;"></div>'+
+    '<div id="ded-preview" style="margin-top:6px;font-size:0.85rem;color:#555;"></div>'+
     '<button onclick="dedAdd()" style="margin-top:12px;padding:10px 22px;background:var(--rose);border:none;border-radius:9px;color:#fff;font-weight:700;cursor:pointer;font-family:\'Nunito\',sans-serif;">Kaydet</button>';
+  try{ dedTryMatch(); }catch(e){}
   // Month nav
-  const items=(dedState.items||[]).filter(it=>!it.removed && (it.date||'').slice(0,7)===dedViewMonth).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const totals=dedTotalsForMonth(dedViewMonth);
+  const items=dedItemsForMonth(dedViewMonth).slice().sort((a,b)=>((b.date||'')+(b.time||'')).localeCompare((a.date||'')+(a.time||'')));
+  const totals=dedTotalsForMonth(dedViewMonth);        // salary cuts (ücretsiz tekrar)
+  const noComm=dedNoCommByTech(dedViewMonth);          // service amounts earning no commission
   const grand=Object.values(totals).reduce((s,v)=>s+v,0);
+  const commLost={};
+  Object.keys(noComm).forEach(t=>{ commLost[t]=Math.round((noComm[t]||0)*dedRateOf(t)); });
+  const grandComm=Object.values(commLost).reduce((s,v)=>s+v,0);
   let cards='';
   Object.keys(DED_RATES).forEach(t=>{
     cards+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;">'+
       '<div style="font-size:0.8rem;font-weight:700;color:#555;">'+t+'</div>'+
-      '<div style="font-size:1.15rem;font-weight:800;color:'+((totals[t]||0)>0?'#c94040':'#3f6e50')+';">−₺'+(totals[t]||0).toLocaleString('tr-TR')+'</div>'+
-      '<div style="font-size:0.65rem;color:#888;">bu ay maaştan kesilecek</div></div>';
+      '<div style="font-size:1.15rem;font-weight:800;color:'+((commLost[t]||0)>0?'#c94040':'#3f6e50')+';">−₺'+(commLost[t]||0).toLocaleString('tr-TR')+'</div>'+
+      '<div style="font-size:0.65rem;color:#888;">verilmeyen komisyon'+((noComm[t]||0)>0?' · ₺'+(noComm[t]||0).toLocaleString('tr-TR')+' iş':'')+'</div>'+
+      ((totals[t]||0)>0
+        ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:0.8rem;font-weight:800;color:#c94040;">−₺'+(totals[t]||0).toLocaleString('tr-TR')+'</div>'+
+          '<div style="font-size:0.65rem;color:#888;">maaştan kesilecek (ücretsiz tekrar)</div>'
+        : '')+
+      '</div>';
   });
   sm.innerHTML =
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">'+
     '<button onclick="dedMonthShift(-1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">‹</button>'+
     '<b style="color:#333;">'+dedViewMonth+'</b>'+
     '<button onclick="dedMonthShift(1)" style="padding:6px 12px;border:1px solid var(--border);background:var(--card);border-radius:8px;cursor:pointer;font-family:\'Nunito\',sans-serif;">›</button>'+
-    '<span style="margin-left:auto;font-weight:800;color:#c94040;">Toplam: −₺'+grand.toLocaleString('tr-TR')+'</span></div>'+
+    '<span style="margin-left:auto;font-weight:800;color:#c94040;">Verilmeyen komisyon: −₺'+grandComm.toLocaleString('tr-TR')+
+    (grand>0?' · Maaştan: −₺'+grand.toLocaleString('tr-TR'):'')+'</span></div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">'+cards+'</div>';
   // List
   if(items.length===0){ ls.innerHTML='<div style="color:#888;font-size:0.85rem;padding:14px;">Bu ay kesinti kaydı yok. 🎉</div>'; return; }
   let rows='';
   items.forEach(it=>{
+    const amt=dedJobAmount(it);
+    const full=dedIsFull(it);
+    const who=it.client||it.note||'—';
+    const pending=(it.apptId!=null&&!(amt>0));
     rows+='<div style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px;flex-wrap:wrap;">'+
-      '<span style="font-size:0.78rem;color:#666;min-width:84px;">'+it.date+'</span>'+
-      '<b style="color:#333;min-width:70px;">'+it.tech+'</b>'+
-      '<span style="font-size:0.78rem;color:#555;flex:1;">'+(DED_TYPES[it.type]?DED_TYPES[it.type].label:it.type)+(it.note?' · '+it.note:'')+'</span>'+
-      '<span style="font-size:0.78rem;color:#666;">Hizmet: ₺'+(it.amount||0).toLocaleString('tr-TR')+'</span>'+
-      '<b style="color:#c94040;">−₺'+dedAmountOf(it).toLocaleString('tr-TR')+'</b>'+
+      '<span style="font-size:0.78rem;color:#666;min-width:104px;">'+it.date+(it.time?' '+it.time:'')+'</span>'+
+      '<b style="color:#333;min-width:70px;">'+dtEscHtml(it.tech)+'</b>'+
+      '<b style="color:#1a1a1a;min-width:110px;">'+dtEscHtml(who)+'</b>'+
+      '<span style="font-size:0.78rem;color:#555;flex:1;">'+(DED_TYPES[it.type]?DED_TYPES[it.type].label:it.type)+
+        (it.service?' · '+dtEscHtml(it.service):'')+(it.note?' · '+dtEscHtml(it.note):'')+
+        (it.apptId!=null?' <span title="Takvimdeki randevuya bağlı" style="color:#2e7d4f;">🔗</span>':'')+'</span>'+
+      '<span style="font-size:0.78rem;color:#666;">Hizmet: '+(pending?'<i style="color:#c98a2e;">fiyat bekleniyor</i>':'₺'+amt.toLocaleString('tr-TR'))+'</span>'+
+      '<b style="color:#c94040;" title="'+(full?'Maaştan kesilir':'Bu işin komisyonu verilmez')+'">'+
+        (full?'−₺'+dedAmountOf(it).toLocaleString('tr-TR')+' maaştan':'komisyon yok −₺'+dedAmountOf(it).toLocaleString('tr-TR'))+'</b>'+
       '<button onclick="dedDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button></div>';
   });
-  ls.innerHTML='<div style="font-weight:700;color:#333;margin-bottom:10px;">📋 Kayıtlar</div>'+rows;
+  // Per-technician record — what each of them was NOT paid commission on.
+  let perTech='';
+  Object.keys(DED_RATES).forEach(t=>{
+    const jobs=dedJobsForTech(t, dedViewMonth);
+    if(!jobs.length) return;
+    perTech+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;">'+
+      '<div style="font-weight:800;color:#333;margin-bottom:2px;">👤 '+t+' — komisyon verilmeyen işler</div>'+
+      '<div style="font-size:0.7rem;color:#888;margin-bottom:8px;">'+jobs.length+' iş · toplam hizmet ₺'+
+        jobs.reduce((s,j)=>s+j.amount,0).toLocaleString('tr-TR')+' · kazanılmayan komisyon ₺'+
+        jobs.filter(j=>!j.full).reduce((s,j)=>s+j.cut,0).toLocaleString('tr-TR')+'</div>'+
+      jobs.map(j=>'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:0.78rem;padding:5px 0;border-top:1px solid rgba(0,0,0,0.05);">'+
+        '<span style="color:#666;min-width:104px;">'+j.date+(j.time?' '+j.time:'')+'</span>'+
+        '<b style="color:#1a1a1a;min-width:110px;">'+dtEscHtml(j.client)+'</b>'+
+        '<span style="color:#666;flex:1;">'+dtEscHtml(j.service||'')+'</span>'+
+        '<span style="color:#333;">'+(j.pending?'<i style="color:#c98a2e;">fiyat bekleniyor</i>':'₺'+j.amount.toLocaleString('tr-TR'))+'</span>'+
+        '<b style="color:#c94040;min-width:96px;text-align:right;">'+(j.full?'−₺'+j.cut.toLocaleString('tr-TR')+' maaştan':'komisyon yok')+'</b>'+
+      '</div>').join('')+
+    '</div>';
+  });
+  ls.innerHTML=(perTech?'<div style="font-weight:700;color:#333;margin-bottom:10px;">🧾 Teknisyen Bazında Kayıt</div>'+perTech:'')+
+    '<div style="font-weight:700;color:#333;margin:14px 0 10px;">📋 Kayıtlar</div>'+rows;
 }
 
 // ══════════════════════════════════════════════
@@ -5416,19 +5716,11 @@ function renderSalaryPage(){
       '<span>1 &pound; = <b style="color:var(--gold)">&#8378;'+gbp.toFixed(2)+'</b></span> &nbsp;'+
       '<span>1 &euro; = <b style="color:var(--blue)">&#8378;'+eur.toFixed(2)+'</b></span>';
 
-    // Commission from this month history — always calculate from rates
-    var commRates={Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+    // Commission from this month's history — always calculated from rates, and
+    // always with the cancelled jobs left out (techCommFromDays).
     var monthKey=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
     var monthDays=(typeof dtState!=='undefined'&&dtState.history)?dtState.history.filter(function(h){return h.date&&h.date.slice(0,7)===monthKey;}):[];
-    var commTotals={};
-    monthDays.forEach(function(d){
-      (d.ops||[]).forEach(function(op){
-        // Use stored commission if >0, otherwise calculate from rate
-        var rate=commRates[op.name]||0;
-        var comm=(op.commission&&op.commission>0)?op.commission:(op.total||0)*rate;
-        if(comm>0) commTotals[op.name]=(commTotals[op.name]||0)+comm;
-      });
-    });
+    var commTotals=techCommFromDays(monthDays, monthKey);
 
     // Helen bonus — use IDENTICAL formula to P&L page via mGetCalc
     var monthRevenue = monthDays.reduce(function(s,d){return s+d.total;},0);
@@ -5485,8 +5777,16 @@ function renderSalaryPage(){
       var salTRY=Math.round(toTRY(s.salary,s.cur));
       var advMap=advByCur[s.name]||{};
       var adv=Math.round(advToTRY(advMap));
+      // Jobs this technician earned no commission on. The cancelled-commission
+      // ones are already missing from s.comm; only a free redo comes off the pay.
+      var noComm=[], salCut=0, lostComm=0;
+      try{
+        noComm = (typeof dedJobsForTech==='function') ? dedJobsForTech(s.name, monthKey) : [];
+        salCut   = noComm.filter(function(j){return j.full;}).reduce(function(x,j){return x+j.cut;},0);
+        lostComm = noComm.filter(function(j){return !j.full;}).reduce(function(x,j){return x+j.cut;},0);
+      }catch(e){ console.warn('salary deduction block:', e); }
       var earnings=salTRY+s.comm;
-      var total=earnings-adv;
+      var total=earnings-adv-salCut;
       totalSalaries+=salTRY; totalComms+=s.comm; totalAdvances+=adv; grandTotal+=total;
 
       cardsHtml+='<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+s.color+';border-radius:12px;padding:18px;">';
@@ -5512,12 +5812,41 @@ function renderSalaryPage(){
       if(s.comm===0 && s.commLabel!=='Fixed salary only'){
         cardsHtml+='<div style="font-size:0.72rem;color:#888;margin-top:6px;font-style:italic;font-weight:500;">'+s.commLabel+' — no earnings this month</div>';
       }
+      // Which customers this month did NOT earn them commission, and why. The
+      // technician can see the reason next to the name rather than only a
+      // smaller number at the bottom of the card.
+      {
+        if(noComm.length){
+          cardsHtml+='<div style="margin-top:8px;border-top:1px solid rgba(0,0,0,0.08);padding-top:6px;">';
+          cardsHtml+='<div style="display:flex;justify-content:space-between;font-size:0.78rem;font-weight:700;color:#c94040;">'+
+            '<span>&#9986; Komisyon verilmeyen işler ('+noComm.length+')</span>'+
+            '<span>&minus;'+fmt(lostComm+salCut)+'</span></div>';
+          noComm.slice(0,10).forEach(function(j){
+            cardsHtml+='<div style="display:flex;gap:6px;align-items:center;font-size:0.68rem;color:#666;padding:2px 0;">'+
+              '<span style="min-width:74px;">'+j.date+'</span>'+
+              '<b style="color:#333;flex:1;">'+dtEscHtml(j.client)+'</b>'+
+              '<span>'+(j.pending?'fiyat bekleniyor':fmt(j.amount))+'</span>'+
+              '<span style="color:#c94040;min-width:78px;text-align:right;">'+(j.full?'maaştan &minus;'+fmt(j.cut):'komisyon yok')+'</span></div>';
+          });
+          if(noComm.length>10) cardsHtml+='<div style="font-size:0.65rem;color:#888;">… ve '+(noComm.length-10)+' iş daha</div>';
+          if(salCut>0){
+            cardsHtml+='<div style="display:flex;justify-content:space-between;padding:4px 0 0;font-size:0.75rem;font-weight:700;color:#c94040;">'+
+              '<span>Maaştan kesilecek (ücretsiz tekrar)</span><span>&minus;'+fmt(salCut)+'</span></div>';
+          }
+          cardsHtml+='</div>';
+        }
+      }
       if(adv>0){
         var origStr=advOrigStr(advMap);
         // Earnings (hakediş) subtotal — shown before the advance is deducted
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(255,255,255,0.08);margin-top:2px;">';
         cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:700;">Hakediş (Earnings)</span>';
         cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#333;">'+fmt(earnings)+'</span></div>';
+        if(salCut>0){
+          cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
+          cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">&#9986; Kesinti (ücretsiz tekrar)</span>';
+          cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#c94040;">&minus;'+fmt(salCut)+'</span></div>';
+        }
         // Advance deducted (foreign amounts converted at today\'s rate)
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
         cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">&#128181; Avans (Advance)'+(origStr?' <span style="font-size:0.65rem;color:var(--muted);">'+origStr+' &bull; günün kuru</span>':'')+'</span>';
@@ -5606,15 +5935,9 @@ function renderHelenBreakdown(c, total){
 
   const totalExpenses = helenSal+helenAccom+hannahSal+lissaSal+nihalSal+zeboSal+rent+utils+supplies+ni+bev+socmed;
 
-  // Tech comms from history
+  // Tech comms from history — cancelled jobs excluded
   const ym = mViewMonth||mCurrentMonth();
-  const commTotals = {};
-  var _rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
-  days.forEach(function(d){ (d.ops||[]).forEach(function(op){
-    var r=_rates[op.name]||0;
-    var c=(op.commission&&op.commission>0)?op.commission:(op.total||0)*r;
-    if(c>0) commTotals[op.name]=(commTotals[op.name]||0)+c;
-  }); });
+  const commTotals = techCommFromDays(days, ym);
   const totalComms = Object.values(commTotals).reduce(function(s,v){return s+v;},0);
 
   // Use IDENTICAL formula to P&L cards
@@ -10042,7 +10365,15 @@ function dedFlagEntry(opIdx, entryIdx){
   const n = new Date();
   const date = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
   const recId = Date.now()+Math.random();
-  dedState.items.push({id:recId, date, tech:op.name, amount:e.amount||0, type, note:e.service||'', ts:Date.now()});
+  // Same record shape as the Kesintiler form, so a job flagged here shows up in
+  // the technician's "no commission" list with the customer's name too.
+  const _ap = (typeof dedApptById==='function') ? dedApptById(e.apptId) : null;
+  let _who = '';
+  try{ if(_ap && typeof cName==='function'){ const n=cName(_ap.clientId); if(n&&n!=='Unknown') _who=n; } }catch(_e){}
+  if(!_who) _who = String(e.service||'').split(' — ')[0];
+  dedState.items.push({id:recId, date, time:e.time||'', tech:op.name, amount:e.amount||0, type,
+    note:'', client:_who, clientId:_ap?_ap.clientId:null, apptId:(e.apptId!=null?e.apptId:null),
+    service:(_ap&&_ap.service)?_ap.service:(e.service||''), ts:Date.now()});
   e.ded = type; e.dedId = recId;
   dedSave(); dtSaveState(); dtRender();
   const cut = (type==='redo') ? (e.amount||0) : Math.round((e.amount||0)*(DED_RATES[op.name]||0));
@@ -10777,16 +11108,13 @@ function mGetCalc(rev, viewMonth){
 
   // Tech commissions from history
   const ym = viewMonth || (()=>{ const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); })();
-  const _commRates = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+  // A commission the salon cancelled is not a cost the salon carries, so the
+  // break-even figure has to use the same (post-deduction) numbers the
+  // technicians are actually paid.
   let techCommTotal = 0;
-  if(typeof dtState!=='undefined' && dtState.history){
-    dtState.history.filter(h=>h.date&&h.date.slice(0,7)===ym).forEach(d=>{
-      (d.ops||[]).forEach(op=>{
-        const rate = _commRates[op.name] || 0;
-        const comm = (op.commission && op.commission > 0) ? op.commission : (op.total||0) * rate;
-        techCommTotal += comm;
-      });
-    });
+  if(typeof techCommForMonth==='function'){
+    const _tc = techCommForMonth(ym);
+    techCommTotal = Object.keys(_tc).reduce(function(s,k){ return s+_tc[k]; }, 0);
   }
 
   // Breakeven = all costs combined
@@ -11070,22 +11398,22 @@ function renderMonthly(){
 
   // ── Per-technician monthly income & commission from history ──
   const techTotals = {}; // name → total income for this month
-  const techCommRates = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
-  // Always calculate commission from rates applied to each day's income
-  const techComms = {};
   days.forEach(d=>{
     (d.ops||[]).forEach(op=>{
       techTotals[op.name] = (techTotals[op.name]||0) + (op.total||0);
-      // Use stored commission if present and non-zero, otherwise calculate from rate
-      const rate = techCommRates[op.name] || 0;
-      const comm = (op.commission && op.commission > 0) ? op.commission : (op.total||0) * rate;
-      if(comm > 0) techComms[op.name] = (techComms[op.name]||0) + comm;
     });
   });
+  // Commission with every cancelled job already left out of the base.
+  const techComms = techCommFromDays(days, mViewMonth);
   const totalTechComm = Object.values(techComms).reduce((s,v)=>s+v, 0);
 
   // ── Kesintiler (deductions) for this month — from the Kesintiler page ──
+  // Salary cuts only (free redos). Cancelled commissions are not subtracted
+  // here; they were never added to techComms in the first place.
   const techDeds = (typeof dedTotalsForMonth==='function') ? dedTotalsForMonth(mViewMonth) : {};
+  const techNoComm = (typeof dedNoCommByTech==='function') ? dedNoCommByTech(mViewMonth) : {};
+  const techCommLost = {};
+  Object.keys(techNoComm).forEach(function(n){ techCommLost[n]=Math.round((techNoComm[n]||0)*dedRateOf(n)); });
 
   // Hero
   const heroLabel = document.getElementById('m-hero-label');
@@ -11201,19 +11529,47 @@ function renderMonthly(){
       mkCard(_('m_helen_total'), mFmtTRY(c.starTotal), 'var(--coral)', true)
     );
 
+    // The commission base is the month's income minus any job whose commission
+    // was cancelled, so the "12% × …" line has to say so too — otherwise the
+    // card looks like an arithmetic mistake.
+    const mCommBase = function(name){ return (techTotals[name]||0) - (techNoComm[name]||0); };
+    const mCommNote = function(name, pct){
+      const base = mCommBase(name);
+      return '<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+pct+' × '+mFmtTRY(base)+
+        ((techNoComm[name]||0)>0 ? '<br>('+mFmtTRY(techTotals[name]||0)+' − '+mFmtTRY(techNoComm[name])+' komisyonsuz iş)' : '')+'</div>';
+    };
+    // The record the technician is shown: which customers they earned nothing on.
+    const mNoCommCard = function(name){
+      const jobs = (typeof dedJobsForTech==='function') ? dedJobsForTech(name, mViewMonth) : [];
+      if(!jobs.length) return '';
+      const rows = jobs.slice(0,12).map(function(j){
+        return '<div style="display:flex;gap:6px;font-size:0.66rem;color:var(--muted);border-top:1px solid rgba(0,0,0,0.06);padding:2px 0;">'+
+          '<span>'+j.date.slice(5)+(j.time?' '+j.time:'')+'</span>'+
+          '<b style="color:var(--text);flex:1;">'+dtEscHtml(j.client)+'</b>'+
+          '<span>'+(j.pending?'—':mFmtTRY(j.amount))+'</span>'+
+          '<span style="color:var(--red);">'+(j.full?'maaştan':'kom. yok')+'</span></div>';
+      }).join('');
+      return mkCard(name+' — ✂️ Komisyon verilmeyen işler',
+        '− '+mFmtTRY((techCommLost[name]||0)+(techDeds[name]||0))+
+        '<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+jobs.length+' iş · hizmet '+
+          mFmtTRY(jobs.reduce(function(s,j){return s+j.amount;},0))+'</div>'+rows+
+        (jobs.length>12?'<div style="font-size:0.62rem;color:var(--muted);">… ve '+(jobs.length-12)+' iş daha</div>':''),
+        'var(--red)', false);
+    };
+
     // ── HANNAH ──
     html += mkGroup('🩵 Hannah',
       mkCard('Hannah — '+_('m_salary'), mFmtTRY(hannahSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[4]||0,mCosts.extraStaffCur[4]||'USD')+'</div>', 'var(--mint)', false) +
-      (techComms['Hannah']>0 ? mkCard('Hannah — '+_('m_tech_commission')+' (12%)', mFmtTRY(techComms['Hannah'])+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">12% × '+mFmtTRY(techTotals['Hannah']||0)+'</div>', 'var(--purple)', true) : '') +
-      ((techDeds['Hannah']||0)>0 ? mkCard('Hannah — ✂️ Kesintiler', '− '+mFmtTRY(techDeds['Hannah'])+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Kesintiler sayfasındaki bu ayın kayıtları</div>', 'var(--red)', false) : '') +
+      (techComms['Hannah']>0 ? mkCard('Hannah — '+_('m_tech_commission')+' (12%)', mFmtTRY(techComms['Hannah'])+mCommNote('Hannah','12%'), 'var(--purple)', true) : '') +
+      mNoCommCard('Hannah') +
       ((techComms['Hannah']>0 || (techDeds['Hannah']||0)>0) ? mkCard('Hannah — TOPLAM', mFmtTRY(hannahTotal)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtTRY(hannahSalTRY)+' maaş + '+mFmtTRY(techComms['Hannah']||0)+' komisyon'+((techDeds['Hannah']||0)>0?' − '+mFmtTRY(techDeds['Hannah'])+' kesinti':'')+'</div>', 'var(--coral)', true) : '')
     );
 
     // ── LISSA ──
     html += mkGroup('🌸 Lissa',
       mkCard('Lissa — '+_('m_salary'), mFmtTRY(lissaSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.extraStaff[5]||0,mCosts.extraStaffCur[5]||'USD')+'</div>', 'var(--mint)', false) +
-      (techComms['Lissa']>0 ? mkCard('Lissa — '+_('m_tech_commission')+' (12%)', mFmtTRY(techComms['Lissa'])+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">12% × '+mFmtTRY(techTotals['Lissa']||0)+'</div>', 'var(--purple)', true) : '') +
-      ((techDeds['Lissa']||0)>0 ? mkCard('Lissa — ✂️ Kesintiler', '− '+mFmtTRY(techDeds['Lissa'])+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Kesintiler sayfasındaki bu ayın kayıtları</div>', 'var(--red)', false) : '') +
+      (techComms['Lissa']>0 ? mkCard('Lissa — '+_('m_tech_commission')+' (12%)', mFmtTRY(techComms['Lissa'])+mCommNote('Lissa','12%'), 'var(--purple)', true) : '') +
+      mNoCommCard('Lissa') +
       ((techComms['Lissa']>0 || (techDeds['Lissa']||0)>0) ? mkCard('Lissa — TOPLAM', mFmtTRY(lissaTotal)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtTRY(lissaSalTRY)+' maaş + '+mFmtTRY(techComms['Lissa']||0)+' komisyon'+((techDeds['Lissa']||0)>0?' − '+mFmtTRY(techDeds['Lissa'])+' kesinti':'')+'</div>', 'var(--coral)', true) : '')
     );
 
