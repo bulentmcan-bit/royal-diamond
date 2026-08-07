@@ -115,7 +115,15 @@
             });
           }
           _isSyncing['rdns_main_v1']=true;
-          clients=remote.clients||[];
+          // Clients merge exactly as appointments do — a discount set here
+          // seconds ago must not be undone by a snapshot written before it.
+          mergeRemoteClientTomb(remote.clientTomb);
+          const _clientsBefore=Array.isArray(clients)?clients.slice():[];
+          remote.clients=stripReactOffer(_mergeRemoteClients(stripReactOffer(remote.clients||[]), remote._ts));
+          const clientsKept=_clientMergeKept;
+          remote.clients=_clientMergeAudit(remote.clients,_clientsBefore,'live listener');
+          clients=remote.clients;
+          clientStampAdopt(clients);
           mergeRemotePriceOverrides(remote.priceOverrides);
           mergeRemotePayMethods(remote.payMethods);
           mergeRemoteApptTomb(remote.apptTomb);
@@ -139,10 +147,11 @@
           remote.priceOverrides=priceOverrides;
           remote.payMethods=payMethods;
           remote.apptTomb=apptTomb;
+          remote.clientTomb=clientTomb;
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
-          if(phonesFixed||moneyKept||apptsKept){
+          if(phonesFixed||moneyKept||apptsKept||clientsKept){
             setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
           }
           const pg=document.querySelector('.page.active');
@@ -850,7 +859,7 @@
       const keys=Object.keys(a).sort();
       for(let i=0;i<keys.length;i++){
         const k=keys[i];
-        if(k==='_ats'||k==='_pts'||k==='_payTs') continue;
+        if(k==='_ats'||k==='_pts'||k==='_payTs'||k==='_cts') continue;
         const v=a[k];
         s+=k+':'+((v&&typeof v==='object')?JSON.stringify(v):String(v))+'|';
       }
@@ -1061,6 +1070,222 @@
       apptTombPrune();
     }catch(e){ console.warn('apptStampSync error:',e); }
   }
+
+  // ═══════ THE SAME GUARANTEE FOR THE CUSTOMER LIST ═══════
+  // Client records were still being REPLACED wholesale by every snapshot, which
+  // is exactly what used to happen to appointments — and it bit for the same
+  // reason. Set a discount on two customers a few seconds apart and the second
+  // save carried a copy of the first customer written before her change; the
+  // snapshot came back and the first change was simply gone. Nobody undid it,
+  // the array was overwritten.
+  // So the client list now follows the appointment rule: the two sides are
+  // UNIONED by id, the newer edit wins per customer, and the only thing that
+  // removes a customer is an explicit tombstone from a real deletion.
+  const CLIENT_STAMP_KEY='rdns_client_stamp_v1';
+  const CLIENT_TOMB_KEY='rdns_client_tomb_v1';
+  let clientStamps=_apptReadMap(CLIENT_STAMP_KEY);   // {id:{ts,h,l}}
+  let clientTomb=_apptReadMap(CLIENT_TOMB_KEY);      // {id:ts} — deleted on purpose
+  function clientStampPersist(){ try{ localStorage.setItem(CLIENT_STAMP_KEY, JSON.stringify(clientStamps)); }catch(e){} }
+  function clientTombPersist(){ try{ localStorage.setItem(CLIENT_TOMB_KEY, JSON.stringify(clientTomb)); }catch(e){} }
+  function clientTombPrune(){
+    try{
+      const cut=Date.now()-APPT_TOMB_KEEP_MS;
+      let changed=false;
+      Object.keys(clientTomb).forEach(function(k){
+        if(!(clientTomb[k]>cut)){ delete clientTomb[k]; changed=true; }
+      });
+      if(changed) clientTombPersist();
+    }catch(e){}
+  }
+  // Called from every path that deletes a customer for good. Without this a
+  // deletion is only an ABSENCE, and an absence is what a lagging snapshot
+  // looks like too.
+  function clientTombAdd(id, reason, cl){
+    if(id==null) return;
+    const k=String(id);
+    try{
+      let c=cl;
+      if(!c&&typeof clients!=='undefined'&&Array.isArray(clients))
+        c=clients.find(function(x){ return x&&String(x.id)===k; });
+      apptDropLog({id:k, clientName:(c&&c.name)||'?'}, k,
+        'CLIENT: '+(reason||'deleted on this device'), 'client tombstone written');
+    }catch(e){}
+    let ts=Date.now();
+    const st=clientStamps[k];
+    if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
+    if((clientTomb[k]||0)>=ts) ts=clientTomb[k]+1;
+    clientTomb[k]=ts;
+    if(st){ delete clientStamps[k]; clientStampPersist(); }
+    clientTombPersist();
+  }
+  function clientTombAddMany(ids, reason){
+    if(!ids||!ids.length) return;
+    ids.forEach(function(id){ clientTombAdd(id, reason); });
+  }
+  function mergeRemoteClientTomb(remoteTomb){
+    try{
+      if(!remoteTomb||typeof remoteTomb!=='object') return;
+      let changed=false;
+      Object.keys(remoteTomb).forEach(function(k){
+        const ts=Number(remoteTomb[k])||0;
+        if(!ts) return;
+        if((clientTomb[k]||0)>=ts) return;
+        clientTomb[k]=ts; changed=true;
+      });
+      if(changed) clientTombPersist();
+      clientTombPrune();
+    }catch(e){ console.warn('mergeRemoteClientTomb error:',e); }
+  }
+  let _clientMergeKept=false;
+  let _clientMergeMeta=null;
+  // Same last line of defence as the appointments: no customer this device is
+  // holding may leave the list without a tombstone saying she was deleted.
+  function _clientMergeAudit(out, local, where){
+    try{
+      if(!Array.isArray(out)||!Array.isArray(local)) return out;
+      const have={};
+      out.forEach(function(c){ if(c&&c.id!=null) have[String(c.id)]=1; });
+      local.forEach(function(c){
+        if(!c||c.id==null) return;
+        const k=String(c.id);
+        if(have[k]) return;
+        if(clientTomb[k]) return;
+        have[k]=1;
+        out.push(c);
+        _clientMergeKept=true;
+        apptDropLog({id:k, clientName:c.name||'?'}, k,
+          'CLIENT RECOVERED — merge dropped her with no tombstone', where);
+      });
+    }catch(e){ console.warn('client merge audit error:',e); }
+    return out;
+  }
+  function _mergeRemoteClients(remoteClients, snapTs){
+    _clientMergeKept=false;
+    _clientMergeMeta={};
+    const local=Array.isArray(clients)?clients:[];
+    try{
+      const remote=Array.isArray(remoteClients)?remoteClients:[];
+      const locById={};
+      local.forEach(function(c){ if(c&&c.id!=null) locById[String(c.id)]=c; });
+      const snap=Number(snapTs)||Date.now();
+      const out=[], took={};
+      // 1 — everyone the snapshot carries, unless we hold a newer version.
+      remote.forEach(function(r){
+        if(!r||r.id==null){ out.push(r); return; }
+        const k=String(r.id);
+        if(took[k]) return;
+        took[k]=1;
+        if(clientTomb[k]){
+          apptDropLog({id:k, clientName:r.name||'?'}, k, 'CLIENT: tombstone — deleted on a device', 'arrived in snapshot');
+          _clientMergeKept=true;
+          return;
+        }
+        const loc=locById[k];
+        const st=clientStamps[k];
+        const lts=(st&&st.ts)||(loc&&Number(loc._cts))||0;
+        // An unstamped copy from the cloud carries no evidence of WHEN it was
+        // edited. It must not be dated to the snapshot's own timestamp — that
+        // is when the whole document was pushed, by a device whose clock may
+        // run minutes ahead, and it would beat every edit made here. So when
+        // only one side carries an edit stamp, that side is the answer; clocks
+        // are compared only when both sides actually have one.
+        const rts=Number(r._cts)||0;
+        const keepLocal = !!loc && (rts ? (lts>rts) : (lts>0));
+        if(keepLocal){
+          out.push(loc);                                   // our edit is the newer one
+          _clientMergeMeta[k]={ts:lts,l:(st&&st.l)?1:0};
+          _clientMergeKept=true;
+        }else{
+          out.push(r);
+          _clientMergeMeta[k]={ts:(rts||lts||snap),l:0};
+        }
+      });
+      // 2 — everyone we hold that the snapshot has not caught up with. Nothing
+      //     is dropped here for looking old or for having come from the cloud.
+      local.forEach(function(c){
+        if(!c||c.id==null) return;
+        const k=String(c.id);
+        if(took[k]) return;
+        took[k]=1;
+        if(clientTomb[k]){
+          apptDropLog({id:k, clientName:c.name||'?'}, k, 'CLIENT: tombstone — deleted on a device', 'held locally');
+          _clientMergeKept=true;
+          return;
+        }
+        const st=clientStamps[k];
+        out.push(c);
+        _clientMergeMeta[k]={ts:(st&&st.ts)||Number(c._cts)||0, l:(st&&st.l)?1:0};
+        _clientMergeKept=true;
+      });
+      return _clientMergeAudit(out, local, 'client merge');
+    }catch(e){
+      console.warn('client merge error:',e);
+      _clientMergeMeta=null;
+      const safe=Array.isArray(remoteClients)?remoteClients.slice():[];
+      return _clientMergeAudit(safe, local, 'client merge threw: '+(e&&e.message||e));
+    }
+  }
+  function clientStampAdopt(list){
+    try{
+      if(!Array.isArray(list)) return;
+      const meta=_clientMergeMeta||{};
+      const now=Date.now();
+      const next={};
+      list.forEach(function(c){
+        if(!c||c.id==null) return;
+        const k=String(c.id);
+        const m=meta[k], prev=clientStamps[k];
+        const ts=(m&&m.ts)||(prev&&prev.ts)||Number(c._cts)||now;
+        next[k]={ts:ts, h:_apptSigHash(c), l:(m?(m.l?1:0):((prev&&prev.l)?1:0))};
+        if((Number(c._cts)||0)<ts) c._cts=ts;
+      });
+      clientStamps=next;
+      clientStampPersist();
+    }catch(e){ console.warn('clientStampAdopt error:',e); }
+    _clientMergeMeta=null;
+  }
+  // Stamp whatever changed here, on every save — so a snapshot written on
+  // another device can never quietly undo it.
+  function clientStampSync(){
+    try{
+      if(!Array.isArray(clients)) return;
+      const now=Date.now();
+      const next={};
+      clients.forEach(function(c){
+        if(!c||c.id==null) return;
+        const k=String(c.id);
+        const h=_apptSigHash(c);
+        const prev=clientStamps[k];
+        if(prev&&prev.h===h&&prev.ts){ next[k]=prev; }
+        else{
+          let ts=now;
+          if(prev&&(prev.ts||0)>=ts) ts=(prev.ts||0)+1;
+          if((Number(c._cts)||0)>=ts) ts=(Number(c._cts)||0)+1;
+          next[k]={ts:ts, h:h, l:1};
+        }
+        if((Number(c._cts)||0)<next[k].ts) c._cts=next[k].ts;
+      });
+      clientStamps=next;
+      clientStampPersist();
+      clientTombPrune();
+    }catch(e){ console.warn('clientStampSync error:',e); }
+  }
+
+  // ═══════ THE %10 REACTIVATION OFFER IS OVER ═══════
+  // Sending a reactivation message used to grant that customer a standing 10%
+  // off, shown as a badge on her row and taken off the next price automatically.
+  // The salon has stopped running it, so the flag is stripped wherever a client
+  // record passes through — including copies arriving from a device that still
+  // has it — and nothing grants it any more. A discount for an individual
+  // customer is now set deliberately, on her row (see the discount selector).
+  function stripReactOffer(list){
+    try{
+      if(!Array.isArray(list)) return list;
+      list.forEach(function(c){ if(c && c.reactOffer!==undefined) delete c.reactOffer; });
+    }catch(e){}
+    return list;
+  }
+
   function showSyncStatus(s){
     const el=document.getElementById('sync-indicator');if(!el)return;
     const m={local:{t:'💾 Local',c:'#888'},connecting:{t:'🔄 Syncing...',c:'#f0a500'},synced:{t:'☁️ Synced',c:'#4caf50'},error:{t:'⚠️ Sync Error',c:'#f44'}};
@@ -1201,7 +1426,15 @@
       const val=snap.val();
       if(!val||!val.appointments||val.appointments.length===0)return;
       _isSyncing['rdns_main_v1']=true;
-      clients=val.clients||[];
+      // Same rule as the live listener: the customer list merges, it never
+      // replaces, and only a tombstone removes anyone.
+      mergeRemoteClientTomb(val.clientTomb);
+      const _clientsBefore=Array.isArray(clients)?clients.slice():[];
+      val.clients=stripReactOffer(_mergeRemoteClients(stripReactOffer(val.clients||[]), val._ts));
+      const clientsKept=_clientMergeKept;
+      val.clients=_clientMergeAudit(val.clients,_clientsBefore,'syncForceLoad');
+      clients=val.clients;
+      clientStampAdopt(clients);
       mergeRemotePriceOverrides(val.priceOverrides);
       mergeRemotePayMethods(val.payMethods);
       mergeRemoteApptTomb(val.apptTomb);
@@ -1222,11 +1455,12 @@
       val.priceOverrides=priceOverrides;
       val.payMethods=payMethods;
       val.apptTomb=apptTomb;
+      val.clientTomb=clientTomb;
       localStorage.setItem('rdns_main_v1',JSON.stringify(val));
       setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
       // Anything the cloud copy was still missing goes straight back up, so the
       // other devices stop handing us the stale picture.
-      if(apptsKept||_apptMoneyKept){
+      if(apptsKept||_apptMoneyKept||clientsKept){
         setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
       }
       try{renderDash();}catch(e){}
@@ -3851,7 +4085,10 @@ function dbSave(){
     // Stamp whatever changed here before it leaves the device, so a snapshot
     // written elsewhere can never quietly drop a booking made on this one.
     try{ apptStampSync(); }catch(e){}
-    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods, apptTomb};
+    // The customer list is stamped on the way out for the same reason — so an
+    // edit made here outranks a snapshot written elsewhere before it.
+    try{ stripReactOffer(clients); clientStampSync(); }catch(e){}
+    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods, apptTomb, clientTomb};
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
@@ -3877,6 +4114,10 @@ try{ mergeRemotePayMethods(_dbLoaded?.payMethods); applyPayMethods(appointments)
 // Deletions travel the same way, so a restored backup can't hand back records
 // that were already thrown away.
 try{ mergeRemoteApptTomb(_dbLoaded?.apptTomb); }catch(e){}
+try{ mergeRemoteClientTomb(_dbLoaded?.clientTomb); }catch(e){}
+// The %10 reactivation offer is no longer run — clear it off anything loaded
+// from disk, including an old backup that still carries it.
+try{ stripReactOffer(clients); }catch(e){}
 
 function cObj(id){return clients.find(c=>String(c.id)===String(id));}
 function cName(id){return cObj(id)?.name||"Unknown";}
@@ -4613,15 +4854,6 @@ function dashEditAppt(id){
               : '✓ '+_lbl+' — tam fiyatı yazın, %'+_dPct+' otomatik düşülür';
           };
           pr.oninput = _updFd; _updFd();
-        } else if(cl && cl.reactOffer){
-          fd.style.cssText = 'margin-top:6px;font-size:0.78rem;font-weight:800;color:#e65100;background:#fff3e0;border:1px solid #ff9800;border-radius:8px;padding:5px 10px;';
-          const _updRo = function(){
-            const v = parseFloat(pr.value)||0;
-            fd.textContent = v>0
-              ? '🚀 REAKTİVASYON %10 (gönderildi: '+cl.reactOffer+') — ₺'+v.toLocaleString('tr-TR')+' → kaydedilecek: ₺'+Math.round(v*0.90).toLocaleString('tr-TR')
-              : '🚀 REAKTİVASYON %10 İNDİRİM HAKKI — tam fiyatı yazın, %10 otomatik düşülür';
-          };
-          pr.oninput = _updRo; _updRo();
         } else {
           pr.oninput = null;
           fd.style.cssText = 'display:none;';
@@ -4672,12 +4904,6 @@ function dashEditAppt(id){
           const _full = enteredPrice;
           enteredPrice = Math.round(enteredPrice * (100-_pct)/100);
           if(typeof toast==='function') toast('💚',(_pct===30?'Aile İndirimi':'Müşteri İndirimi')+' Uygulandı','₺'+_full.toLocaleString('tr-TR')+' → ₺'+enteredPrice.toLocaleString('tr-TR')+' (%'+_pct+')','g');
-        } else if(cl && cl.reactOffer && isNewFigure){
-          const _full = enteredPrice;
-          enteredPrice = Math.round(enteredPrice * 0.90);
-          delete cl.reactOffer;
-          try{saveAll();}catch(e){}
-          if(typeof toast==='function') toast('🚀','Reaktivasyon İndirimi Uygulandı','₺'+_full.toLocaleString('tr-TR')+' → ₺'+enteredPrice.toLocaleString('tr-TR')+' (%10) — hak kullanıldı','g');
         }
         const oldPrice = live.price||0;
         // If the price field was left blank, don't erase a price that was
@@ -6359,6 +6585,7 @@ function phoneCleanupDelete(){
   const names=ids.map(id=>clients.find(c=>String(c.id)===String(id))?.name).filter(Boolean);
   if(!confirm('\u26a0\ufe0f KALICI S\u0130LME \u2014 geri al\u0131namaz!\n\n'+ids.length+' m\u00fc\u015fteri ve t\u00fcm randevular\u0131 silinecek:\n\n\u2022 '+names.slice(0,15).join('\n\u2022 ')+(names.length>15?'\n\u2026':'')+'\n\nOnayl\u0131yor musunuz?'))return;
   const idset=new Set(ids.map(String));
+  clientTombAddMany(ids.map(String),'bulk client cleanup (renderPhoneCleanup)');
   clients=clients.filter(c=>!idset.has(String(c.id)));
   apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id),'bulk client cleanup (renderPhoneCleanup)');
   appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
@@ -6379,6 +6606,7 @@ function deleteClient(id){
     alert('❌ İsim eşleşmedi — silme iptal edildi.');
     return;
   }
+  clientTombAdd(id,'deleted by hand (deleteClient)',c);
   clients = clients.filter(x=>x.id!==id);
   apptTombAddMany(appointments.filter(a=>a.clientId===id).map(a=>a.id),'client deleted (deleteClient)');
   appointments = appointments.filter(a=>a.clientId!==id);
@@ -6397,7 +6625,7 @@ function renderClients(){
     <tr>
       <td><div style="display:flex;align-items:center;gap:9px">
         <div class="avatar" style="background:${avC(c.name)};width:32px;height:32px;font-size:0.75rem">${avI(c.name)}</div>
-        <div><div style="font-weight:700">${c.name}${isBday(c.birthday)?" 🎂":""}${c.reactOffer?` <span style="background:#fff3e0;border:1px solid #ff9800;color:#e65100;font-size:0.66rem;font-weight:800;padding:2px 8px;border-radius:12px;vertical-align:middle;" title="Reaktivasyon kampanyası gönderildi: ${c.reactOffer}">🚀 %10 İNDİRİM HAKKI</span>`:""}</div>
+        <div><div style="font-weight:700">${c.name}${isBday(c.birthday)?" 🎂":""}</div>
         <div style="font-size:0.73rem;color:var(--muted)">${c.notes||"—"}</div></div></div></td>
       <td style="font-size:0.82rem">${c.phone}</td>
       <td style="font-size:0.82rem">${c.birthday?fDate(c.birthday+"T00:00"):"—"}</td>
@@ -7517,11 +7745,13 @@ const MKT_TYPES=new Set(["react","winback","occasion","promo","referral"]);
 function _mktState(){try{const s=JSON.parse(localStorage.getItem("rdns_mkt_daily")||"{}");const today=new Date().toISOString().slice(0,10);return s.d===today?s:{d:today,n:0};}catch(e){return {d:new Date().toISOString().slice(0,10),n:0};}}
 function mktSentToday(){return _mktState().n;}
 function bumpMkt(){const s=_mktState();s.n++;try{localStorage.setItem("rdns_mkt_daily",JSON.stringify(s));}catch(e){}}
-function tagReactOffer(m){
-  if(m.type!=="react")return;
-  const ci=clients.findIndex(x=>String(x.id)===String(m.clientId));
-  if(ci>=0&&!clients[ci].reactOffer){clients[ci].reactOffer=new Date().toISOString().slice(0,10);try{saveAll();}catch(e){}}
-}
+// The reactivation message no longer carries an automatic %10 discount right.
+// It used to stamp reactOffer on the client, which showed as a badge on her row
+// and came off her next price by itself. The salon has stopped running that
+// offer, so nothing is granted here any more — a discount for one customer is
+// set deliberately on her row instead. Kept as a no-op so the send path, which
+// calls it for every reactivation message, needs no special case.
+function tagReactOffer(m){ /* %10 reactivation offer withdrawn */ }
 function sendWA(id){
   const m=msgQueue.find(x=>x.id===id);if(!m||!m.text)return;
   const c=cObj(m.clientId);if(!c)return;
@@ -10801,7 +11031,7 @@ function rdnsImportData(input){
       // Reload state
       const _db = dbLoad();
       if(_db){
-        clients      = _db.clients      || [];
+        clients      = stripReactOffer(_db.clients || []);
         // A restore is the one place an appointment may leave the array without
         // a tombstone — the owner asked for yesterday's picture. Write down
         // which bookings that cost, so the removal log stays complete.
