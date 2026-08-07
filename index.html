@@ -121,10 +121,14 @@
           mergeRemoteApptTomb(remote.apptTomb);
           // Merge, never replace — a booking made here seconds ago must not be
           // wiped by a snapshot that was written before it existed.
+          const _apptsBefore=Array.isArray(appointments)?appointments.slice():[];
           let incoming=_mergeRemoteAppts(remote.appointments||[], remote._ts);
           const apptsKept=_apptMergeKept;
           remote.appointments=_preserveLocalApptPrices(incoming);
           const moneyKept=_apptMoneyKept;
+          // Nothing between here and the array swap is allowed to lose a record
+          // either — check the whole path, not just the merge.
+          remote.appointments=_apptMergeAudit(remote.appointments,_apptsBefore,'live listener');
           appointments=remote.appointments;
           applyPriceOverrides(appointments);
           applyPayMethods(appointments);
@@ -713,10 +717,8 @@
   // because its tombstone says so rather than its mere absence.
   const APPT_STAMP_KEY='rdns_appt_stamp_v1';
   const APPT_TOMB_KEY='rdns_appt_tomb_v1';
-  // The salon's devices don't share a clock. A fresh booking must not be thrown
-  // away just because the device that pushed the snapshot runs a few minutes
-  // ahead of this one.
-  const APPT_SKEW_MS=5*60*1000;
+  // The salon's devices don't share a clock, which is why no clock comparison is
+  // ever allowed to decide that a booking should disappear — see _mergeRemoteAppts.
   const APPT_TOMB_KEEP_MS=120*24*60*60*1000;
   function _apptReadMap(key){
     try{ const o=JSON.parse(localStorage.getItem(key)||'{}'); return (o&&typeof o==='object')?o:{}; }
@@ -726,6 +728,119 @@
   let apptTomb=_apptReadMap(APPT_TOMB_KEY);      // {id:ts} — deleted on purpose
   function apptStampPersist(){ try{ localStorage.setItem(APPT_STAMP_KEY, JSON.stringify(apptStamps)); }catch(e){} }
   function apptTombPersist(){ try{ localStorage.setItem(APPT_TOMB_KEY, JSON.stringify(apptTomb)); }catch(e){} }
+
+  // ═══════ WHY DID THAT BOOKING DISAPPEAR? ═══════
+  // Every removal of an appointment from the local array writes one line here:
+  // which record, whose booking, and what took it out. It is kept in
+  // localStorage, so it survives reloads and is still there tomorrow morning
+  // when someone notices a booking is missing.
+  // To read it: the 🩺 button at the bottom of the sidebar, or rdApptLog() in
+  // the browser console.
+  const APPT_DROPLOG_KEY='rdns_appt_droplog_v1';
+  const APPT_DROPLOG_MAX=500;
+  function _apptDropName(a){
+    try{
+      if(!a) return '?';
+      if(a.clientName) return String(a.clientName);
+      if(a.name) return String(a.name);
+      if(a.clientId!=null){
+        if(typeof cName==='function'){ const n=cName(a.clientId); if(n&&n!=='Unknown') return n; }
+        if(typeof clients!=='undefined'&&Array.isArray(clients)){
+          const c=clients.find(function(x){return x&&String(x.id)===String(a.clientId);});
+          if(c&&c.name) return String(c.name);
+        }
+        return 'client#'+a.clientId;
+      }
+    }catch(e){}
+    return '?';
+  }
+  function apptDropLogRead(){
+    try{ const l=JSON.parse(localStorage.getItem(APPT_DROPLOG_KEY)||'[]'); return Array.isArray(l)?l:[]; }
+    catch(e){ return []; }
+  }
+  function apptDropLog(appt, id, reason, note){
+    try{
+      const rec={
+        t:Date.now(),
+        id:String((appt&&appt.id!=null)?appt.id:(id!=null?id:'?')),
+        name:_apptDropName(appt),
+        when:(appt&&appt.datetime)?String(appt.datetime):'',
+        svc:(appt&&appt.service)?String(appt.service):'',
+        staff:(appt&&appt.staff)?String(appt.staff):'',
+        price:(appt&&appt.price!=null)?appt.price:'',
+        reason:String(reason||'unknown'),
+        note:note?String(note):''
+      };
+      const log=apptDropLogRead();
+      log.push(rec);
+      localStorage.setItem(APPT_DROPLOG_KEY, JSON.stringify(log.slice(-APPT_DROPLOG_MAX)));
+      console.log('[appt-removed]', rec.id, rec.name, '·', rec.reason, rec.note||'');
+    }catch(e){}
+  }
+  function _apptDropFmt(r){
+    let d='';
+    try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
+    return d+'  #'+r.id+'  '+(r.name||'?')+
+      (r.when?('  ['+r.when+(r.svc?' · '+r.svc:'')+(r.staff?' · '+r.staff:'')+']'):'')+
+      '  →  '+r.reason+(r.note?('  ('+r.note+')'):'');
+  }
+  window.rdApptLog=function(){
+    const l=apptDropLogRead();
+    try{ console.table(l.slice().reverse().map(function(r){
+      let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){}
+      return {Zaman:d, id:r.id, 'Müşteri':r.name, Randevu:r.when, Sebep:r.reason, Not:r.note};
+    })); }catch(e){ console.log(l); }
+    console.log(l.length+' kayıt · rdApptLogText() düz metin · rdApptLogSave() dosya olarak indirir');
+    return l;
+  };
+  window.rdApptLogText=function(){
+    const t=apptDropLogRead().slice().reverse().map(_apptDropFmt).join('\n')||'(kayıt yok)';
+    console.log(t); return t;
+  };
+  window.rdApptLogSave=function(){
+    try{
+      const blob=new Blob([apptDropLogRead().slice().reverse().map(_apptDropFmt).join('\n')||'(kayıt yok)'],{type:'text/plain'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='RoyalDiamond_RandevuSilmeGunlugu_'+new Date().toISOString().slice(0,10)+'.txt';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ try{URL.revokeObjectURL(a.href); a.remove();}catch(e){} },500);
+    }catch(e){ console.warn('drop log save error:',e); }
+  };
+  // On-screen viewer — the salon works on tablets, where there is no console.
+  window.rdShowApptLog=function(){
+    try{
+      const old=document.getElementById('rd-apptlog-ov'); if(old) old.remove();
+      const list=apptDropLogRead().slice().reverse();
+      const esc=function(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+      const rows=list.length?list.map(function(r){
+        let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
+        return '<div style="padding:9px 11px;border-bottom:1px solid #eee;font-size:0.78rem;line-height:1.5;">'+
+          '<div style="color:#888;font-size:0.7rem;">'+esc(d)+' · id '+esc(r.id)+'</div>'+
+          '<div style="font-weight:800;">'+esc(r.name)+(r.when?' <span style="font-weight:400;color:#666;">— '+esc(r.when)+(r.svc?' · '+esc(r.svc):'')+'</span>':'')+'</div>'+
+          '<div style="color:#c9605a;font-weight:700;">'+esc(r.reason)+(r.note?' <span style="color:#888;font-weight:400;">('+esc(r.note)+')</span>':'')+'</div>'+
+        '</div>';
+      }).join(''):'<div style="padding:22px;text-align:center;color:#888;font-size:0.85rem;">Hiçbir randevu silinmemiş. 👍</div>';
+      const ov=document.createElement('div');
+      ov.id='rd-apptlog-ov';
+      ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Nunito,sans-serif;';
+      ov.innerHTML='<div style="background:#fff;color:#1a1a1a;border-radius:14px;max-width:640px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;">'+
+        '<div style="padding:13px 15px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;">'+
+          '<b style="font-size:0.95rem;">🩺 Randevu Silme Günlüğü</b>'+
+          '<span style="color:#888;font-size:0.75rem;">'+list.length+' kayıt</span>'+
+          '<span style="flex:1;"></span>'+
+          '<button id="rd-apptlog-dl" style="border:1px solid #d4a96a;background:rgba(212,169,106,0.14);color:#8a6420;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.74rem;font-weight:800;cursor:pointer;">⬇ İndir</button>'+
+          '<button id="rd-apptlog-x" style="border:1px solid #ddd;background:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.8rem;font-weight:800;cursor:pointer;">✕</button>'+
+        '</div>'+
+        '<div style="overflow-y:auto;">'+rows+'</div>'+
+        '<div style="padding:9px 15px;border-top:1px solid #eee;color:#888;font-size:0.68rem;">Bir randevu kaybolursa burada onu neyin sildiği yazar. Bu cihazda saklanır.</div>'+
+      '</div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+      ov.querySelector('#rd-apptlog-x').onclick=function(){ ov.remove(); };
+      ov.querySelector('#rd-apptlog-dl').onclick=function(){ try{ window.rdApptLogSave(); }catch(e){} };
+    }catch(e){ console.warn('rdShowApptLog error:',e); }
+  };
   // A cheap fingerprint of what the record actually says. The stamps themselves
   // are left out — they describe the edit, not the appointment, and including
   // them would make every record look freshly changed on every pass.
@@ -757,9 +872,15 @@
   // Called from every path that deletes an appointment for good. Without this a
   // deletion is only an ABSENCE, and an absence is exactly what a snapshot that
   // simply hasn't caught up looks like — the two have to stay distinguishable.
-  function apptTombAdd(id){
+  function apptTombAdd(id, reason, appt){
     if(id==null) return;
     const k=String(id);
+    try{
+      let a=appt;
+      if(!a&&typeof appointments!=='undefined'&&Array.isArray(appointments))
+        a=appointments.find(function(x){ return x&&String(x.id)===k; });
+      apptDropLog(a, k, reason||'deleted on this device', 'tombstone written');
+    }catch(e){}
     let ts=Date.now();
     const st=apptStamps[k];
     if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
@@ -768,9 +889,9 @@
     if(st){ delete apptStamps[k]; apptStampPersist(); }
     apptTombPersist();
   }
-  function apptTombAddMany(ids){
+  function apptTombAddMany(ids, reason){
     if(!ids||!ids.length) return;
-    ids.forEach(function(id){ apptTombAdd(id); });
+    ids.forEach(function(id){ apptTombAdd(id, reason); });
   }
   // Tombstones travel with the shared DB, so a device that never saw the
   // deletion still knows not to hand the record back. Newest wins.
@@ -790,24 +911,63 @@
   }
   let _apptMergeKept=false;   // did this merge have to defend a local record?
   let _apptMergeMeta=null;    // the stamp the merge decided on, per id
+  // Last line of defence. Whatever the merge above worked out, no appointment
+  // this device was holding may leave the array without a tombstone saying it
+  // was deleted. Anything missing is put straight back and written to the
+  // removal log, so a bug in the merge can cost a redraw but never a booking.
+  function _apptMergeAudit(out, local, where){
+    try{
+      if(!Array.isArray(out)||!Array.isArray(local)) return out;
+      const have={};
+      out.forEach(function(a){ if(a&&a.id!=null) have[String(a.id)]=1; });
+      local.forEach(function(a){
+        if(!a||a.id==null) return;
+        const k=String(a.id);
+        if(have[k]) return;
+        if(apptTomb[k]) return;            // a real deletion — allowed to go
+        have[k]=1;
+        out.push(a);
+        _apptMergeKept=true;
+        apptDropLog(a,k,'RECOVERED — merge dropped it with no tombstone',where);
+      });
+    }catch(e){ console.warn('appt merge audit error:',e); }
+    return out;
+  }
+  // ═══════ THE MERGE MAY ADD AND CORRECT — IT MAY NEVER TAKE AWAY ═══════
+  // A snapshot arriving from the cloud is not a statement about what exists; it
+  // is one device's copy, possibly written before this device's last booking and
+  // possibly by a device whose clock is minutes off. So the two sides are
+  // UNIONED by id, and the only thing that can remove an appointment is an
+  // explicit tombstone — the record of a deliberate deletion.
+  // Clocks are deliberately NOT consulted for the keep/drop decision. A booking
+  // typed in here two seconds ago can easily look "older" than a snapshot from a
+  // device running five minutes fast, and the previous rule threw exactly those
+  // away. Stamps still choose which VERSION of a record both sides settle on;
+  // they no longer decide whether the record exists at all.
   function _mergeRemoteAppts(remoteAppts, snapTs){
     _apptMergeKept=false;
     _apptMergeMeta={};
+    const local=Array.isArray(appointments)?appointments:[];
     try{
-      if(!Array.isArray(remoteAppts)) return Array.isArray(appointments)?appointments:[];
-      const local=Array.isArray(appointments)?appointments:[];
+      const remote=Array.isArray(remoteAppts)?remoteAppts:[];
       const locById={};
       local.forEach(function(a){ if(a&&a.id!=null) locById[String(a.id)]=a; });
       const snap=Number(snapTs)||Date.now();
       const out=[], took={};
-      // 1 — everything the snapshot carries, unless we hold a newer answer.
-      remoteAppts.forEach(function(r){
+      // 1 — everything the snapshot carries, unless we hold a newer version of it.
+      remote.forEach(function(r){
         if(!r||r.id==null){ out.push(r); return; }
         const k=String(r.id);
+        if(took[k]) return;                  // same id twice in one snapshot
         took[k]=1;
+        // Someone deleted this for real. A tombstone is the ONLY thing that
+        // removes a record, and it does so whatever the clocks say.
+        if(apptTomb[k]){
+          apptDropLog(r,k,'tombstone — deleted on a device','arrived in snapshot');
+          _apptMergeKept=true;
+          return;
+        }
         const rts=(Number(r._ats)||0)||snap;
-        // Deleted on purpose AFTER this snapshot was written — it stays gone.
-        if((apptTomb[k]||0)>rts){ _apptMergeKept=true; return; }
         const loc=locById[k];
         const st=apptStamps[k];
         const lts=(st&&st.ts)||(loc&&Number(loc._ats))||0;
@@ -820,26 +980,35 @@
           _apptMergeMeta[k]={ts:rts,l:0};
         }
       });
-      // 2 — what we hold that the snapshot doesn't carry yet.
+      // 2 — everything we hold that the snapshot has not caught up with. Nothing
+      //     is dropped here for looking old, for being unstamped, or for having
+      //     been learned from the cloud rather than typed in here: absence from a
+      //     snapshot is not evidence of deletion. Kept records are pushed back up
+      //     (see _apptMergeKept), so the other devices stop handing us a picture
+      //     that is missing them.
       local.forEach(function(a){
         if(!a||a.id==null) return;
         const k=String(a.id);
         if(took[k]) return;
-        if(apptTomb[k]) return;            // deleted on purpose — never resurrect it
+        took[k]=1;
+        if(apptTomb[k]){
+          apptDropLog(a,k,'tombstone — deleted on a device','held locally');
+          _apptMergeKept=true;
+          return;
+        }
         const st=apptStamps[k];
-        // Only ever defend what was actually written HERE. A record we only
-        // learned from the cloud is the cloud's to remove; treating those as
-        // ours too would undo deletions made on the other devices.
-        if(!st||!st.l) return;
-        // Written long enough ago that the cloud has certainly seen it — so its
-        // absence is a real deletion somewhere else, not a snapshot lagging.
-        if((st.ts||0)<=snap-APPT_SKEW_MS) return;
         out.push(a);
-        _apptMergeMeta[k]={ts:st.ts,l:1};
+        _apptMergeMeta[k]={ts:(st&&st.ts)||Number(a._ats)||0, l:(st&&st.l)?1:0};
         _apptMergeKept=true;
       });
-      return out;
-    }catch(e){ console.warn('appt merge error:',e); _apptMergeMeta=null; return remoteAppts; }
+      return _apptMergeAudit(out, local, 'merge');
+    }catch(e){
+      console.warn('appt merge error:',e);
+      _apptMergeMeta=null;
+      // Even a broken merge must not cost a booking: hand back the union.
+      const safe=Array.isArray(remoteAppts)?remoteAppts.slice():[];
+      return _apptMergeAudit(safe, local, 'merge threw: '+(e&&e.message||e));
+    }
   }
   // Write the stamps the merge decided on, once the money and payment overrides
   // have had their say and the array is final. Nothing is bumped here — this
@@ -1036,10 +1205,13 @@
       mergeRemotePriceOverrides(val.priceOverrides);
       mergeRemotePayMethods(val.payMethods);
       mergeRemoteApptTomb(val.apptTomb);
-      // Same rule as the live listener: this load merges, it never replaces.
+      // Same rule as the live listener: this load merges, it never replaces, and
+      // only a tombstone may remove a record.
+      const _apptsBefore=Array.isArray(appointments)?appointments.slice():[];
       const incoming=_mergeRemoteAppts(val.appointments||[], val._ts);
       const apptsKept=_apptMergeKept;
       val.appointments=_preserveLocalApptPrices(incoming);
+      val.appointments=_apptMergeAudit(val.appointments,_apptsBefore,'syncForceLoad');
       appointments=val.appointments;
       applyPriceOverrides(appointments);
       applyPayMethods(appointments);
@@ -2262,6 +2434,10 @@ p, span, div, label, h1, h2, h3, h4 {
         <button onclick="rdSetRecepPin()" style="width:100%;padding:7px 10px;background:rgba(212,169,106,0.08);border:1px solid rgba(212,169,106,0.3);margin-top:6px;
           border-radius:8px;color:var(--gold);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
           🔑 Resepsiyon Şifresi (İptal Yetkisi)
+        </button>
+        <button onclick="rdShowApptLog()" title="Silinen randevular — ne, ne zaman, neden" style="width:100%;padding:7px 10px;background:rgba(122,170,232,0.08);border:1px solid rgba(122,170,232,0.3);margin-top:6px;
+          border-radius:8px;color:#4a7bb0;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
+          🩺 Randevu Silme Günlüğü
         </button>
       </div>
     </div>
@@ -5828,7 +6004,7 @@ function phoneCleanupDelete(){
   if(!confirm('\u26a0\ufe0f KALICI S\u0130LME \u2014 geri al\u0131namaz!\n\n'+ids.length+' m\u00fc\u015fteri ve t\u00fcm randevular\u0131 silinecek:\n\n\u2022 '+names.slice(0,15).join('\n\u2022 ')+(names.length>15?'\n\u2026':'')+'\n\nOnayl\u0131yor musunuz?'))return;
   const idset=new Set(ids.map(String));
   clients=clients.filter(c=>!idset.has(String(c.id)));
-  apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id));
+  apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id),'bulk client cleanup (renderPhoneCleanup)');
   appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
   saveAll();
   renderClients();renderDash();renderAppts();updateApptBadge();
@@ -5848,7 +6024,7 @@ function deleteClient(id){
     return;
   }
   clients = clients.filter(x=>x.id!==id);
-  apptTombAddMany(appointments.filter(a=>a.clientId===id).map(a=>a.id));
+  apptTombAddMany(appointments.filter(a=>a.clientId===id).map(a=>a.id),'client deleted (deleteClient)');
   appointments = appointments.filter(a=>a.clientId!==id);
   saveAll();
   renderClients(); renderDash(); renderAppts(); updateApptBadge();
@@ -6414,7 +6590,7 @@ function skipRebook(){
 }
 
 function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;a.status="cancelled";cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
-function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;appointments=appointments.filter(x=>x.id!==id);apptTombAdd(id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
+function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
@@ -8870,8 +9046,8 @@ function ccDeleteAppt(id){
   if(!ownerPin())return;
   if(!confirm("Bu kaydı KALICI olarak silmek istiyor musunuz?\n"+cName(a.clientId)+" — "+(a.service||"")+" — ₺"+(a.price||0)+"\n(Para kaydı da kasadan düşülecek)"))return;
   if(a.status==="completed"&&a.price>0&&a.staff){try{diAutoRemove(a.staff,a.price,a.datetime,a.id);}catch(e){}}
+  apptTombAdd(id,'deleted from Kasa Kontrol (ccDeleteAppt)',a);
   appointments=appointments.filter(x=>x.id!==id);
-  apptTombAdd(id);
   priceOvrDrop(id);
   payOvrDrop(id);
   saveAll();
@@ -10262,6 +10438,17 @@ function rdnsImportData(input){
       const _db = dbLoad();
       if(_db){
         clients      = _db.clients      || [];
+        // A restore is the one place an appointment may leave the array without
+        // a tombstone — the owner asked for yesterday's picture. Write down
+        // which bookings that cost, so the removal log stays complete.
+        try{
+          const _restored={};
+          (_db.appointments||[]).forEach(function(a){ if(a&&a.id!=null) _restored[String(a.id)]=1; });
+          (appointments||[]).forEach(function(a){
+            if(a&&a.id!=null&&!_restored[String(a.id)])
+              apptDropLog(a,a.id,'backup restore replaced the data','file: '+(backup.exportedAt||'?'));
+          });
+        }catch(e){}
         appointments = _db.appointments || [];
         payments     = _db.payments     || [];
       }
@@ -12221,8 +12408,8 @@ function rvSendAll(){
     if(i<0)return;
     const a=_ap()[i];
     if(!confirm(cname(a.clientId)+' — '+fmt(new Date(a.datetime))+'\nBu randevu silinsin mi?'))return;
+    try{apptTombAdd(a.id,'staff-less future booking removed (rdOrphanDelete)',a);}catch(e){}
     appointments.splice(i,1);
-    try{apptTombAdd(a.id);}catch(e){}
     try{saveAll();}catch(e){}
     try{publishAvailability();}catch(e){}
     try{renderDash();renderAppts();updateApptBadge();}catch(e){}
@@ -12236,7 +12423,7 @@ function rvSendAll(){
     if(typeof ownerPin==='function' && !ownerPin())return;
     const ids=list.map(a=>String(a.id));
     for(let i=appointments.length-1;i>=0;i--){
-      if(ids.indexOf(String(appointments[i].id))!==-1){ try{apptTombAdd(appointments[i].id);}catch(e){} appointments.splice(i,1); }
+      if(ids.indexOf(String(appointments[i].id))!==-1){ try{apptTombAdd(appointments[i].id,'staff-less bookings cleared (rdOrphanDeleteAll)',appointments[i]);}catch(e){} appointments.splice(i,1); }
     }
     try{saveAll();}catch(e){}
     try{publishAvailability();}catch(e){}
