@@ -89,7 +89,10 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
 <div class="foot">Royal Diamond Nail Studio · Gönyeli K.K.T.C. · ⭐ 4.7 Google · 📞 0548 893 3333</div>
 <script>
 const SALON='905488933333';
-const SLOTS=(function(){var a=[];for(var m=8*60;m<=18*60+30;m+=30){a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2));}return a;})();
+// The times the salon actually starts a new booking: Helen on the hour to
+// 18:00, Lissa and Hannah every 90 minutes to 17:00. This list is the union of
+// the two — a customer is never shown a time nobody could begin at.
+const SLOTS=['08:00','09:00','09:30','10:00','11:00','12:00','12:30','13:00','14:00','15:00','15:30','16:00','17:00','18:00'];
 const CAP=3;
 // ── URL parametreleri: ?src=instagram  ?svc=Jel Başlangıç ──
 const QP=new URLSearchParams(location.search);
@@ -148,6 +151,11 @@ function slotState(day,slot){
   if(s.t){ // per-technician data: is any technician free for the whole treatment?
     const techs=Object.keys(s.t);
     const ok=techs.some(function(tech){
+      // She must be allowed to START at this time — each technician has her own
+      // spacing. (Older published data has no `a`, so it behaves as before.)
+      if(s.a && !Number(s.a[tech])) return false;
+      // ...and be free for the whole treatment, which may run past times she
+      // would not have started at.
       return cover.every(function(cs){const cd=dayAv[cs];return !cd||!cd.t||!Number(cd.t[tech]);});
     });
     return ok?'free':'full';

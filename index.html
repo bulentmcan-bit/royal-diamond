@@ -1293,9 +1293,28 @@
   }
 
   // ═══════ ONLINE BOOKING ENGINE (rande.vu style · per-technician grids) ═══════
-  const RD_OB_HALF=(()=>{const a=[];for(let m=8*60;m<=18*60+30;m+=30){a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));}return a;})();
-  const RD_OB_TECH_SLOTS={'Helen':RD_OB_HALF,'Hannah':RD_OB_HALF,'Lissa':RD_OB_HALF};
+  // Each technician keeps her own rhythm. Helen takes a booking on the hour;
+  // Lissa and Hannah in 90-minute blocks, which is what the work they do
+  // actually takes, so the online page stops offering them starts they would
+  // have to turn down.
+  // These are START times only — they say when a NEW online booking may begin.
+  // They are not working hours and they say nothing about existing bookings: a
+  // 90-minute job that begins at 09:30 still runs to 11:00, and the
+  // availability map below still knows she is busy in between.
+  const _obGrid=(firstMin,lastMin,stepMin)=>{
+    const a=[];
+    for(let m=firstMin;m<=lastMin;m+=stepMin) a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
+    return a;
+  };
+  const RD_OB_HOURLY=_obGrid(8*60, 18*60, 60);   // 08:00 … 18:00, on the hour
+  const RD_OB_90=_obGrid(8*60, 17*60, 90);       // 08:00 09:30 11:00 12:30 14:00 15:30 17:00
+  const RD_OB_TECH_SLOTS={'Helen':RD_OB_HOURLY,'Hannah':RD_OB_90,'Lissa':RD_OB_90};
   const RD_OB_UNION=[...new Set(Object.values(RD_OB_TECH_SLOTS).flat())].sort();
+  // May this technician START a booking at this time?
+  function _obTechHasSlot(tech,slot){
+    const g=RD_OB_TECH_SLOTS[tech];
+    return !!g && g.indexOf(slot)!==-1;
+  }
   const RD_OB_DAYS=14;
   let _obAvailTimer=null, _obListenerOn=false;
   const _obPad=n=>String(n).padStart(2,'0');
@@ -1315,7 +1334,14 @@
       const st=dt.getHours()*60+dt.getMinutes(), en=st+_obDurOf(a);
       RD_OB_UNION.forEach(slot=>{
         const p=slot.split(':');const sm=(+p[0])*60+(+p[1]);
-        if(sm<en && sm+30>st && !byTech[tech][slot]){byTech[tech][slot]=true;total[slot]=(total[slot]||0)+1;}
+        // Busy is tracked at EVERY slot she overlaps, in or out of her own
+        // grid — that is how a clash is spotted. The headline count only
+        // counts technicians who could have started here, so it stays
+        // comparable with the capacity below (_obCap counts the same way).
+        if(sm<en && sm+30>st && !byTech[tech][slot]){
+          byTech[tech][slot]=true;
+          if(_obTechHasSlot(tech,slot)) total[slot]=(total[slot]||0)+1;
+        }
       });
     });
     return {total:total,byTech:byTech};
@@ -1334,8 +1360,12 @@
           const maps=_obDayMaps(key);
           const slots={};
           RD_OB_UNION.forEach(s=>{
-            const t={};Object.keys(RD_OB_TECH_SLOTS).forEach(k=>{t[k]=maps.byTech[k][s]?1:0;});
-            slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t};
+            const t={}, a={};
+            Object.keys(RD_OB_TECH_SLOTS).forEach(k=>{
+              t[k]=maps.byTech[k][s]?1:0;              // busy at this half hour
+              a[k]=_obTechHasSlot(k,s)?1:0;            // may START at this time
+            });
+            slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t,a:a};
           });
           days[key]=slots;
         }
@@ -1369,6 +1399,8 @@
       (function(){
         const rp=req.time.split(':');const rs=(+rp[0])*60+(+rp[1]), re2=rs+_reqDur;
         outer: for(const t of Object.keys(RD_OB_TECH_SLOTS)){
+          // Not one of her start times — she is not offered this booking at all.
+          if(!_obTechHasSlot(t, req.time)) continue;
           for(const slot of RD_OB_UNION){const sp=slot.split(':');const smm=(+sp[0])*60+(+sp[1]);
             if(smm<re2 && smm+30>rs && maps.byTech[t][slot]) continue outer;}
           staffPick=t; break;
