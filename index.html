@@ -6525,6 +6525,27 @@ function setClientDiscount(id, pct, event){
   const c = clients.find(x => String(x.id) === String(id));
   if(!c) return;
   pct = parseInt(pct, 10) || 0;
+  const was = clientDiscPct(c);
+  const sel = (event && event.target && event.target.tagName === 'SELECT') ? event.target : null;
+  // Put the selector back to what the client actually has. Used whenever the
+  // change is refused, so the row never shows a discount that was not granted.
+  const revert = function(){
+    if(sel) sel.value = String(was);
+    try{ renderClients(); }catch(e){}
+  };
+  if(pct === was){ revert(); return; }
+  // A discount is money off the till, so it is the boss's decision and nobody
+  // else's. ownerPin() takes the owner's PIN or her recovery code — never the
+  // reception password, which opens appointment cancellations and nothing more.
+  // It accepts her password on ANY device, because the hash travels with the
+  // shared DB (rdns_owner_pin_v1), so she can grant a discount from the tablet,
+  // the reception laptop or her phone without a separate PIN on each.
+  if(typeof ownerPin === 'function' && !ownerPin()){
+    revert();
+    if(typeof toast === 'function') toast('🔒','İndirim Değişmedi',
+      c.name + ' — patron şifresi girilmedi, indirim olduğu gibi kaldı.','r');
+    return;
+  }
   c.discount = pct;
   c.familyDiscount = (pct === 30);   // keep the old flag truthful for old builds
   dbSave();
@@ -6630,7 +6651,7 @@ function renderClients(){
       <td style="font-size:0.82rem">${c.phone}</td>
       <td style="font-size:0.82rem">${c.birthday?fDate(c.birthday+"T00:00"):"—"}</td>
       <td><strong>${c.visits}</strong></td>
-      <td><select onchange="setClientDiscount(${c.id},this.value,event)" onclick="event.stopPropagation()" title="Bu müşteriye uygulanacak indirim" style="padding:5px 10px;border-radius:20px;border:2px solid ${clientDiscPct(c)?'#4caf50':'#ccc'};background:${clientDiscPct(c)?'#e8f5e9':'#f5f5f5'};color:${clientDiscPct(c)?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;font-family:'Nunito',sans-serif;">${CLIENT_DISCOUNTS.map(p=>`<option value="${p}"${p===clientDiscPct(c)?' selected':''}>${p?'✓ ':''}${clientDiscLabel(p)}</option>`).join('')}</select></td>
+      <td><select onchange="setClientDiscount(${c.id},this.value,event)" onclick="event.stopPropagation()" title="Bu müşteriye uygulanacak indirim — değiştirmek için patron şifresi gerekir" style="padding:5px 10px;border-radius:20px;border:2px solid ${clientDiscPct(c)?'#4caf50':'#ccc'};background:${clientDiscPct(c)?'#e8f5e9':'#f5f5f5'};color:${clientDiscPct(c)?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;font-family:'Nunito',sans-serif;">${CLIENT_DISCOUNTS.map(p=>`<option value="${p}"${p===clientDiscPct(c)?' selected':''}>${p?'✓ ':''}${clientDiscLabel(p)}</option>`).join('')}</select></td>
       <td style="color:var(--muted);font-size:0.81rem">${c.lastVisit||"—"}</td>
       <td><div style="display:flex;gap:5px">
         <button class="btn btn-ghost btn-sm" onclick="showClientDetail(${c.id})">👁</button>
