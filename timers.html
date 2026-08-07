@@ -2,80 +2,144 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Royal Diamond — Station Timers</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Royal Diamond — Crown Board</title>
 <link rel="icon" type="image/png" href="/crown-gold.png">
 <link rel="apple-touch-icon" href="/crown-gold.png">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500&display=swap" rel="stylesheet">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root{
     --bg:#141019; --panel:#1E1826; --line:#3A3046; --gold:#D9BC7A; --gold-deep:#A8873F;
-    --ivory:#F5EFE4; --dim:#9B8FA8; --rose:#D98CA0; --green:#8FBF9B;
+    --ivory:#F5EFE4; --dim:#9B8FA8; --rose:#D98CA0;
+    --green:#5FCB8C; --green-bg:#16301F; --green-line:#3E8F60;
+    --amber:#E8B84B; --amber-bg:#33280F; --amber-line:#9A7A22;
+    --red:#EE7089; --red-bg:#331119; --red-line:#93374C;
+    --crown-bg:#332714; --crown-line:#C9A455;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
   body{
-    margin:0; min-height:100vh; color:var(--ivory); font-family:'Jost',sans-serif;
+    margin:0; color:var(--ivory); font-family:'Jost',sans-serif;
     background:radial-gradient(1100px 600px at 50% -10%, #241B2F 0%, var(--bg) 60%) var(--bg);
+    display:flex; flex-direction:column; min-height:100%;
   }
-  .wrap{max-width:560px; margin:0 auto; padding:0 20px 40px;}
-  .crest{color:var(--gold); letter-spacing:.45em; font-size:10px; text-transform:uppercase; text-align:center; padding-top:30px;}
-  h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; text-align:center; margin:6px 0 4px;}
-  .sub{color:var(--dim); font-size:13px; text-align:center; margin:0 0 20px;}
   .hidden{display:none !important;}
   button{font-family:'Jost',sans-serif; cursor:pointer;}
 
-  /* role picker */
-  .role-btn{display:block; width:100%; padding:18px 20px; margin-top:14px; background:var(--panel);
-    border:1px solid var(--line); border-radius:14px; color:var(--ivory); font-size:18px; text-align:left;}
-  .role-btn.reception{border-color:var(--gold-deep);}
-  .role-btn .tag{display:block; font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--dim);}
-  .role-btn.reception .tag{color:var(--gold);}
+  /* ── header ───────────────────────────────────────────── */
+  header{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:14px clamp(14px,2.5vw,30px) 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .crest{color:var(--gold); letter-spacing:.4em; font-size:10px; text-transform:uppercase;}
+  .area-title{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3vw,34px); line-height:1; margin:0;}
+  .head-left{display:flex; flex-direction:column; gap:4px;}
+  .head-spacer{flex:1;}
+  .head-stat{color:var(--dim); font-size:13px; letter-spacing:.06em;}
+  .head-stat b{color:var(--ivory); font-weight:500;}
+  .icon-btn{
+    background:transparent; border:1px solid var(--line); color:var(--dim);
+    border-radius:10px; padding:8px 12px; font-size:13px;
+  }
+  .icon-btn:active{border-color:var(--gold-deep); color:var(--gold);}
+  .icon-btn.on{border-color:var(--gold-deep); color:var(--gold);}
 
-  /* reception */
-  .card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 18px; margin-bottom:14px;}
-  .card.running{border-color:var(--gold-deep);}
-  .card.finished{border-color:var(--rose);}
-  .card-top{display:flex; justify-content:space-between; align-items:baseline;}
-  .card-top .name{font-family:'Cormorant Garamond',serif; font-size:24px;}
-  .status{font-size:14px; color:var(--dim);}
-  .status.running{color:var(--green);}
-  .status.finished{color:var(--rose);}
-  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
-  .chip{padding:10px 14px; border-radius:10px; border:1px solid var(--gold-deep); background:transparent;
-    color:var(--gold); font-size:15px; min-width:62px;}
-  .chip:active{background:var(--gold-deep); color:var(--bg);}
-  .custom{width:64px; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--bg);
-    color:var(--ivory); font-size:15px; font-family:'Jost',sans-serif;}
-  .send{padding:10px 16px; border-radius:10px; border:none; background:var(--gold); color:var(--bg); font-size:15px; font-weight:500;}
-  .cancel{margin-top:12px; padding:10px 18px; border-radius:10px; border:1px solid var(--line);
-    background:transparent; color:var(--dim); font-size:14px;}
-  .note{color:var(--dim); font-size:12px; text-align:center; margin-top:10px;}
+  /* ── board ────────────────────────────────────────────── */
+  main{flex:1; padding:clamp(12px,2vw,26px); display:flex;}
+  /* One column on a phone, two on a tablet, three on the wall screen — six seats
+     land as a tidy 3×2 instead of a straggling row. */
+  .board{
+    flex:1; display:grid; gap:clamp(10px,1.6vw,20px); align-content:stretch;
+    grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);
+  }
+  @media(min-width:640px){ .board{grid-template-columns:repeat(2,1fr);} }
+  @media(min-width:1000px){ .board{grid-template-columns:repeat(3,1fr);} }
 
-  /* station */
-  .station-wrap{text-align:center;}
-  .station-name{font-family:'Cormorant Garamond',serif; font-size:30px; margin:4px 0 18px;}
-  .ring-box{position:relative; width:280px; height:280px; margin:0 auto;}
-  .ring-box svg{transform:rotate(-90deg);}
-  .ring-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;}
-  .time-big{font-family:'Cormorant Garamond',serif; font-size:62px; font-variant-numeric:tabular-nums;}
-  .time-label{color:var(--dim); font-size:13px; letter-spacing:.15em; text-transform:uppercase;}
-  .times-up{font-family:'Cormorant Garamond',serif; font-size:40px; color:var(--rose);}
-  .waiting{color:var(--dim); font-size:15px;}
-  .gotit{margin-top:22px; padding:14px 34px; border-radius:12px; border:none; background:var(--rose);
-    color:var(--bg); font-size:17px;}
-  .switch{background:none; border:none; color:var(--dim); font-size:12px; text-decoration:underline;
-    display:block; margin:24px auto 0;}
-  .setup-warn{background:var(--panel); border:1px solid var(--rose); border-radius:14px; padding:16px 18px;
-    margin-top:20px; font-size:14px; line-height:1.5; color:var(--ivory);}
+  .tile{
+    position:relative; display:flex; flex-direction:column; justify-content:space-between;
+    min-height:clamp(150px,26vh,300px);
+    padding:clamp(12px,1.6vw,20px);
+    background:var(--panel); border:2px solid var(--line); border-radius:18px;
+    cursor:pointer; overflow:hidden; transition:border-color .25s, background .25s;
+  }
+  .tile:active{transform:scale(.985);}
+  .t-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+  .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(20px,2.4vw,30px); line-height:1;}
+  .t-op{font-size:clamp(13px,1.4vw,18px); color:var(--gold); letter-spacing:.04em;}
+  .t-mid{display:flex; align-items:center; justify-content:center; gap:12px; flex:1; padding:6px 0;}
+  .t-time{
+    font-family:'Cormorant Garamond',serif; font-variant-numeric:tabular-nums;
+    font-size:clamp(38px,7vw,86px); line-height:.95;
+  }
+  .t-mark{font-size:clamp(38px,6.5vw,80px); line-height:1;}
+  .t-foot{font-size:clamp(11px,1.1vw,14px); color:var(--dim); letter-spacing:.1em; text-transform:uppercase; text-align:center;}
+
+  .tile.free .t-time{display:none;}
+  .tile.free .t-mid{color:var(--dim); font-size:clamp(15px,1.6vw,20px);}
+
+  .tile.run{background:var(--green-bg); border-color:var(--green-line);}
+  .tile.run .t-time{color:var(--green);}
+  .tile.warn{background:var(--amber-bg); border-color:var(--amber-line);}
+  .tile.warn .t-time{color:var(--amber);}
+  .tile.over{background:var(--red-bg); border-color:var(--red-line);}
+  .tile.over .t-time{color:var(--red);}
+  .tile.crown{background:var(--crown-bg); border-color:var(--crown-line);}
+  .tile.crown .t-time{color:var(--gold); font-size:clamp(24px,3vw,40px);}
+  .tile.sad{background:var(--red-bg); border-color:var(--red-line);}
+  .tile.sad .t-time{color:var(--red); font-size:clamp(24px,3vw,40px);}
+  .tile.over{animation:pulse 2.4s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(238,112,137,0);}50%{box-shadow:0 0 0 4px rgba(238,112,137,.18);}}
+  .t-flag{
+    position:absolute; top:10px; right:12px; font-size:11px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--gold-deep);
+  }
+  .bar{position:absolute; left:0; bottom:0; height:4px; width:0; background:currentColor; opacity:.55;}
+  .tile.run .bar{color:var(--green);} .tile.warn .bar{color:var(--amber);} .tile.over .bar{color:var(--red);}
+
+  /* ── sheets / modals ──────────────────────────────────── */
+  .veil{
+    position:fixed; inset:0; background:rgba(10,7,14,.72); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
+  }
+  .sheet{
+    width:100%; max-width:430px; background:var(--panel); border:1px solid var(--line);
+    border-radius:20px; padding:22px; max-height:90vh; overflow:auto;
+  }
+  .sheet h2{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:26px; margin:0 0 4px; text-align:center;}
+  .sheet .sub{color:var(--dim); font-size:13px; text-align:center; margin:0 0 16px;}
+  .btn{
+    display:block; width:100%; padding:16px 18px; margin-top:10px; border-radius:14px;
+    border:1px solid var(--line); background:transparent; color:var(--ivory); font-size:17px; text-align:left;
+  }
+  .btn small{display:block; color:var(--dim); font-size:12px; margin-top:3px;}
+  .btn.primary{background:var(--gold); border-color:var(--gold); color:#1A1420; font-weight:600; text-align:center;}
+  .btn.gold{border-color:var(--gold-deep); color:var(--gold);}
+  .btn.danger{border-color:var(--red-line); color:var(--red);}
+  .btn.quiet{color:var(--dim); text-align:center; font-size:15px; padding:13px;}
+  .pinbox{
+    width:100%; padding:16px; margin-top:6px; border-radius:12px; border:1px solid var(--line);
+    background:var(--bg); color:var(--ivory); font-size:24px; text-align:center; letter-spacing:.5em;
+    font-family:'Jost',sans-serif;
+  }
+  .err{color:var(--red); font-size:13px; text-align:center; margin-top:10px; min-height:18px;}
+
+  /* ── area picker / warnings ───────────────────────────── */
+  .center-wrap{max-width:460px; margin:0 auto; padding:40px 22px; text-align:center;}
+  .center-wrap h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; margin:8px 0 4px;}
+  .setup-warn{
+    background:var(--panel); border:1px solid var(--rose); border-radius:14px; padding:14px 16px;
+    margin:14px clamp(14px,2.5vw,30px) 0; font-size:14px; line-height:1.5;
+  }
 </style>
 </head>
 <body>
 
 <!-- ============================================================
-     STEP 1: PASTE YOUR FIREBASE CONFIG BETWEEN THE LINES BELOW
-     (from Firebase Console -> Project settings -> Your apps)
+     Firebase config — the boards sync through the 'timers' path
      ============================================================ -->
 <script>
 const firebaseConfig = {
@@ -84,224 +148,475 @@ const firebaseConfig = {
 </script>
 <!-- ============================================================ -->
 
-<div class="wrap">
+<div id="setupWarn" class="setup-warn hidden">
+  <b>Setup needed:</b> the Firebase config has not been pasted into this file yet,
+  so the boards cannot sync between screens.
+</div>
+
+<!-- AREA PICKER (no ?area= in the URL) -->
+<div id="pickPage" class="center-wrap hidden">
   <div class="crest">Royal ◆ Diamond</div>
+  <h1>Crown Board</h1>
+  <p class="sub" style="color:var(--dim);font-size:13px;">Which screen is this?</p>
+  <a class="btn gold" style="text-decoration:none;" href="?area=manicure">💅 Manicure<small>6 seats · M1–M6</small></a>
+  <a class="btn gold" style="text-decoration:none;" href="?area=pedicure">🦶 Pedicure<small>3 chairs · P1–P3</small></a>
+</div>
 
-  <!-- setup warning (shows only if config missing) -->
-  <div id="setupWarn" class="setup-warn hidden">
-    <b>Setup needed:</b> the Firebase config has not been pasted into this file yet,
-    so the timers cannot sync. Open <code>timers.html</code> and paste your Firebase
-    config where marked, then upload it again.
+<!-- BOARD -->
+<header id="boardHead" class="hidden">
+  <div class="head-left">
+    <div class="crest">Royal ◆ Diamond</div>
+    <h1 class="area-title" id="areaTitle">Board</h1>
   </div>
+  <div class="head-spacer"></div>
+  <div class="head-stat" id="headStat"></div>
+  <button class="icon-btn" id="soundBtn" onclick="toggleSound()">🔔 Sound</button>
+  <button class="icon-btn" onclick="toggleFull()">⛶ Full screen</button>
+  <button class="icon-btn" id="otherAreaBtn" onclick="goOther()">Switch</button>
+</header>
+<main id="boardMain" class="hidden">
+  <div class="board" id="board"></div>
+</main>
 
-  <!-- ROLE PICKER -->
-  <div id="rolePage">
-    <h1>Station Timers</h1>
-    <p class="sub">Who is using this device?</p>
-    <button class="role-btn reception" onclick="pickRole('reception')">
-      <span class="tag">Controller</span>Reception
-    </button>
-    <button class="role-btn" onclick="pickRole(1)"><span class="tag">Technician</span>Helen</button>
-    <button class="role-btn" onclick="pickRole(2)"><span class="tag">Technician</span>Lissa</button>
-    <button class="role-btn" onclick="pickRole(3)"><span class="tag">Technician</span>Hanah</button>
-    <button class="role-btn" onclick="pickRole(4)"><span class="tag">Technician</span>Bülent</button>
-  </div>
-
-  <!-- RECEPTION -->
-  <div id="receptionPage" class="hidden">
-    <h1>Station Timers</h1>
-    <p class="sub">Reception · tap a time to send it to a station</p>
-    <div id="cards"></div>
-    <p class="note">Phones update instantly. Keep this page open.</p>
-    <button class="switch" onclick="reset()">Switch role</button>
-  </div>
-
-  <!-- STATION -->
-  <div id="stationPage" class="hidden station-wrap">
-    <div class="station-name" id="stationName">Station</div>
-    <div class="ring-box">
-      <svg width="280" height="280" viewBox="0 0 280 280">
-        <circle cx="140" cy="140" r="120" fill="none" stroke="var(--line)" stroke-width="6"/>
-        <circle id="ringProg" cx="140" cy="140" r="120" fill="none" stroke="var(--gold)" stroke-width="6"
-          stroke-linecap="round" stroke-dasharray="754" stroke-dashoffset="754"
-          style="transition:stroke-dashoffset 1s linear;"/>
-      </svg>
-      <div class="ring-center">
-        <div id="stRunning" class="hidden">
-          <div class="time-big" id="timeBig">0:00</div>
-          <div class="time-label" id="timeLabel"></div>
-        </div>
-        <div id="stAlarm" class="times-up hidden">Time's up</div>
-        <div id="stIdle" class="waiting">Waiting for reception…</div>
-      </div>
-    </div>
-    <button id="gotit" class="gotit hidden" onclick="dismiss()">Got it</button>
-    <p class="note">Keep this page open — the screen will stay awake.</p>
-    <button class="switch" onclick="reset()">Switch role</button>
-  </div>
+<!-- MODAL HOST -->
+<div id="veil" class="veil hidden" onclick="if(event.target===this) closeSheet()">
+  <div class="sheet" id="sheet"></div>
 </div>
 
 <script>
-const STATIONS = [1,2,3,4];
-const NAMES = {1:'Helen', 2:'Lissa', 3:'Hanah', 4:'Bülent'};
-let role = null, timers = {}, db = null, dismissedAt = 0, lastRing = 0, audioCtx = null, warnedAt = 0;
-const $ = id => document.getElementById(id);
+/* ============================================================================
+   Royal Diamond — Crown Board
+   ----------------------------------------------------------------------------
+   The operator starts her own station and it counts UP. When she taps Done the
+   job is judged against the crown limit for that station: inside the limit is a
+   crown, over it is a sad face. Every finished job is written to Firebase so the
+   reception laptop and the other board see the same thing, and so the commission
+   step can read the record later.
 
-// ---- Firebase ----
+   Firebase layout, all under the 'timers' path the boards already share:
+     timers/board/<area>/<station>   the tile every screen is looking at now
+     timers/sessions/<pushId>        one permanent record per finished job
+   ========================================================================== */
+
+const AREAS = {
+  manicure: {
+    label:'Manicure', unit:'Seat', other:'pedicure',
+    stations:['M1','M2','M3','M4','M5','M6'],
+    askOperator:true,
+    // Helen works to the hour; the other two are given the longer hand.
+    limitFor: op => (op === 'Helen' ? 60 : 90)
+  },
+  pedicure: {
+    label:'Pedicure', unit:'Chair', other:'manicure',
+    stations:['P1','P2','P3'],
+    askOperator:false,
+    limitFor: () => 60
+  }
+};
+const OPERATORS = ['Helen','Lissa','Hannah'];
+const AMBER_LEAD_MS = 10*60000;   // amber for the last ten minutes before the limit
+const UNDO_WINDOW_MS = 2*60000;   // a mis-tapped start can be undone this long
+
+const $ = id => document.getElementById(id);
+const qs = new URLSearchParams(location.search);
+const areaKey = (qs.get('area')||'').toLowerCase();
+const AREA = AREAS[areaKey] || null;
+
+let db = null, board = {}, srvOffset = 0, audioCtx = null, soundOn = true;
+let chimed = {};            // station -> startAt already chimed for
+let ownerCloudHash = '';    // owner password hash mirrored out of Firebase
+const tiles = {};           // station -> {el, name, op, time, mark, foot, flag, bar}
+
+const now = () => Date.now() + srvOffset;
+
+/* ── Firebase ─────────────────────────────────────────────────────────────── */
 const configured = firebaseConfig && firebaseConfig.databaseURL;
 if (configured) {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  db.ref('timers').on('value', snap => { timers = snap.val() || {}; render(); });
+  // Clocks differ from tablet to tablet; the server's clock is the one everybody
+  // agrees on, so every elapsed time is measured against that.
+  db.ref('.info/serverTimeOffset').on('value', s => { srvOffset = s.val() || 0; });
+  if (AREA) db.ref('timers/board/' + areaKey).on('value', s => { board = s.val() || {}; paint(); });
+  // The owner password lives in its own node (see index.html). Reading it is a
+  // bonus — on a screen that cannot read it, the override simply asks for the
+  // password on a device that can.
+  db.ref('rdns_owner_pin_v1').on('value',
+    s => { const v = s.val(); try {
+            const o = typeof v === 'string' ? JSON.parse(v) : v;
+            if (o && typeof o.hash === 'string' && o.hash.length === 64) ownerCloudHash = o.hash;
+          } catch(e){} },
+    () => {}   // permission denied here is fine and expected on the boards
+  );
 } else {
   $('setupWarn').classList.remove('hidden');
 }
 
-// ---- roles ----
-function pickRole(r){
+/* ── page setup ───────────────────────────────────────────────────────────── */
+if (!AREA) {
+  $('pickPage').classList.remove('hidden');
+} else {
+  document.title = 'Royal Diamond — ' + AREA.label + ' Board';
+  $('boardHead').classList.remove('hidden');
+  $('boardMain').classList.remove('hidden');
+  $('areaTitle').textContent = AREA.label;
+  $('otherAreaBtn').textContent = AREAS[AREA.other].label + ' →';
+  buildBoard();
+  requestWake();
+  setInterval(paint, 500);
+  paint();
+}
+
+function buildBoard(){
+  const host = $('board');
+  AREA.stations.forEach(st => {
+    const el = document.createElement('div');
+    el.className = 'tile free';
+    el.innerHTML =
+      `<div class="t-flag hidden"></div>
+       <div class="t-head"><span class="t-name">${st}</span><span class="t-op"></span></div>
+       <div class="t-mid">
+         <span class="t-time hidden">0:00</span>
+         <span class="t-mark hidden"></span>
+         <span class="t-free">Free</span>
+       </div>
+       <div class="t-foot"></div>
+       <div class="bar"></div>`;
+    el.onclick = () => tapTile(st);
+    host.appendChild(el);
+    tiles[st] = {
+      el, op: el.querySelector('.t-op'), time: el.querySelector('.t-time'),
+      mark: el.querySelector('.t-mark'), free: el.querySelector('.t-free'),
+      foot: el.querySelector('.t-foot'),
+      flag: el.querySelector('.t-flag'), bar: el.querySelector('.bar')
+    };
+  });
+}
+
+/* ── painting the wall board ──────────────────────────────────────────────── */
+function paint(){
+  if (!AREA) return;
+  const t = now();
+  let running = 0, crowns = 0;
+  AREA.stations.forEach(st => {
+    const rec = board[st], ui = tiles[st];
+    ui.el.className = 'tile';
+    ui.mark.classList.add('hidden');
+    ui.flag.classList.add('hidden');
+    ui.bar.style.width = '0';
+    ui.time.classList.toggle('hidden', !rec);
+    ui.free.classList.toggle('hidden', !!rec);
+
+    if (!rec) {                                  // free
+      ui.el.classList.add('free');
+      ui.op.textContent = '';
+      ui.foot.textContent = 'Tap to start';
+      return;
+    }
+
+    const limitMs = (rec.limitMin || 60) * 60000;
+    ui.op.textContent = rec.op || '';
+
+    if (rec.s === 'run') {
+      running++;
+      const el = Math.max(0, t - rec.startAt);
+      ui.time.textContent = fmtClock(el);
+      const state = el > limitMs ? 'over' : (el > limitMs - AMBER_LEAD_MS ? 'warn' : 'run');
+      ui.el.classList.add(state);
+      ui.bar.style.width = Math.min(100, el / limitMs * 100) + '%';
+      ui.foot.textContent = state === 'over'
+        ? 'Over by ' + fmtMins(el - limitMs) + ' · tap when done'
+        : 'Crown until ' + rec.limitMin + ' min · tap when done';
+      if (el >= limitMs && chimed[st] !== rec.startAt) { chimed[st] = rec.startAt; chime(); }
+    } else {                                     // finished
+      const good = !!rec.crown;
+      if (good) crowns++;
+      ui.el.classList.add(good ? 'crown' : 'sad');
+      ui.time.textContent = fmtMins(rec.elapsed) + ' / ' + rec.limitMin + ' min';
+      ui.mark.classList.remove('hidden');
+      ui.mark.textContent = good ? '👑' : '😢';
+      ui.foot.textContent = good ? 'Crown earned · tap for next' : 'Over the limit · tap for next';
+      if (rec.ovr) { ui.flag.classList.remove('hidden'); ui.flag.textContent = 'adjusted'; }
+    }
+  });
+  $('headStat').innerHTML = `<b>${running}</b> running · <b>${crowns}</b> 👑 on the board`;
+}
+
+function fmtClock(ms){
+  const s = Math.floor(Math.max(0, ms)/1000), h = Math.floor(s/3600);
+  const m = Math.floor(s/60) % 60, ss = s % 60;
+  return (h ? h + ':' + String(m).padStart(2,'0') : String(m)) + ':' + String(ss).padStart(2,'0');
+}
+function fmtMins(ms){ return Math.round(Math.max(0, ms)/60000) + ' min'; }
+function today(ts){
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ── tapping a tile ───────────────────────────────────────────────────────── */
+function tapTile(st){
   unlockAudio();
-  role = r;
-  $('rolePage').classList.add('hidden');
-  if (r === 'reception') { $('receptionPage').classList.remove('hidden'); }
-  else {
-    $('stationPage').classList.remove('hidden');
-    $('stationName').textContent = NAMES[r] || ('Station ' + r);
-    requestWake();
-  }
-  render();
-}
-function reset(){
-  role = null;
-  $('receptionPage').classList.add('hidden');
-  $('stationPage').classList.add('hidden');
-  $('rolePage').classList.remove('hidden');
+  const rec = board[st];
+  if (!rec)              return askStart(st);
+  if (rec.s === 'run')   return runningSheet(st, rec);
+  return finishedSheet(st, rec);
 }
 
-// ---- reception actions ----
-function startTimer(st, mins){
-  if (!db || !mins || mins <= 0) return;
-  db.ref('timers/' + st).set({ endsAt: Date.now() + mins*60000, minutes: mins })
-    .catch(err => alert('Could not send timer: ' + err.message + '\n\nThis usually means the database rules are blocking the "timers" section.'));
+// Manicure asks who is starting, because the crown limit is hers. Pedicure just
+// goes — the chair is the same hour for everybody.
+function askStart(st){
+  if (!AREA.askOperator) return startJob(st, '');
+  openSheet(`
+    <h2>${AREA.unit} ${st}</h2>
+    <p class="sub">Who is starting?</p>
+    ${OPERATORS.map(o => `<button class="btn gold" onclick="startJob('${st}','${o}')">${o}
+        <small>Crown until ${AREA.limitFor(o)} minutes</small></button>`).join('')}
+    <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
-function startCustom(st){
-  const v = parseInt($('custom-' + st).value, 10);
-  if (v > 0) { startTimer(st, v); $('custom-' + st).value = ''; }
-}
-function cancelTimer(st){ if (db) db.ref('timers/' + st).remove(); }
 
-// ---- render loop ----
-function render(){
-  const now = Date.now();
-  if (role === 'reception') renderReception(now);
-  else if (role) renderStation(now);
+function startJob(st, op){
+  closeSheet();
+  if (!db) return;
+  delete chimed[st];
+  db.ref('timers/board/' + areaKey + '/' + st).set({
+    s:'run', op: op || '', startAt: now(), limitMin: AREA.limitFor(op)
+  }).catch(dbErr);
 }
-setInterval(render, 500);
 
-function renderReception(now){
-  let html = '';
-  for (const st of STATIONS){
-    const tm = timers[st];
-    const rem = tm ? tm.endsAt - now : 0;
-    const running = tm && rem > 0, finished = tm && rem <= 0;
-    const cls = finished ? 'finished' : running ? 'running' : '';
-    const status = finished ? "Time's up" : running ? fmt(rem) + ' left' : 'Idle';
-    const sCls = finished ? 'finished' : running ? 'running' : '';
-    html += `<div class="card ${cls}"><div class="card-top">
-      <div class="name">${NAMES[st] || 'Station ' + st}</div><div class="status ${sCls}">${status}</div></div>`;
-    if (running || finished){
-      html += `<button class="cancel" onclick="cancelTimer(${st})">${finished ? 'Clear' : 'Cancel timer'}</button>`;
-    } else {
-      html += `<div class="chips">`;
-      for (const m of [5,10,15,20,30,45,60,90]) html += `<button class="chip" onclick="startTimer(${st},${m})">${m} min</button>`;
-      html += `<input class="custom" id="custom-${st}" inputmode="numeric" placeholder="min">
-        <button class="send" onclick="startCustom(${st})">Send</button></div>`;
+function runningSheet(st, rec){
+  const el = Math.max(0, now() - rec.startAt);
+  const limitMs = rec.limitMin * 60000;
+  const verdict = el <= limitMs
+    ? `<small>Finishing now earns the crown 👑 (${fmtMins(limitMs - el)} to spare)</small>`
+    : `<small>Finishing now is ${fmtMins(el - limitMs)} over the limit 😢</small>`;
+  openSheet(`
+    <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
+    <p class="sub">Running ${fmtClock(el)} · crown limit ${rec.limitMin} min</p>
+    <button class="btn primary" onclick="finishJob('${st}')">✓ Done ${verdict}</button>
+    ${el < UNDO_WINDOW_MS
+      ? `<button class="btn quiet" onclick="undoStart('${st}')">Started by mistake — undo</button>`
+      : `<button class="btn quiet" onclick="ownerClear('${st}')">Started by mistake — needs reception</button>`}
+    <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+}
+
+// The whole point of the board: judge the job against the limit, show the result
+// on the tile, and file the permanent record for the commission step to read.
+function finishJob(st){
+  closeSheet();
+  const rec = board[st];
+  if (!db || !rec || rec.s !== 'run') return;
+  const endAt = now(), elapsed = Math.max(0, endAt - rec.startAt);
+  const limitMs = rec.limitMin * 60000;
+  const crown = elapsed <= limitMs;
+  const id = db.ref('timers/sessions').push().key;
+  const tile = { s:'done', op: rec.op || '', startAt: rec.startAt, endAt, elapsed,
+                 limitMin: rec.limitMin, crown, sessionId: id };
+  db.ref('timers').update({
+    ['board/' + areaKey + '/' + st]: tile,
+    ['sessions/' + id]: {
+      id, area: areaKey, station: st, operator: rec.op || '',
+      startAt: rec.startAt, endAt, elapsedMs: elapsed,
+      elapsedMin: Math.round(elapsed/60000), limitMin: rec.limitMin,
+      crown, day: today(endAt), v: 1
     }
-    html += `</div>`;
-  }
-  // preserve typed custom values
-  const saved = {};
-  for (const st of STATIONS){ const el = $('custom-' + st); if (el) saved[st] = el.value; }
-  $('cards').innerHTML = html;
-  for (const st of STATIONS){ const el = $('custom-' + st); if (el && saved[st]) el.value = saved[st]; }
+  }).catch(dbErr);
+  if (crown) fanfare();
 }
 
-function renderStation(now){
-  const tm = timers[role];
-  const rem = tm ? tm.endsAt - now : 0;
-  const running = tm && rem > 0;
-  const finished = tm && rem <= 0 && tm.endsAt !== dismissedAt;
-  $('stRunning').classList.toggle('hidden', !running);
-  $('stAlarm').classList.toggle('hidden', !finished);
-  $('gotit').classList.toggle('hidden', !finished);
-  $('stIdle').classList.toggle('hidden', !!(running || finished));
-  const C = 754;
-  if (running){
-    $('timeBig').textContent = fmt(rem);
-    $('timeLabel').textContent = tm.minutes + ' min timer';
-    const frac = Math.max(0, rem / (tm.minutes * 60000));
-    $('ringProg').style.strokeDashoffset = C * (1 - frac);
-    $('ringProg').setAttribute('stroke', 'var(--gold)');
-    // loud warning bell once, when 20 minutes remain (only for timers longer than 20 min)
-    if (tm.minutes > 20 && rem <= 20*60000 && warnedAt !== tm.endsAt){
-      warnedAt = tm.endsAt;
-      bigBell();
+function undoStart(st){
+  closeSheet();
+  const rec = board[st];
+  if (!db || !rec || rec.s !== 'run') return;
+  if (now() - rec.startAt >= UNDO_WINDOW_MS) return ownerClear(st);
+  db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
+}
+
+/* ── finished tile · reception / owner override ───────────────────────────── */
+function finishedSheet(st, rec){
+  openSheet(`
+    <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
+    <p class="sub">${fmtMins(rec.elapsed)} of ${rec.limitMin} min · ${rec.crown ? 'crown earned 👑' : 'over the limit 😢'}</p>
+    <button class="btn primary" onclick="tapStartNext('${st}')">Start the next job here</button>
+    ${rec.crown
+      ? `<button class="btn danger" onclick="override('${st}',false)">😢 Take the crown back<small>Needs the owner password</small></button>`
+      : `<button class="btn gold" onclick="override('${st}',true)">👑 Give the crown anyway<small>Needs the owner password</small></button>`}
+    <button class="btn danger" onclick="ownerClear('${st}')">🗑 Clear this tile<small>Needs the owner password</small></button>
+    <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+}
+function tapStartNext(st){ closeSheet(); askStart(st); }
+
+function override(st, giveCrown){
+  const rec = board[st];
+  if (!rec || rec.s !== 'done') return closeSheet();
+  askOwner(() => {
+    const upd = { ['board/' + areaKey + '/' + st + '/crown']: giveCrown,
+                  ['board/' + areaKey + '/' + st + '/ovr']: true };
+    if (rec.sessionId) {
+      upd['sessions/' + rec.sessionId + '/crown'] = giveCrown;
+      upd['sessions/' + rec.sessionId + '/overridden'] = true;
+      upd['sessions/' + rec.sessionId + '/overriddenAt'] = now();
     }
-  } else if (finished){
-    $('ringProg').style.strokeDashoffset = 0;
-    $('ringProg').setAttribute('stroke', 'var(--rose)');
-    if (Date.now() - lastRing > 2500){ lastRing = Date.now(); ring(); }
-  } else {
-    $('ringProg').style.strokeDashoffset = C;
-  }
+    db.ref('timers').update(upd).catch(dbErr);
+    closeSheet();
+    if (giveCrown) fanfare();
+  });
 }
-function dismiss(){ const tm = timers[role]; if (tm) dismissedAt = tm.endsAt; render(); }
 
-// ---- utils ----
-function fmt(ms){
-  const s = Math.max(0, Math.ceil(ms/1000));
-  return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+// Clearing only wipes the tile off the wall — the session record it already
+// filed stays put, because that is what the commission will be paid from.
+function ownerClear(st){
+  askOwner(() => {
+    db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
+    closeSheet();
+  });
+}
+
+/* ── owner password ───────────────────────────────────────────────────────── */
+// Same check the rest of the site uses: nothing but SHA-256 hashes, no password
+// in this file. rdns_pin_hash is this device's own PIN, rdns_owner_cloud_hash is
+// the boss's master password mirrored to every device, and the recovery code
+// still works as a way in.
+function ownerHashes(){
+  const ls = k => { try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } };
+  return [ls('rdns_pin_hash'), ls('rdns_owner_cloud_hash'), ownerCloudHash, ls('rdns_recovery_hash')]
+    .filter(h => h && h.length === 64);
+}
+function askOwner(onOk){
+  const have = ownerHashes();
+  if (!have.length) {
+    return openSheet(`
+      <h2>Owner password needed</h2>
+      <p class="sub">This screen has never been signed in, so it does not know the
+      owner password. Do this change on the reception laptop instead.</p>
+      <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+  }
+  openSheet(`
+    <h2>Owner password</h2>
+    <p class="sub">PIN or 8-digit recovery code</p>
+    <input class="pinbox" id="pinBox" type="password" inputmode="numeric" autocomplete="off">
+    <div class="err" id="pinErr"></div>
+    <button class="btn primary" id="pinOk">Unlock</button>
+    <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
+  const box = $('pinBox');
+  const submit = () => {
+    const h = rdSha256(String(box.value || '').trim());
+    if (h && ownerHashes().indexOf(h) !== -1) { onOk(); }
+    else { $('pinErr').textContent = 'Wrong password'; box.value = ''; box.focus(); }
+  };
+  $('pinOk').onclick = submit;
+  box.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => box.focus(), 60);
+}
+
+// SHA-256, byte-for-byte the implementation the main app verifies against.
+function rdSha256(ascii){
+  function rr(v,a){return((v>>>a)|(v<<(32-a)))>>>0;}
+  var mW=Math.pow,mC=mW(2,32),i,j,res='';
+  var words=[],aL=ascii.length*8;
+  var h=rdSha256.h=rdSha256.h||[],k=rdSha256.k=rdSha256.k||[],pC=k.length;
+  var isC={};
+  for(var cand=2;pC<64;cand++){
+    if(!isC[cand]){
+      for(i=0;i<313;i+=cand)isC[i]=cand;
+      h[pC]=(mW(cand,.5)*mC)|0;
+      k[pC++]=(mW(cand,1/3)*mC)|0;
+    }
+  }
+  ascii+='\x80';
+  while(ascii.length%64-56)ascii+='\x00';
+  for(i=0;i<ascii.length;i++){
+    j=ascii.charCodeAt(i);
+    if(j>>8)return'';
+    words[i>>2]|=j<<((3-i)%4)*8;
+  }
+  words[words.length]=(aL/mC)|0;
+  words[words.length]=aL;
+  for(j=0;j<words.length;){
+    var w=words.slice(j,j+=16),oH=h.slice(0,8);
+    for(i=0;i<64;i++){
+      var w15=w[i-15],w2=w[i-2];
+      var a=h[0],e=h[4];
+      var t1=h[7]+(rr(e,6)^rr(e,11)^rr(e,25))+((e&h[5])^(~e&h[6]))+k[i]
+        +(w[i]=(i<16)?w[i]:(w[i-16]+(rr(w15,7)^rr(w15,18)^(w15>>>3))+w[i-7]+(rr(w2,17)^rr(w2,19)^(w2>>>10)))|0);
+      var t2=(rr(a,2)^rr(a,13)^rr(a,22))+((a&h[1])^(a&h[2])^(h[1]&h[2]));
+      h=[(t1+t2)|0].concat(h);h[4]=(h[4]+t1)|0;
+    }
+    for(i=0;i<8;i++)h[i]=(h[i]+oH[i])|0;
+  }
+  for(i=0;i<8;i++)for(j=3;j+1;j--){
+    var b=(h[i]>>(j*8))&255;
+    res+=((b<16)?0:'')+b.toString(16);
+  }
+  return res;
+}
+
+/* ── sheets ───────────────────────────────────────────────────────────────── */
+function openSheet(html){ $('sheet').innerHTML = html; $('veil').classList.remove('hidden'); }
+function closeSheet(){ $('veil').classList.add('hidden'); $('sheet').innerHTML = ''; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+function dbErr(err){
+  openSheet(`<h2>Could not save</h2>
+    <p class="sub">${(err && err.message) || 'Unknown error'}<br><br>
+    This usually means the database rules are blocking the "timers" section.</p>
+    <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+}
+
+/* ── screen, sound ────────────────────────────────────────────────────────── */
+function goOther(){ location.search = '?area=' + AREA.other; }
+function toggleFull(){
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(()=>{});
+}
+function toggleSound(){
+  soundOn = !soundOn;
+  $('soundBtn').classList.toggle('on', soundOn);
+  $('soundBtn').textContent = soundOn ? '🔔 Sound' : '🔕 Muted';
+  if (soundOn) { unlockAudio(); chime(); }
 }
 function unlockAudio(){
   if (!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
-function bigBell(){
-  if (!audioCtx) return;
-  const now = audioCtx.currentTime;
-  // three loud, deep bell strikes over ~3 seconds
-  [0, 1.1, 2.2].forEach(off => {
-    [523, 659, 784].forEach((f, i) => {   // rich bell chord
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = 'triangle';
-      o.frequency.setValueAtTime(f, now + off);
-      g.gain.setValueAtTime(0.0001, now + off);
-      g.gain.exponentialRampToValueAtTime(0.85 / (i + 1), now + off + .02);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + off + 0.95);
-      o.connect(g).connect(audioCtx.destination);
-      o.start(now + off); o.stop(now + off + 1);
-    });
-  });
-}
-function ring(){
-  if (!audioCtx) return;
-  const now = audioCtx.currentTime;
-  [0, .35, .7].forEach((off, i) => {
+document.addEventListener('pointerdown', unlockAudio, { once:true });
+
+// A gentle two-note chime when a station reaches its limit — enough to look up,
+// not enough to startle a customer.
+function chime(){
+  if (!audioCtx || !soundOn) return;
+  const t0 = audioCtx.currentTime;
+  [[880,0],[1174.7,.42]].forEach(([f,off]) => {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(i === 2 ? 1318 : 988, now + off);
-    g.gain.setValueAtTime(0.0001, now + off);
-    g.gain.exponentialRampToValueAtTime(0.4, now + off + .03);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + off + .32);
+    o.type = 'sine'; o.frequency.setValueAtTime(f, t0 + off);
+    g.gain.setValueAtTime(0.0001, t0 + off);
+    g.gain.exponentialRampToValueAtTime(0.22, t0 + off + .05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + .9);
     o.connect(g).connect(audioCtx.destination);
-    o.start(now + off); o.stop(now + off + .35);
+    o.start(t0 + off); o.stop(t0 + off + .95);
   });
 }
+function fanfare(){
+  if (!audioCtx || !soundOn) return;
+  const t0 = audioCtx.currentTime;
+  [523.3,659.3,784,1046.5].forEach((f,i) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(f, t0 + i*.11);
+    g.gain.setValueAtTime(0.0001, t0 + i*.11);
+    g.gain.exponentialRampToValueAtTime(0.2, t0 + i*.11 + .03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i*.11 + .5);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0 + i*.11); o.stop(t0 + i*.11 + .55);
+  });
+}
+
+let wakeLock = null;
 async function requestWake(){
-  try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch(e){}
+  try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && role && role !== 'reception') requestWake();
+  if (document.visibilityState === 'visible') { if (AREA) requestWake(); }
 });
+$('soundBtn') && $('soundBtn').classList.add('on');
 </script>
 </body>
 </html>
