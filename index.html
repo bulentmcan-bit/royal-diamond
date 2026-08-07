@@ -6510,7 +6510,7 @@ function renderDash(){
 // The old boolean familyDiscount is still read (so nothing already set on a
 // client is lost) and still written when the figure is 30, so a device that has
 // not picked up this build yet keeps honouring the family discount.
-const CLIENT_DISCOUNTS = [0, 10, 20, 30];
+const CLIENT_DISCOUNTS = [0, 10, 20, 30, 50];
 function clientDiscPct(c){
   if(!c) return 0;
   const d = parseInt(c.discount, 10);
