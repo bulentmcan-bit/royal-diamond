@@ -13896,6 +13896,12 @@ window.addEventListener('load',function(){
 (function(){
   const OPEN = 8*60, CLOSE = 18*60+30, GAP = 0, STEP = 15, MINSLOT = 15;
 
+  // Each technician's open slots step by the length she actually works in, so
+  // the column offers her the next start she could really take rather than a
+  // half hour that would strand her. Anyone not listed keeps the old half hour.
+  const SLOT_STEP = {helen:60, hannah:90, lissa:90};
+  function _stepFor(tech){ return SLOT_STEP[String(tech||'').toLowerCase().trim()] || 30; }
+
   function _ap(){ try{ return appointments || []; }catch(e){ return []; } }
   function _k(d){ const p=n=>String(n).padStart(2,'0');
     return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
@@ -13927,8 +13933,14 @@ window.addEventListener('load',function(){
       }).sort(function(x,y){ return x[0]-y[0]; });
 
       // boş pencereler (10 dk boşluk korunarak)
+      // Windows are measured from OPENING, not from the current time, so every
+      // run of slots is anchored where the instruction says: 08:00, or the end
+      // of her previous appointment. Times already gone are dropped when the
+      // slots are listed, which keeps today's column on the same rhythm as the
+      // rest of the week instead of restarting the count at whatever o'clock
+      // someone happens to be looking.
       const wins = [];
-      let cur = from;
+      let cur = OPEN;
       busy.forEach(function(b){
         if(b[0] - GAP - cur >= MINSLOT) wins.push([cur, b[0]-GAP]);
         cur = Math.max(cur, b[1] + GAP);
@@ -13936,10 +13948,11 @@ window.addEventListener('load',function(){
       if(CLOSE - cur >= MINSLOT) wins.push([cur, CLOSE]);
 
       // her pencerenin başlangıcını göster (uzun pencerede ara başlangıçlar da)
+      const step = _stepFor(tech);
       const out = [];
       wins.forEach(function(w){
-        for(let t = w[0]; t + MINSLOT <= w[1]; t += 30){
-          out.push({ mins:t, hm:_hm(t), span:(w[1]-t) });
+        for(let t = w[0]; t + MINSLOT <= w[1]; t += step){
+          if(t >= from) out.push({ mins:t, hm:_hm(t), span:(w[1]-t) });
           if(out.length > 40) break;
         }
       });
