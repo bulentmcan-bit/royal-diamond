@@ -2860,7 +2860,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="searchbar"><span>🔍</span><input id="client-search" placeholder="İsim veya telefon ile ara…" oninput="renderClients()"></div>
       <div class="card" style="padding:0;overflow:hidden;">
         <table class="tbl">
-          <thead><tr><th>Client</th><th>Phone</th><th>Birthday</th><th>Visits</th><th>Family Discount</th><th>Last Visit</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Client</th><th>Phone</th><th>Birthday</th><th>Visits</th><th>Discount</th><th>Last Visit</th><th>Actions</th></tr></thead>
           <tbody id="clients-body"></tbody>
         </table>
       </div>
@@ -4601,14 +4601,16 @@ function dashEditAppt(id){
         fd.id = 'a-fam-disc';
         pr.parentElement.appendChild(fd);
       }
+      const _dPct = (typeof clientDiscPct==='function') ? clientDiscPct(cl) : 0;
       if(fd){
-        if(cl && cl.familyDiscount){
+        if(cl && _dPct>0){
           fd.style.cssText = 'margin-top:6px;font-size:0.78rem;font-weight:800;color:#2e7d32;background:#e8f5e9;border:1px solid #4caf50;border-radius:8px;padding:5px 10px;';
+          const _lbl = (_dPct===30 ? 'AİLE İNDİRİMİ' : 'MÜŞTERİ İNDİRİMİ') + ' %' + _dPct;
           const _updFd = function(){
             const v = parseFloat(pr.value)||0;
             fd.textContent = v>0
-              ? '✓ AİLE İNDİRİMİ %30 — ₺'+v.toLocaleString('tr-TR')+' → kaydedilecek: ₺'+Math.round(v*0.70).toLocaleString('tr-TR')
-              : '✓ AİLE İNDİRİMİ %30 — tam fiyatı yazın, %30 otomatik düşülür';
+              ? '✓ '+_lbl+' — ₺'+v.toLocaleString('tr-TR')+' → kaydedilecek: ₺'+Math.round(v*(100-_dPct)/100).toLocaleString('tr-TR')
+              : '✓ '+_lbl+' — tam fiyatı yazın, %'+_dPct+' otomatik düşülür';
           };
           pr.oninput = _updFd; _updFd();
         } else if(cl && cl.reactOffer){
@@ -4663,11 +4665,13 @@ function dashEditAppt(id){
         // the discount maths when a genuinely new figure was typed, otherwise
         // simply reopening and pressing Update would shave 30% off every time.
         const isNewFigure = enteredPrice > 0 && enteredPrice !== shownPrice;
-        // 💚 Family discount: full price is typed, 30% comes off automatically
-        if(cl && cl.familyDiscount && isNewFigure){
+        // 💚 Client discount: the full price is typed, the client's percentage
+        // comes off automatically — 30% family or any other figure set on them.
+        const _pct = (typeof clientDiscPct==='function') ? clientDiscPct(cl) : 0;
+        if(cl && _pct>0 && isNewFigure){
           const _full = enteredPrice;
-          enteredPrice = Math.round(enteredPrice * 0.70);
-          if(typeof toast==='function') toast('💚','Aile İndirimi Uygulandı','₺'+_full.toLocaleString('tr-TR')+' → ₺'+enteredPrice.toLocaleString('tr-TR')+' (%30)','g');
+          enteredPrice = Math.round(enteredPrice * (100-_pct)/100);
+          if(typeof toast==='function') toast('💚',(_pct===30?'Aile İndirimi':'Müşteri İndirimi')+' Uygulandı','₺'+_full.toLocaleString('tr-TR')+' → ₺'+enteredPrice.toLocaleString('tr-TR')+' (%'+_pct+')','g');
         } else if(cl && cl.reactOffer && isNewFigure){
           const _full = enteredPrice;
           enteredPrice = Math.round(enteredPrice * 0.90);
@@ -6271,14 +6275,43 @@ function renderDash(){
 // CLIENTS
 // ══════════════════════════════════════════════════════════════
 
-function toggleFamilyDiscount(id, event){
-  event.stopPropagation();
-  const c = clients.find(x=>x.id===id);
+// ── Per-client discount ───────────────────────────────────────────
+// The salon gives family and regulars a standing discount, and 30% was never
+// the only figure being handed out — 10% and 20% were simply being done in
+// someone's head. The percentage now lives on the client, and the till takes it
+// off exactly as the family discount always did: the full price is typed in and
+// the percentage comes off when the appointment is saved.
+// The old boolean familyDiscount is still read (so nothing already set on a
+// client is lost) and still written when the figure is 30, so a device that has
+// not picked up this build yet keeps honouring the family discount.
+const CLIENT_DISCOUNTS = [0, 10, 20, 30];
+function clientDiscPct(c){
+  if(!c) return 0;
+  const d = parseInt(c.discount, 10);
+  if(!isNaN(d) && d > 0) return Math.min(100, d);
+  if(c.discount === 0 || c.discount === '0') return 0;   // explicitly cleared
+  if(c.familyDiscount) return 30;                        // legacy family flag
+  return 0;
+}
+function clientDiscLabel(pct){ return pct > 0 ? pct + '% OFF' : 'No Discount'; }
+function setClientDiscount(id, pct, event){
+  if(event && event.stopPropagation) event.stopPropagation();
+  const c = clients.find(x => String(x.id) === String(id));
   if(!c) return;
-  c.familyDiscount = !c.familyDiscount;
+  pct = parseInt(pct, 10) || 0;
+  c.discount = pct;
+  c.familyDiscount = (pct === 30);   // keep the old flag truthful for old builds
   dbSave();
   renderClients();
-  toast(c.familyDiscount?'✓':'ℹ', 'Family Discount', c.name + (c.familyDiscount?' now has 30% family discount':' discount removed'), c.familyDiscount?'g':'');
+  toast(pct ? '✓' : 'ℹ', 'İndirim',
+    c.name + (pct ? ' — artık %' + pct + ' indirimli' : ' — indirim kaldırıldı'),
+    pct ? 'g' : '');
+}
+// Kept for anything still calling the old toggle: flips between none and 30%.
+function toggleFamilyDiscount(id, event){
+  const c = clients.find(x => String(x.id) === String(id));
+  if(!c) return;
+  setClientDiscount(id, clientDiscPct(c) ? 0 : 30, event);
 }
 // ── 🗑 MÜŞTERİ SİL — sadece patron, isim yazarak onay ──────────
 function _phoneIssue(p){
@@ -6369,7 +6402,7 @@ function renderClients(){
       <td style="font-size:0.82rem">${c.phone}</td>
       <td style="font-size:0.82rem">${c.birthday?fDate(c.birthday+"T00:00"):"—"}</td>
       <td><strong>${c.visits}</strong></td>
-      <td><button onclick="toggleFamilyDiscount(${c.id},event)" style="padding:5px 12px;border-radius:20px;border:2px solid ${c.familyDiscount?'#4caf50':'#ccc'};background:${c.familyDiscount?'#e8f5e9':'#f5f5f5'};color:${c.familyDiscount?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;">${c.familyDiscount?'✓ 30% OFF':'No Discount'}</button></td>
+      <td><select onchange="setClientDiscount(${c.id},this.value,event)" onclick="event.stopPropagation()" title="Bu müşteriye uygulanacak indirim" style="padding:5px 10px;border-radius:20px;border:2px solid ${clientDiscPct(c)?'#4caf50':'#ccc'};background:${clientDiscPct(c)?'#e8f5e9':'#f5f5f5'};color:${clientDiscPct(c)?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;font-family:'Nunito',sans-serif;">${CLIENT_DISCOUNTS.map(p=>`<option value="${p}"${p===clientDiscPct(c)?' selected':''}>${p?'✓ ':''}${clientDiscLabel(p)}</option>`).join('')}</select></td>
       <td style="color:var(--muted);font-size:0.81rem">${c.lastVisit||"—"}</td>
       <td><div style="display:flex;gap:5px">
         <button class="btn btn-ghost btn-sm" onclick="showClientDetail(${c.id})">👁</button>
