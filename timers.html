@@ -13,133 +13,116 @@
 <style>
   :root{
     --bg:#141019; --panel:#1E1826; --line:#3A3046; --gold:#D9BC7A; --gold-deep:#A8873F;
-    --ivory:#F5EFE4; --dim:#9B8FA8; --rose:#D98CA0;
+    --ivory:#F5EFE4; --dim:#9B8FA8;
     --green:#5FCB8C; --green-bg:#16301F; --green-line:#3E8F60;
-    --amber:#E8B84B; --amber-bg:#33280F; --amber-line:#9A7A22;
-    --red:#EE7089; --red-bg:#331119; --red-line:#93374C;
-    --crown-bg:#332714; --crown-line:#C9A455;
+    --amber:#F0C14B; --amber-bg:#3A2C0E; --amber-line:#A9861F;
+    --red:#F2708B; --red-bg:#3A1119; --red-line:#A33A50;
+    --crown-bg:#3A2C14; --crown-line:#D2AC58;
+    /* TVs cut the edges off the picture, so nothing important goes in the margin */
+    --overscan:clamp(12px, 2.6vmin, 34px);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;}
+  html,body{height:100%; overflow:hidden;}
   body{
     margin:0; color:var(--ivory); font-family:'Jost',sans-serif;
     background:radial-gradient(1100px 600px at 50% -10%, #241B2F 0%, var(--bg) 60%) var(--bg);
-    display:flex; flex-direction:column; min-height:100%;
+    display:flex; flex-direction:column;
+    padding:var(--overscan);
   }
   .hidden{display:none !important;}
   button{font-family:'Jost',sans-serif; cursor:pointer;}
 
   /* ── header ───────────────────────────────────────────── */
-  header{
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    padding:14px clamp(14px,2.5vw,30px) 10px;
-    border-bottom:1px solid var(--line);
-  }
+  header{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:10px;}
   .crest{color:var(--gold); letter-spacing:.4em; font-size:10px; text-transform:uppercase;}
-  .area-title{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3vw,34px); line-height:1; margin:0;}
+  .area-title{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3.4vmin,38px); line-height:1; margin:0;}
   .head-left{display:flex; flex-direction:column; gap:4px;}
   .head-spacer{flex:1;}
-  .head-stat{color:var(--dim); font-size:13px; letter-spacing:.06em;}
+  .head-stat{color:var(--dim); font-size:clamp(12px,1.5vmin,16px); letter-spacing:.06em;}
   .head-stat b{color:var(--ivory); font-weight:500;}
-  .icon-btn{
-    background:transparent; border:1px solid var(--line); color:var(--dim);
-    border-radius:10px; padding:8px 12px; font-size:13px;
-  }
-  .icon-btn:active{border-color:var(--gold-deep); color:var(--gold);}
+  .icon-btn{background:transparent; border:1px solid var(--line); color:var(--dim);
+    border-radius:10px; padding:8px 12px; font-size:13px;}
   .icon-btn.on{border-color:var(--gold-deep); color:var(--gold);}
+  .icon-btn:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
 
   /* ── board ────────────────────────────────────────────── */
-  main{flex:1; padding:clamp(12px,2vw,26px); display:flex;}
-  /* One column on a phone, two on a tablet, three on the wall screen — six seats
-     land as a tidy 3×2 instead of a straggling row. */
-  .board{
-    flex:1; display:grid; gap:clamp(10px,1.6vw,20px); align-content:stretch;
-    grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);
-  }
-  @media(min-width:640px){ .board{grid-template-columns:repeat(2,1fr);} }
-  @media(min-width:1000px){ .board{grid-template-columns:repeat(3,1fr);} }
+  main{flex:1; display:grid; gap:clamp(10px,1.6vmin,22px); min-height:0;
+       grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);}
+  @media(min-width:640px){ main{grid-template-columns:repeat(2,1fr);} }
+  @media(min-width:1000px){ main{grid-template-columns:repeat(3,1fr);} }
 
   .tile{
     position:relative; display:flex; flex-direction:column; justify-content:space-between;
-    min-height:clamp(150px,26vh,300px);
-    padding:clamp(12px,1.6vw,20px);
+    min-height:0; padding:clamp(10px,1.8vmin,22px);
     background:var(--panel); border:2px solid var(--line); border-radius:18px;
-    cursor:pointer; overflow:hidden; transition:border-color .25s, background .25s;
+    cursor:pointer; overflow:hidden; transition:border-color .2s, background .2s;
   }
-  .tile:active{transform:scale(.985);}
+  /* A Fire Stick has no pointer — the D-pad moves this ring around the board */
+  .tile:focus{outline:none;}
+  .tile:focus-visible, .tile.dpad{outline:4px solid var(--gold); outline-offset:-2px;}
   .t-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
-  .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(20px,2.4vw,30px); line-height:1;}
-  .t-op{font-size:clamp(13px,1.4vw,18px); color:var(--gold); letter-spacing:.04em;}
-  .t-mid{display:flex; align-items:center; justify-content:center; gap:12px; flex:1; padding:6px 0;}
-  .t-time{
-    font-family:'Cormorant Garamond',serif; font-variant-numeric:tabular-nums;
-    font-size:clamp(38px,7vw,86px); line-height:.95;
-  }
-  .t-mark{font-size:clamp(38px,6.5vw,80px); line-height:1;}
-  .t-foot{font-size:clamp(11px,1.1vw,14px); color:var(--dim); letter-spacing:.1em; text-transform:uppercase; text-align:center;}
-
-  .tile.free .t-time{display:none;}
-  .tile.free .t-mid{color:var(--dim); font-size:clamp(15px,1.6vw,20px);}
+  .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(19px,2.8vmin,32px); line-height:1;}
+  .t-op{font-size:clamp(13px,1.9vmin,22px); color:var(--gold); letter-spacing:.04em;}
+  .t-mid{display:flex; align-items:center; justify-content:center; gap:clamp(6px,1.4vmin,18px); flex:1; min-height:0;}
+  .t-time{font-family:'Cormorant Garamond',serif; font-variant-numeric:tabular-nums;
+    font-size:clamp(40px,10vmin,120px); line-height:.95;}
+  .t-mark{font-size:clamp(34px,8vmin,96px); line-height:1;}
+  .t-free{color:var(--dim); font-size:clamp(15px,2.2vmin,26px);}
+  .t-foot{font-size:clamp(10px,1.35vmin,15px); color:var(--dim); letter-spacing:.1em;
+    text-transform:uppercase; text-align:center;}
 
   .tile.run{background:var(--green-bg); border-color:var(--green-line);}
   .tile.run .t-time{color:var(--green);}
   .tile.warn{background:var(--amber-bg); border-color:var(--amber-line);}
   .tile.warn .t-time{color:var(--amber);}
-  .tile.over{background:var(--red-bg); border-color:var(--red-line);}
+  .tile.over{background:var(--red-bg); border-color:var(--red-line); animation:pulse 2.2s ease-in-out infinite;}
   .tile.over .t-time{color:var(--red);}
   .tile.crown{background:var(--crown-bg); border-color:var(--crown-line);}
-  .tile.crown .t-time{color:var(--gold); font-size:clamp(24px,3vw,40px);}
+  .tile.crown .t-time{color:var(--gold); font-size:clamp(20px,3.2vmin,38px);}
   .tile.sad{background:var(--red-bg); border-color:var(--red-line);}
-  .tile.sad .t-time{color:var(--red); font-size:clamp(24px,3vw,40px);}
-  .tile.over{animation:pulse 2.4s ease-in-out infinite;}
-  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(238,112,137,0);}50%{box-shadow:0 0 0 4px rgba(238,112,137,.18);}}
-  .t-flag{
-    position:absolute; top:10px; right:12px; font-size:11px; letter-spacing:.12em;
-    text-transform:uppercase; color:var(--gold-deep);
-  }
-  .bar{position:absolute; left:0; bottom:0; height:4px; width:0; background:currentColor; opacity:.55;}
+  .tile.sad .t-time{color:var(--red); font-size:clamp(20px,3.2vmin,38px);}
+  @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 0 rgba(242,112,139,0);}
+                   50%{box-shadow:inset 0 0 60px 0 rgba(242,112,139,.16);}}
+  .t-flag{position:absolute; top:9px; right:12px; font-size:10px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--gold-deep);}
+  .bar{position:absolute; left:0; bottom:0; height:5px; width:0; background:currentColor; opacity:.6;}
   .tile.run .bar{color:var(--green);} .tile.warn .bar{color:var(--amber);} .tile.over .bar{color:var(--red);}
 
-  /* ── sheets / modals ──────────────────────────────────── */
-  .veil{
-    position:fixed; inset:0; background:rgba(10,7,14,.72); backdrop-filter:blur(3px);
-    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;
-  }
-  .sheet{
-    width:100%; max-width:430px; background:var(--panel); border:1px solid var(--line);
-    border-radius:20px; padding:22px; max-height:90vh; overflow:auto;
-  }
-  .sheet h2{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:26px; margin:0 0 4px; text-align:center;}
+  /* the rule of the house, kept in front of everyone all day */
+  .reminder{text-align:center; padding-top:clamp(8px,1.4vmin,16px); color:var(--gold-deep);
+    font-size:clamp(11px,1.6vmin,19px); letter-spacing:.14em; text-transform:uppercase;}
+
+  /* ── sheets ───────────────────────────────────────────── */
+  .veil{position:fixed; inset:0; background:rgba(10,7,14,.78); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;}
+  .sheet{width:100%; max-width:460px; background:var(--panel); border:1px solid var(--line);
+    border-radius:20px; padding:22px; max-height:88vh; overflow:auto;}
+  .sheet h2{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:27px; margin:0 0 4px; text-align:center;}
   .sheet .sub{color:var(--dim); font-size:13px; text-align:center; margin:0 0 16px;}
-  .btn{
-    display:block; width:100%; padding:16px 18px; margin-top:10px; border-radius:14px;
-    border:1px solid var(--line); background:transparent; color:var(--ivory); font-size:17px; text-align:left;
-  }
+  .btn{display:block; width:100%; padding:16px 18px; margin-top:10px; border-radius:14px;
+    border:1px solid var(--line); background:transparent; color:var(--ivory); font-size:17px; text-align:left;}
   .btn small{display:block; color:var(--dim); font-size:12px; margin-top:3px;}
   .btn.primary{background:var(--gold); border-color:var(--gold); color:#1A1420; font-weight:600; text-align:center;}
   .btn.gold{border-color:var(--gold-deep); color:var(--gold);}
   .btn.danger{border-color:var(--red-line); color:var(--red);}
   .btn.quiet{color:var(--dim); text-align:center; font-size:15px; padding:13px;}
-  .pinbox{
-    width:100%; padding:16px; margin-top:6px; border-radius:12px; border:1px solid var(--line);
+  .btn:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
+  .pinbox{width:100%; padding:16px; margin-top:6px; border-radius:12px; border:1px solid var(--line);
     background:var(--bg); color:var(--ivory); font-size:24px; text-align:center; letter-spacing:.5em;
-    font-family:'Jost',sans-serif;
-  }
+    font-family:'Jost',sans-serif;}
   .err{color:var(--red); font-size:13px; text-align:center; margin-top:10px; min-height:18px;}
 
-  /* ── area picker / warnings ───────────────────────────── */
-  .center-wrap{max-width:460px; margin:0 auto; padding:40px 22px; text-align:center;}
+  /* ── area picker / setup ──────────────────────────────── */
+  .center-wrap{max-width:460px; margin:auto; text-align:center;}
   .center-wrap h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; margin:8px 0 4px;}
-  .setup-warn{
-    background:var(--panel); border:1px solid var(--rose); border-radius:14px; padding:14px 16px;
-    margin:14px clamp(14px,2.5vw,30px) 0; font-size:14px; line-height:1.5;
-  }
+  .setup-warn{background:var(--panel); border:1px solid var(--red-line); border-radius:14px;
+    padding:14px 16px; margin-bottom:12px; font-size:14px; line-height:1.5;}
 </style>
 </head>
 <body>
 
 <!-- ============================================================
-     Firebase config — the boards sync through the 'timers' path
+     Firebase config — every screen syncs through the 'timers' path
      ============================================================ -->
 <script>
 const firebaseConfig = {
@@ -174,9 +157,8 @@ const firebaseConfig = {
   <button class="icon-btn" onclick="toggleFull()">⛶ Full screen</button>
   <button class="icon-btn" id="otherAreaBtn" onclick="goOther()">Switch</button>
 </header>
-<main id="boardMain" class="hidden">
-  <div class="board" id="board"></div>
-</main>
+<main id="board" class="hidden"></main>
+<div id="reminder" class="reminder hidden">No press → no 👑 → no commission on that job</div>
 
 <!-- MODAL HOST -->
 <div id="veil" class="veil hidden" onclick="if(event.target===this) closeSheet()">
@@ -187,13 +169,14 @@ const firebaseConfig = {
 /* ============================================================================
    Royal Diamond — Crown Board
    ----------------------------------------------------------------------------
-   The operator starts her own station and it counts UP. When she taps Done the
-   job is judged against the crown limit for that station: inside the limit is a
-   crown, over it is a sad face. Every finished job is written to Firebase so the
-   reception laptop and the other board see the same thing, and so the commission
-   step can read the record later.
+   The operator starts her own station and it counts DOWN from her crown limit.
+   Green while there is time left, amber for the last fifteen minutes, red once
+   it runs out and keeps counting the overrun. She presses Done: finished with
+   time still on the clock is a crown, finished late is a sad face. Every
+   finished job is filed in Firebase so the other board, the reception laptop
+   and the later commission step all read the same thing.
 
-   Firebase layout, all under the 'timers' path the boards already share:
+   Firebase layout, all under the 'timers' path the screens share:
      timers/board/<area>/<station>   the tile every screen is looking at now
      timers/sessions/<pushId>        one permanent record per finished job
    ========================================================================== */
@@ -214,8 +197,8 @@ const AREAS = {
   }
 };
 const OPERATORS = ['Helen','Lissa','Hannah'];
-const AMBER_LEAD_MS = 10*60000;   // amber for the last ten minutes before the limit
-const UNDO_WINDOW_MS = 2*60000;   // a mis-tapped start can be undone this long
+const WARN_MS = 15*60000;    // amber, and the two-note chime, at fifteen minutes left
+const UNDO_MS = 2*60000;     // a mis-tapped start can be undone this long
 
 const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
@@ -223,10 +206,9 @@ const areaKey = (qs.get('area')||'').toLowerCase();
 const AREA = AREAS[areaKey] || null;
 
 let db = null, board = {}, srvOffset = 0, audioCtx = null, soundOn = true;
-let chimed = {};            // station -> startAt already chimed for
-let ownerCloudHash = '';    // owner password hash mirrored out of Firebase
-const tiles = {};           // station -> {el, name, op, time, mark, foot, flag, bar}
-
+let ownerCloudHash = '';
+const phase = {};            // station -> last colour seen, so the chime fires on the crossing only
+const tiles = {};            // station -> cached DOM handles
 const now = () => Date.now() + srvOffset;
 
 /* ── Firebase ─────────────────────────────────────────────────────────────── */
@@ -234,19 +216,18 @@ const configured = firebaseConfig && firebaseConfig.databaseURL;
 if (configured) {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  // Clocks differ from tablet to tablet; the server's clock is the one everybody
-  // agrees on, so every elapsed time is measured against that.
+  // Clocks differ from screen to screen; the server's clock is the one they all
+  // agree on, so every countdown is measured against that.
   db.ref('.info/serverTimeOffset').on('value', s => { srvOffset = s.val() || 0; });
   if (AREA) db.ref('timers/board/' + areaKey).on('value', s => { board = s.val() || {}; paint(); });
-  // The owner password lives in its own node (see index.html). Reading it is a
-  // bonus — on a screen that cannot read it, the override simply asks for the
-  // password on a device that can.
+  // The owner password lives in its own node (see index.html). A board that
+  // cannot read it simply sends the override to the reception laptop.
   db.ref('rdns_owner_pin_v1').on('value',
     s => { const v = s.val(); try {
             const o = typeof v === 'string' ? JSON.parse(v) : v;
             if (o && typeof o.hash === 'string' && o.hash.length === 64) ownerCloudHash = o.hash;
           } catch(e){} },
-    () => {}   // permission denied here is fine and expected on the boards
+    () => {}
   );
 } else {
   $('setupWarn').classList.remove('hidden');
@@ -258,7 +239,8 @@ if (!AREA) {
 } else {
   document.title = 'Royal Diamond — ' + AREA.label + ' Board';
   $('boardHead').classList.remove('hidden');
-  $('boardMain').classList.remove('hidden');
+  $('board').classList.remove('hidden');
+  $('reminder').classList.remove('hidden');
   $('areaTitle').textContent = AREA.label;
   $('otherAreaBtn').textContent = AREAS[AREA.other].label + ' →';
   buildBoard();
@@ -272,6 +254,8 @@ function buildBoard(){
   AREA.stations.forEach(st => {
     const el = document.createElement('div');
     el.className = 'tile free';
+    el.tabIndex = 0;                       // reachable from a TV remote
+    el.setAttribute('role','button');
     el.innerHTML =
       `<div class="t-flag hidden"></div>
        <div class="t-head"><span class="t-name">${st}</span><span class="t-op"></span></div>
@@ -283,12 +267,13 @@ function buildBoard(){
        <div class="t-foot"></div>
        <div class="bar"></div>`;
     el.onclick = () => tapTile(st);
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapTile(st); } };
     host.appendChild(el);
     tiles[st] = {
       el, op: el.querySelector('.t-op'), time: el.querySelector('.t-time'),
       mark: el.querySelector('.t-mark'), free: el.querySelector('.t-free'),
-      foot: el.querySelector('.t-foot'),
-      flag: el.querySelector('.t-flag'), bar: el.querySelector('.bar')
+      foot: el.querySelector('.t-foot'), flag: el.querySelector('.t-flag'),
+      bar: el.querySelector('.bar')
     };
   });
 }
@@ -297,20 +282,22 @@ function buildBoard(){
 function paint(){
   if (!AREA) return;
   const t = now();
-  let running = 0, crowns = 0;
+  let running = 0, crowns = 0, late = 0;
+
   AREA.stations.forEach(st => {
     const rec = board[st], ui = tiles[st];
-    ui.el.className = 'tile';
+    ui.el.className = 'tile' + (ui.el.classList.contains('dpad') ? ' dpad' : '');
     ui.mark.classList.add('hidden');
     ui.flag.classList.add('hidden');
     ui.bar.style.width = '0';
     ui.time.classList.toggle('hidden', !rec);
     ui.free.classList.toggle('hidden', !!rec);
 
-    if (!rec) {                                  // free
+    if (!rec) {
       ui.el.classList.add('free');
       ui.op.textContent = '';
       ui.foot.textContent = 'Tap to start';
+      phase[st] = null;
       return;
     }
 
@@ -319,35 +306,40 @@ function paint(){
 
     if (rec.s === 'run') {
       running++;
-      const el = Math.max(0, t - rec.startAt);
-      ui.time.textContent = fmtClock(el);
-      const state = el > limitMs ? 'over' : (el > limitMs - AMBER_LEAD_MS ? 'warn' : 'run');
+      const left = rec.startAt + limitMs - t;          // the clock counts DOWN
+      const state = left <= 0 ? 'over' : (left <= WARN_MS ? 'warn' : 'run');
+      if (state === 'over') late++;
       ui.el.classList.add(state);
-      ui.bar.style.width = Math.min(100, el / limitMs * 100) + '%';
-      ui.foot.textContent = state === 'over'
-        ? 'Over by ' + fmtMins(el - limitMs) + ' · tap when done'
-        : 'Crown until ' + rec.limitMin + ' min · tap when done';
-      if (el >= limitMs && chimed[st] !== rec.startAt) { chimed[st] = rec.startAt; chime(); }
-    } else {                                     // finished
+      ui.time.textContent = left <= 0 ? '+' + fmt(-left) : fmt(left);
+      ui.bar.style.width = Math.max(0, Math.min(100, left / limitMs * 100)) + '%';
+      ui.foot.textContent = left <= 0
+        ? 'Over the limit · press done'
+        : rec.limitMin + ' min job · press done when finished';
+      // Amber and the chime arrive together, and only on the crossing — a board
+      // opened mid-job does not chime for something that already happened.
+      if (phase[st] === 'run' && state === 'warn') chimeWarn();
+      phase[st] = state;
+    } else {
       const good = !!rec.crown;
       if (good) crowns++;
       ui.el.classList.add(good ? 'crown' : 'sad');
-      ui.time.textContent = fmtMins(rec.elapsed) + ' / ' + rec.limitMin + ' min';
+      ui.time.textContent = Math.round(rec.elapsed/60000) + ' / ' + rec.limitMin + ' min';
       ui.mark.classList.remove('hidden');
       ui.mark.textContent = good ? '👑' : '😢';
       ui.foot.textContent = good ? 'Crown earned · tap for next' : 'Over the limit · tap for next';
       if (rec.ovr) { ui.flag.classList.remove('hidden'); ui.flag.textContent = 'adjusted'; }
+      phase[st] = 'done';
     }
   });
-  $('headStat').innerHTML = `<b>${running}</b> running · <b>${crowns}</b> 👑 on the board`;
+
+  $('headStat').innerHTML = `<b>${running}</b> running · <b>${late}</b> over · <b>${crowns}</b> 👑`;
 }
 
-function fmtClock(ms){
+function fmt(ms){
   const s = Math.floor(Math.max(0, ms)/1000), h = Math.floor(s/3600);
   const m = Math.floor(s/60) % 60, ss = s % 60;
   return (h ? h + ':' + String(m).padStart(2,'0') : String(m)) + ':' + String(ss).padStart(2,'0');
 }
-function fmtMins(ms){ return Math.round(Math.max(0, ms)/60000) + ' min'; }
 function today(ts){
   const d = new Date(ts);
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
@@ -357,8 +349,8 @@ function today(ts){
 function tapTile(st){
   unlockAudio();
   const rec = board[st];
-  if (!rec)              return askStart(st);
-  if (rec.s === 'run')   return runningSheet(st, rec);
+  if (!rec)            return askStart(st);
+  if (rec.s === 'run') return runningSheet(st, rec);
   return finishedSheet(st, rec);
 }
 
@@ -370,72 +362,29 @@ function askStart(st){
     <h2>${AREA.unit} ${st}</h2>
     <p class="sub">Who is starting?</p>
     ${OPERATORS.map(o => `<button class="btn gold" onclick="startJob('${st}','${o}')">${o}
-        <small>Crown until ${AREA.limitFor(o)} minutes</small></button>`).join('')}
+        <small>${AREA.limitFor(o)} minutes on the clock</small></button>`).join('')}
     <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
 
-function startJob(st, op){
-  closeSheet();
-  if (!db) return;
-  delete chimed[st];
-  db.ref('timers/board/' + areaKey + '/' + st).set({
-    s:'run', op: op || '', startAt: now(), limitMin: AREA.limitFor(op)
-  }).catch(dbErr);
-}
-
 function runningSheet(st, rec){
-  const el = Math.max(0, now() - rec.startAt);
-  const limitMs = rec.limitMin * 60000;
-  const verdict = el <= limitMs
-    ? `<small>Finishing now earns the crown 👑 (${fmtMins(limitMs - el)} to spare)</small>`
-    : `<small>Finishing now is ${fmtMins(el - limitMs)} over the limit 😢</small>`;
+  const left = rec.startAt + rec.limitMin*60000 - now();
+  const verdict = left > 0
+    ? `<small>Finishing now earns the crown 👑 (${fmt(left)} still on the clock)</small>`
+    : `<small>This one is ${fmt(-left)} over — finishing now is a 😢</small>`;
   openSheet(`
     <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
-    <p class="sub">Running ${fmtClock(el)} · crown limit ${rec.limitMin} min</p>
+    <p class="sub">${left > 0 ? fmt(left) + ' left' : fmt(-left) + ' over'} of ${rec.limitMin} min</p>
     <button class="btn primary" onclick="finishJob('${st}')">✓ Done ${verdict}</button>
-    ${el < UNDO_WINDOW_MS
+    ${now() - rec.startAt < UNDO_MS
       ? `<button class="btn quiet" onclick="undoStart('${st}')">Started by mistake — undo</button>`
       : `<button class="btn quiet" onclick="ownerClear('${st}')">Started by mistake — needs reception</button>`}
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
 }
 
-// The whole point of the board: judge the job against the limit, show the result
-// on the tile, and file the permanent record for the commission step to read.
-function finishJob(st){
-  closeSheet();
-  const rec = board[st];
-  if (!db || !rec || rec.s !== 'run') return;
-  const endAt = now(), elapsed = Math.max(0, endAt - rec.startAt);
-  const limitMs = rec.limitMin * 60000;
-  const crown = elapsed <= limitMs;
-  const id = db.ref('timers/sessions').push().key;
-  const tile = { s:'done', op: rec.op || '', startAt: rec.startAt, endAt, elapsed,
-                 limitMin: rec.limitMin, crown, sessionId: id };
-  db.ref('timers').update({
-    ['board/' + areaKey + '/' + st]: tile,
-    ['sessions/' + id]: {
-      id, area: areaKey, station: st, operator: rec.op || '',
-      startAt: rec.startAt, endAt, elapsedMs: elapsed,
-      elapsedMin: Math.round(elapsed/60000), limitMin: rec.limitMin,
-      crown, day: today(endAt), v: 1
-    }
-  }).catch(dbErr);
-  if (crown) fanfare();
-}
-
-function undoStart(st){
-  closeSheet();
-  const rec = board[st];
-  if (!db || !rec || rec.s !== 'run') return;
-  if (now() - rec.startAt >= UNDO_WINDOW_MS) return ownerClear(st);
-  db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
-}
-
-/* ── finished tile · reception / owner override ───────────────────────────── */
 function finishedSheet(st, rec){
   openSheet(`
     <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
-    <p class="sub">${fmtMins(rec.elapsed)} of ${rec.limitMin} min · ${rec.crown ? 'crown earned 👑' : 'over the limit 😢'}</p>
+    <p class="sub">${Math.round(rec.elapsed/60000)} min of ${rec.limitMin} · ${rec.crown ? 'crown earned 👑' : 'over the limit 😢'}</p>
     <button class="btn primary" onclick="tapStartNext('${st}')">Start the next job here</button>
     ${rec.crown
       ? `<button class="btn danger" onclick="override('${st}',false)">😢 Take the crown back<small>Needs the owner password</small></button>`
@@ -445,6 +394,54 @@ function finishedSheet(st, rec){
 }
 function tapStartNext(st){ closeSheet(); askStart(st); }
 
+/* ── the one way in and out of a station ──────────────────────────────────────
+   Everything that starts or ends a job goes through these three functions, and
+   they are published on window.CrownBoard at the bottom of this file. When the
+   physical per-operator buttons are wired in, they call these — no second copy
+   of the rules, no second way for a job to reach Firebase. ------------------ */
+function startJob(st, op){
+  closeSheet();
+  if (!db || !AREA.stations.includes(st)) return;
+  phase[st] = null;
+  db.ref('timers/board/' + areaKey + '/' + st).set({
+    s:'run', op: op || '', startAt: now(), limitMin: AREA.limitFor(op)
+  }).catch(dbErr);
+}
+
+// Judge the job against the limit, show the verdict on the tile, and file the
+// permanent record the commission step will read.
+function finishJob(st){
+  closeSheet();
+  const rec = board[st];
+  if (!db || !rec || rec.s !== 'run') return;
+  const endAt = now(), elapsed = Math.max(0, endAt - rec.startAt);
+  const crown = elapsed < rec.limitMin * 60000;      // finished with time left
+  const id = db.ref('timers/sessions').push().key;
+  db.ref('timers').update({
+    ['board/' + areaKey + '/' + st]: {
+      s:'done', op: rec.op || '', startAt: rec.startAt, endAt, elapsed,
+      limitMin: rec.limitMin, crown, sessionId: id
+    },
+    ['sessions/' + id]: {
+      id, area: areaKey, station: st, operator: rec.op || '',
+      startAt: rec.startAt, endAt, elapsedMs: elapsed,
+      elapsedMin: Math.round(elapsed/60000), limitMin: rec.limitMin,
+      crown, day: today(endAt), v: 1
+    }
+  }).catch(dbErr);
+  phase[st] = 'done';
+  if (crown) fanfare(); else sadTone();
+}
+
+function undoStart(st){
+  closeSheet();
+  const rec = board[st];
+  if (!db || !rec || rec.s !== 'run') return;
+  if (now() - rec.startAt >= UNDO_MS) return ownerClear(st);
+  db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
+}
+
+/* ── reception / owner override ───────────────────────────────────────────── */
 function override(st, giveCrown){
   const rec = board[st];
   if (!rec || rec.s !== 'done') return closeSheet();
@@ -462,8 +459,8 @@ function override(st, giveCrown){
   });
 }
 
-// Clearing only wipes the tile off the wall — the session record it already
-// filed stays put, because that is what the commission will be paid from.
+// Clearing wipes the tile off the wall only — the session it already filed
+// stays put, because that is what the commission will be paid from.
 function ownerClear(st){
   askOwner(() => {
     db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
@@ -472,18 +469,17 @@ function ownerClear(st){
 }
 
 /* ── owner password ───────────────────────────────────────────────────────── */
-// Same check the rest of the site uses: nothing but SHA-256 hashes, no password
-// in this file. rdns_pin_hash is this device's own PIN, rdns_owner_cloud_hash is
-// the boss's master password mirrored to every device, and the recovery code
-// still works as a way in.
+// The same check the rest of the site uses: nothing but SHA-256 hashes, no
+// password in this file. rdns_pin_hash is this device's own PIN,
+// rdns_owner_cloud_hash is the boss's master mirrored to every device, and the
+// recovery code still works as a way in.
 function ownerHashes(){
   const ls = k => { try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } };
   return [ls('rdns_pin_hash'), ls('rdns_owner_cloud_hash'), ownerCloudHash, ls('rdns_recovery_hash')]
     .filter(h => h && h.length === 64);
 }
 function askOwner(onOk){
-  const have = ownerHashes();
-  if (!have.length) {
+  if (!ownerHashes().length) {
     return openSheet(`
       <h2>Owner password needed</h2>
       <p class="sub">This screen has never been signed in, so it does not know the
@@ -500,7 +496,7 @@ function askOwner(onOk){
   const box = $('pinBox');
   const submit = () => {
     const h = rdSha256(String(box.value || '').trim());
-    if (h && ownerHashes().indexOf(h) !== -1) { onOk(); }
+    if (h && ownerHashes().indexOf(h) !== -1) onOk();
     else { $('pinErr').textContent = 'Wrong password'; box.value = ''; box.focus(); }
   };
   $('pinOk').onclick = submit;
@@ -551,9 +547,13 @@ function rdSha256(ascii){
 }
 
 /* ── sheets ───────────────────────────────────────────────────────────────── */
-function openSheet(html){ $('sheet').innerHTML = html; $('veil').classList.remove('hidden'); }
+function openSheet(html){
+  $('sheet').innerHTML = html;
+  $('veil').classList.remove('hidden');
+  const first = $('sheet').querySelector('input, button');
+  if (first) setTimeout(() => first.focus(), 40);
+}
 function closeSheet(){ $('veil').classList.add('hidden'); $('sheet').innerHTML = ''; }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
 function dbErr(err){
   openSheet(`<h2>Could not save</h2>
@@ -562,51 +562,83 @@ function dbErr(err){
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
 }
 
+/* ── TV remote ────────────────────────────────────────────────────────────────
+   A Fire Stick has no pointer: the D-pad sends arrow keys and OK sends Enter.
+   Arrows walk the tiles (or the buttons in an open sheet), Back closes. ----- */
+function dpadTargets(){
+  if (!$('veil').classList.contains('hidden')) return [...$('sheet').querySelectorAll('input, button')];
+  return AREA ? AREA.stations.map(st => tiles[st].el) : [];
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack') {
+    if (!$('veil').classList.contains('hidden') && e.target.tagName !== 'INPUT') { e.preventDefault(); closeSheet(); }
+    return;
+  }
+  if (!e.key.startsWith('Arrow')) return;
+  const list = dpadTargets();
+  if (!list.length) return;
+  const inSheet = !$('veil').classList.contains('hidden');
+  const cols = inSheet ? 1 : (window.innerWidth >= 1000 ? 3 : window.innerWidth >= 640 ? 2 : 1);
+  let i = list.indexOf(document.activeElement);
+  if (i === -1) i = 0;
+  else if (e.key === 'ArrowRight') i += inSheet ? 0 : 1;
+  else if (e.key === 'ArrowLeft')  i -= inSheet ? 0 : 1;
+  else if (e.key === 'ArrowDown')  i += inSheet ? 1 : cols;
+  else if (e.key === 'ArrowUp')    i -= inSheet ? 1 : cols;
+  if (i < 0 || i >= list.length) return;
+  e.preventDefault();
+  list.forEach(el => el.classList.remove('dpad'));
+  list[i].classList.add('dpad');
+  list[i].focus();
+});
+
 /* ── screen, sound ────────────────────────────────────────────────────────── */
 function goOther(){ location.search = '?area=' + AREA.other; }
 function toggleFull(){
   if (document.fullscreenElement) document.exitFullscreen();
-  else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(()=>{});
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
 }
 function toggleSound(){
   soundOn = !soundOn;
   $('soundBtn').classList.toggle('on', soundOn);
   $('soundBtn').textContent = soundOn ? '🔔 Sound' : '🔕 Muted';
-  if (soundOn) { unlockAudio(); chime(); }
+  if (soundOn) { unlockAudio(); chimeWarn(); }
 }
 function unlockAudio(){
   if (!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 document.addEventListener('pointerdown', unlockAudio, { once:true });
+document.addEventListener('keydown', unlockAudio, { once:true });
 
-// A gentle two-note chime when a station reaches its limit — enough to look up,
-// not enough to startle a customer.
-function chime(){
+function tone(f, at, dur, peak, type){
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(f, at);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(peak, at + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(at); o.stop(at + dur + .05);
+}
+// Fifteen minutes left: two gentle notes, enough to look up.
+function chimeWarn(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [[880,0],[1174.7,.42]].forEach(([f,off]) => {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(f, t0 + off);
-    g.gain.setValueAtTime(0.0001, t0 + off);
-    g.gain.exponentialRampToValueAtTime(0.22, t0 + off + .05);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + .9);
-    o.connect(g).connect(audioCtx.destination);
-    o.start(t0 + off); o.stop(t0 + off + .95);
-  });
+  tone(880, t0, .9, .22); tone(1174.7, t0 + .42, .9, .22);
 }
+// Crown: a bright rising sparkle.
 function fanfare(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [523.3,659.3,784,1046.5].forEach((f,i) => {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'triangle'; o.frequency.setValueAtTime(f, t0 + i*.11);
-    g.gain.setValueAtTime(0.0001, t0 + i*.11);
-    g.gain.exponentialRampToValueAtTime(0.2, t0 + i*.11 + .03);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i*.11 + .5);
-    o.connect(g).connect(audioCtx.destination);
-    o.start(t0 + i*.11); o.stop(t0 + i*.11 + .55);
-  });
+  [523.3,659.3,784,1046.5,1318.5,1568].forEach((f,i) => tone(f, t0 + i*.08, .45, .2, 'triangle'));
+  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .07));   // glitter on top
+}
+// Over the limit: a soft sigh downwards.
+function sadTone(){
+  if (!audioCtx || !soundOn) return;
+  const t0 = audioCtx.currentTime;
+  [415.3, 349.2, 277.2].forEach((f,i) => tone(f, t0 + i*.26, .8, .16, 'triangle'));
 }
 
 let wakeLock = null;
@@ -614,9 +646,28 @@ async function requestWake(){
   try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { if (AREA) requestWake(); }
+  if (document.visibilityState === 'visible' && AREA) requestWake();
 });
-$('soundBtn') && $('soundBtn').classList.add('on');
+if ($('soundBtn')) $('soundBtn').classList.add('on');
+
+/* ── the entry point the physical buttons will use ────────────────────────────
+   One switch per operator, wired to a little box that opens this page, will
+   call these directly:
+       CrownBoard.start('M1','Helen')   begin a job (limit comes from the name)
+       CrownBoard.done('M1')            press Done — crown or sad, and file it
+       CrownBoard.cancel('M1')          undo a start made by mistake
+       CrownBoard.state('M1')           read what the tile is showing now
+   ------------------------------------------------------------------------- */
+window.CrownBoard = {
+  get area(){ return areaKey; },
+  get stations(){ return AREA ? AREA.stations.slice() : []; },
+  operators: OPERATORS.slice(),
+  limitFor: op => AREA ? AREA.limitFor(op) : null,
+  start: startJob,
+  done: finishJob,
+  cancel: undoStart,
+  state: st => board[st] || null
+};
 </script>
 </body>
 </html>

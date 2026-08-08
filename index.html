@@ -14253,4 +14253,146 @@ window.addEventListener('load',function(){
 })();
 </script>
 
+<!-- ═══════ CROWN BOARD MONITOR · the floor at a glance, on every page ═══════
+     The two TV boards (timers.html?area=…) are the operators' screens. This is
+     reception's copy of the same live data: all nine stations, counting down,
+     without leaving whatever page she is working on. Read-only on purpose —
+     starting and finishing a job belongs to the operator at her station.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<style>
+#cbm-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9990;cursor:pointer;
+  background:#14120d;border:1.5px solid #d4a96a;border-right:none;border-radius:12px 0 0 12px;
+  padding:10px 9px;color:#d4a96a;font-family:Nunito,'Segoe UI',sans-serif;font-weight:800;
+  font-size:.78rem;line-height:1.5;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+#cbm-tab .cbm-n{display:block;color:#f3e3c8}
+#cbm-tab.late{border-color:#f2708b;color:#f2708b}
+#cbm-panel{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:9990;display:none;
+  width:284px;max-width:calc(100vw - 24px);max-height:min(74vh,560px);overflow-y:auto;
+  background:#14120d;border:1.5px solid #d4a96a;border-radius:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.45);font-family:Nunito,'Segoe UI',sans-serif}
+#cbm-panel.on{display:block}
+#cbm-head{position:sticky;top:0;background:#14120d;color:#d4a96a;padding:10px 12px;font-weight:800;
+  font-size:.86rem;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid rgba(212,169,106,.25)}
+#cbm-head .x{cursor:pointer;font-size:1.05rem;opacity:.7}
+.cbm-sec{padding:8px 10px 2px;color:#8d8574;font-size:.66rem;font-weight:800;
+  letter-spacing:.12em;text-transform:uppercase}
+.cbm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 10px 8px}
+.cbm-chip{border-radius:9px;padding:6px 4px 5px;text-align:center;border:1px solid #2a2a22;
+  background:#1c1a14;min-height:56px;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.cbm-chip .st{font-size:.64rem;font-weight:800;color:#8d8574;letter-spacing:.06em}
+.cbm-chip .tm{font-size:.98rem;font-weight:800;color:#6d6559;font-variant-numeric:tabular-nums;line-height:1.15}
+.cbm-chip .op{font-size:.6rem;color:#8d8574;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cbm-run {background:rgba(46,158,91,.16);border-color:rgba(46,158,91,.5)}
+.cbm-run  .tm{color:#5fcb8c}
+.cbm-warn{background:rgba(240,193,75,.16);border-color:rgba(240,193,75,.55)}
+.cbm-warn .tm{color:#f0c14b}
+.cbm-over{background:rgba(242,112,139,.16);border-color:rgba(242,112,139,.6)}
+.cbm-over .tm{color:#f2708b}
+.cbm-crown{background:rgba(212,169,106,.16);border-color:rgba(212,169,106,.6)}
+.cbm-crown .tm{color:#d4a96a}
+.cbm-sad{background:rgba(242,112,139,.1);border-color:rgba(242,112,139,.4)}
+.cbm-sad .tm{color:#f2708b}
+.cbm-foot{padding:8px 12px 11px;color:#8d8574;font-size:.64rem;line-height:1.5;
+  border-top:1px solid rgba(212,169,106,.18)}
+.cbm-foot a{color:#d4a96a;text-decoration:none;font-weight:800}
+</style>
+<div id="cbm-tab" onclick="cbmToggle()"><span id="cbm-tab-run">⏱ –</span><span class="cbm-n" id="cbm-tab-n">👑 –</span></div>
+<div id="cbm-panel">
+  <div id="cbm-head">👑 Crown Board <span class="x" onclick="cbmToggle()">✕</span></div>
+  <div id="cbm-body"></div>
+  <div class="cbm-foot">
+    No press → no 👑 → no commission on that job.<br>
+    <a href="timers.html?area=manicure" target="_blank">Manicure board</a> ·
+    <a href="timers.html?area=pedicure" target="_blank">Pedicure board</a>
+  </div>
+</div>
+<script>
+(function(){
+  var AREAS=[{key:'manicure',label:'Manicure',stations:['M1','M2','M3','M4','M5','M6']},
+             {key:'pedicure',label:'Pedicure',stations:['P1','P2','P3']}];
+  var WARN=15*60000;
+  var _b={}, _off=0, _open=false, _started=false, _startTimer=null, _tick=null;
+
+  function now(){ return Date.now()+_off; }
+  function fmt(ms){
+    var s=Math.floor(Math.max(0,ms)/1000), h=Math.floor(s/3600), m=Math.floor(s/60)%60, ss=s%60;
+    return (h? h+':'+String(m).padStart(2,'0') : String(m))+':'+String(ss).padStart(2,'0');
+  }
+
+  // One chip per station: what it is, who has it, and how long she has left.
+  function chip(area,st){
+    var r=(_b[area]||{})[st];
+    if(!r) return '<div class="cbm-chip"><div class="st">'+st+'</div>'+
+                  '<div class="tm">–</div><div class="op">boş</div></div>';
+    if(r.s==='run'){
+      var left=r.startAt+(r.limitMin||60)*60000-now();
+      var cls=left<=0?'cbm-over':(left<=WARN?'cbm-warn':'cbm-run');
+      return '<div class="cbm-chip '+cls+'"><div class="st">'+st+'</div>'+
+             '<div class="tm">'+(left<=0?'+'+fmt(-left):fmt(left))+'</div>'+
+             '<div class="op">'+(r.op||'—')+'</div></div>';
+    }
+    return '<div class="cbm-chip '+(r.crown?'cbm-crown':'cbm-sad')+'"><div class="st">'+st+'</div>'+
+           '<div class="tm">'+(r.crown?'👑':'😢')+'</div>'+
+           '<div class="op">'+(r.op||'—')+' · '+Math.round((r.elapsed||0)/60000)+'dk</div></div>';
+  }
+
+  function counts(){
+    var run=0,late=0,crown=0;
+    AREAS.forEach(function(a){
+      a.stations.forEach(function(st){
+        var r=(_b[a.key]||{})[st]; if(!r) return;
+        if(r.s==='run'){ run++; if(r.startAt+(r.limitMin||60)*60000-now()<=0) late++; }
+        else if(r.crown) crown++;
+      });
+    });
+    return {run:run,late:late,crown:crown};
+  }
+
+  function render(){
+    // Collapsed, the tab still says the two things reception needs: how many
+    // stations are running, and whether any of them has run past its limit.
+    var c=counts();
+    var run=document.getElementById('cbm-tab-run'), cr=document.getElementById('cbm-tab-n');
+    if(run) run.textContent='⏱ '+c.run+(c.late?' ⚠':'');
+    if(cr)  cr.textContent='👑 '+c.crown;
+    var tab=document.getElementById('cbm-tab');
+    if(tab) tab.classList.toggle('late', c.late>0);
+    if(!_open) return;
+    var html='';
+    AREAS.forEach(function(a){
+      html+='<div class="cbm-sec">'+a.label+'</div><div class="cbm-grid">';
+      a.stations.forEach(function(st){ html+=chip(a.key,st); });
+      html+='</div>';
+    });
+    document.getElementById('cbm-body').innerHTML=html;
+  }
+
+  window.cbmToggle=function(){
+    _open=!_open;
+    document.getElementById('cbm-panel').classList.toggle('on',_open);
+    document.getElementById('cbm-tab').style.display=_open?'none':'block';
+    try{ localStorage.setItem('rdns_cbm_open',_open?'1':'0'); }catch(e){}
+    render();
+  };
+
+  // The boards write to 'timers' without signing in, so this only waits for the
+  // database handle — not for the login the rest of the sync needs.
+  function start(){
+    try{
+      if(_started) return;
+      if(typeof _fbDb==='undefined'||!_fbDb) return;
+      _started=true;
+      clearInterval(_startTimer);
+      _fbDb.ref('.info/serverTimeOffset').on('value',function(s){ _off=s.val()||0; });
+      _fbDb.ref('timers/board').on('value',function(s){ _b=s.val()||{}; render(); },
+        function(e){ console.warn('[CBM] read denied:',e); });
+    }catch(e){ console.warn('[CBM] start error:',e); }
+  }
+  _startTimer=setInterval(start,3000); start();
+  _tick=setInterval(render,1000);
+  try{ if(localStorage.getItem('rdns_cbm_open')==='1') cbmToggle(); }catch(e){}
+})();
+</script>
+
 </html>
