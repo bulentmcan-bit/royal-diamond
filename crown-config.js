@@ -23,8 +23,8 @@ window.CROWN = {
 
   operators: [
     { key:'helen',  name:'Helen',  manicure:60, pedicure:60 },
-    { key:'lissa',  name:'Lissa',  manicure:90, pedicure:60 },
-    { key:'hannah', name:'Hannah', manicure:90, pedicure:60 }
+    { key:'hannah', name:'Hannah', manicure:90, pedicure:60 },
+    { key:'lissa',  name:'Lissa',  manicure:90, pedicure:60 }
   ],
 
   // The two kinds of job. A board is one of these; so is a tile's colour.
