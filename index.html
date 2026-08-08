@@ -4947,6 +4947,7 @@ function dashEditAppt(id){
         // Stamp the moment this price was written so an older cloud snapshot
         // can't overwrite it (see the money guard in the sync listener).
         if(newPrice !== oldPrice) live._pts = Math.max(Date.now(), (live._pts||0)+1);
+        const _oldStaff = live.staff;
         live.staff     = document.getElementById('a-staff').value;
 
         // How much has actually been sent to Daily Takings for this
@@ -4996,6 +4997,13 @@ function dashEditAppt(id){
         // step below throws, the save already happened and the modal must
         // not get stuck open (previously it would silently stay open until
         // the page was refreshed).
+        // Handed to another technician: the money already sitting in Daily
+        // Takings has to follow, or the two Kasa columns drift apart by the
+        // price of this job.
+        if(_oldStaff && live.staff && _oldStaff !== live.staff){
+          try{ if(dtReattribute(live.id, live.staff)) dtSaveState(); }catch(e){ console.warn('reattribute on staff change:',e); }
+        }
+
         try{ saveAll(); }catch(e){ console.error('saveAll error on update:', e); }
         closeModal('mAppt');
         saveBtn.textContent = '+ Randevu';
@@ -5124,6 +5132,67 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       dtSaveState();
     }
   }catch(e){ console.warn('diAutoRemove error:',e); }
+}
+
+// Money is filed under whichever technician was on the appointment at the
+// moment it was completed. Move the appointment to someone else afterwards and
+// the entry stays behind: one Kasa reads short by the amount and the other
+// reads over by exactly the same amount, while the day total stays correct — so
+// nothing looks wrong until the two columns are compared.
+// Worse, the entry still carries the appointment id, so Kasa Kontrol folds it
+// into the appointment's own row under the NEW technician. There is no row to
+// delete and no sign of where the money actually sits.
+// (8 Aug 2026: Hannah −₺600, Lissa +₺600 — one ₺600 Tırnak Çıkarma.)
+// Put the money on whoever the appointment now names.
+function dtReattribute(apptId, toStaff){
+  try{
+    if(!dtState||!dtState.operators||apptId==null||!toStaff) return false;
+    const target=dtState.operators.find(function(o){return o.name===toStaff;});
+    // No Daily Takings card for that technician: leave the money where it is.
+    // Stranding it under nobody would be worse than filing it under the wrong
+    // person, and the Fark still shows so it can be corrected by hand.
+    if(!target) return false;
+    if(!target.entries) target.entries=[];
+    let moved=false;
+    dtState.operators.forEach(function(o){
+      if(o===target||!o.entries) return;
+      for(let i=o.entries.length-1;i>=0;i--){
+        const e=o.entries[i];
+        if(e&&e.apptId!=null&&String(e.apptId)===String(apptId)){
+          target.entries.push(o.entries.splice(i,1)[0]);
+          moved=true;
+        }
+      }
+    });
+    if(moved){
+      target.entries.sort(function(a,b){return String(a.time||"").localeCompare(String(b.time||""));});
+      console.warn('dtReattribute: takings for appointment',apptId,'moved to',toStaff);
+    }
+    return moved;
+  }catch(e){ console.warn('dtReattribute error:',e); return false; }
+}
+
+// Sweep today's entries back onto the technician their appointment now names.
+// This catches money that was moved by any route — the appointment editor, the
+// staff-less booking panel, or a cloud snapshot written by another device.
+// Entries with no appointment behind them (walk-ins, deleted bookings) are left
+// exactly as they are: those are the "Karşılıksız / Elden" rows and they have
+// their own handling.
+function dtReattributeSweep(){
+  try{
+    if(!dtState||!dtState.operators||typeof appointments==='undefined') return false;
+    const today=dtDateKey();
+    const wanted={};
+    dtState.operators.forEach(function(o){ (o.entries||[]).forEach(function(e){
+      if(!e||e.apptId==null) return;
+      const a=appointments.find(function(x){return String(x.id)===String(e.apptId);});
+      if(a&&a.staff&&a.staff!==o.name&&String(a.datetime).slice(0,10)===today) wanted[e.apptId]=a.staff;
+    });});
+    let changed=false;
+    Object.keys(wanted).forEach(function(id){ if(dtReattribute(id,wanted[id])) changed=true; });
+    if(changed) dtSaveState();
+    return changed;
+  }catch(e){ console.warn('dtReattributeSweep error:',e); return false; }
 }
 
 // Undo a completed appointment: revert status, points, visit count, and daily takings
@@ -9738,6 +9807,9 @@ function renderCashCheck(){
   const day=ccDateVal();if(!day){body.innerHTML="";return;}
   const ticks=new Set(JSON.parse(localStorage.getItem('rdns_cc_'+day)||"[]"));
   const isToday=(day===dtDateKey());
+  // This is the screen where a misfiled entry shows up as a Fark, so put
+  // today's money back on the right technician before the columns are drawn.
+  if(isToday){ try{ dtReattributeSweep(); }catch(e){} }
   const dayLabel=new Date(day+"T00:00").toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 
   // ── 1) Itemised rows: completed appointments of that day ──
@@ -13109,6 +13181,7 @@ function rvSendAll(){
     const a=_ap().find(x=>String(x.id)===String(id));
     if(!a)return;
     a.staff=tech;
+    try{ if(typeof dtReattribute==='function' && dtReattribute(a.id,tech)) dtSaveState(); }catch(e){}
     try{saveAll();}catch(e){}
     try{publishAvailability();}catch(e){}
     try{renderDash();renderAppts();}catch(e){}
