@@ -14525,12 +14525,34 @@ window.addEventListener('load',function(){
   };
   window.cbmBack=function(){ _pick=null; render(); };
 
+  // Filing a job that is over: her tile's verdict and the permanent session the
+  // commission is paid from — the same two writes the wall boards make, so a job
+  // closed from reception is indistinguishable from one closed at the station.
+  function file(upd,o,cur){
+    var endAt=now(), elapsed=Math.max(0,endAt-cur.startAt);
+    var crown=elapsed<(cur.limitMin||60)*60000;
+    var id=_fbDb.ref('timers/sessions').push().key;
+    var d=new Date(endAt);
+    var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    upd['ops/'+o.key+'/last/'+cur.type]={type:cur.type,startAt:cur.startAt,endAt:endAt,
+      elapsed:elapsed,limitMin:cur.limitMin,crown:crown,sessionId:id};
+    upd['sessions/'+id]={id:id,operator:o.name,operatorKey:o.key,type:cur.type,area:cur.type,
+      startAt:cur.startAt,endAt:endAt,elapsedMs:elapsed,elapsedMin:Math.round(elapsed/60000),
+      limitMin:cur.limitMin,crown:crown,day:day,v:2};
+    return crown;
+  }
+
   window.cbmDoStart=function(key,type){
     var o=C.find(key); _pick=null;
-    if(!o||!_fbDb||(_ops[o.key]||{}).current) return render();
-    _fbDb.ref('timers/ops/'+o.key).update({
-      name:o.name, current:{ type:type, startAt:now(), limitMin:(o[type]||60) }
-    }).catch(function(e){ console.warn('[CBM] start failed:',e); });
+    if(!o||!_fbDb) return render();
+    // A start always begins a completely fresh countdown. Anything still open for
+    // her is filed first on its own true times — never dropped — and then the new
+    // job starts on her full limit, carrying nothing of the old one.
+    var upd={}, cur=(_ops[o.key]||{}).current;
+    if(cur) file(upd,o,cur);
+    upd['ops/'+o.key+'/name']=o.name;
+    upd['ops/'+o.key+'/current']={ type:type, startAt:now(), limitMin:(o[type]||60) };
+    _fbDb.ref('timers').update(upd).catch(function(e){ console.warn('[CBM] start failed:',e); });
     render();
   };
 
@@ -14553,18 +14575,9 @@ window.addEventListener('load',function(){
     var o=C.find(key); _pick=null;
     var cur=o&&(_ops[o.key]||{}).current;
     if(!cur||!_fbDb) return render();
-    var endAt=now(), elapsed=Math.max(0,endAt-cur.startAt);
-    var crown=elapsed<(cur.limitMin||60)*60000;
-    var id=_fbDb.ref('timers/sessions').push().key;
-    var d=new Date(endAt);
-    var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     var upd={};
     upd['ops/'+o.key+'/current']=null;
-    upd['ops/'+o.key+'/last/'+cur.type]={type:cur.type,startAt:cur.startAt,endAt:endAt,
-      elapsed:elapsed,limitMin:cur.limitMin,crown:crown,sessionId:id};
-    upd['sessions/'+id]={id:id,operator:o.name,operatorKey:o.key,type:cur.type,area:cur.type,
-      startAt:cur.startAt,endAt:endAt,elapsedMs:elapsed,elapsedMin:Math.round(elapsed/60000),
-      limitMin:cur.limitMin,crown:crown,day:day,v:2};
+    file(upd,o,cur);
     _fbDb.ref('timers').update(upd).catch(function(e){ console.warn('[CBM] finish failed:',e); });
     render();
   };

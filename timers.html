@@ -508,18 +508,43 @@ function noPressSheet(key){
    window.CrownBoard at the bottom of this file. The Wi-Fi buttons will call the
    same functions — double press starts a manicure, triple press a pedicure and
    a long press finishes — so there is never a second copy of the rules. ---- */
+// Filing a job that is over: the verdict on her tile, and the permanent session
+// the commission is paid from. Both ways out of a job go through here — the
+// Finish press, and a start that arrives while she still has one open — so a job
+// closed either way is recorded byte for byte the same. Returns the verdict.
+function fileJob(upd, o, cur){
+  const endAt = now(), elapsed = Math.max(0, endAt - cur.startAt);
+  const crown = elapsed < cur.limitMin * 60000;      // finished with time left
+  const id = db.ref('timers/sessions').push().key;
+  upd['ops/' + o.key + '/last/' + cur.type] = {
+    type: cur.type, startAt: cur.startAt, endAt, elapsed,
+    limitMin: cur.limitMin, crown, sessionId: id
+  };
+  upd['sessions/' + id] = {
+    id, operator: o.name, operatorKey: o.key, type: cur.type, area: cur.type,
+    startAt: cur.startAt, endAt, elapsedMs: elapsed,
+    elapsedMin: Math.round(elapsed/60000), limitMin: cur.limitMin,
+    crown, day: today(endAt), v: 2
+  };
+  return crown;
+}
+
 function startJob(who, type){
   closeSheet();
   const o = C.find(who);
   if (!db || !o || !C.types[type]) return;
-  // One job per technician. Starting again while she is running would lose the
-  // first one, so the second press is turned into a question instead.
-  if ((ops[o.key] || {}).current) return runningSheet(o.key, null);
+  // A start always begins a completely fresh countdown. She may still have a job
+  // open — finished without a press, or started on the other board and never
+  // closed — and that one is filed first on its own true times, so the work is
+  // never lost. Then the new job begins: start time now, her full limit for this
+  // kind of work, nothing of the old countdown carried across.
+  const upd = {};
+  const cur = (ops[o.key] || {}).current;
+  if (cur) fileJob(upd, o, cur);
+  upd['ops/' + o.key + '/name'] = o.name;
+  upd['ops/' + o.key + '/current'] = { type, startAt: now(), limitMin: o[type] || 60 };
   phase[o.key] = null;
-  db.ref('timers/ops/' + o.key).update({
-    name: o.name,
-    current: { type, startAt: now(), limitMin: o[type] || 60 }
-  }).catch(dbErr);
+  db.ref('timers').update(upd).catch(dbErr);
 }
 
 function finishJob(who){
@@ -527,22 +552,9 @@ function finishJob(who){
   const o = C.find(who);
   const cur = o && (ops[o.key] || {}).current;
   if (!db || !cur) return;
-  const endAt = now(), elapsed = Math.max(0, endAt - cur.startAt);
-  const crown = elapsed < cur.limitMin * 60000;      // finished with time left
-  const id = db.ref('timers/sessions').push().key;
-  db.ref('timers').update({
-    ['ops/' + o.key + '/current']: null,
-    ['ops/' + o.key + '/last/' + cur.type]: {
-      type: cur.type, startAt: cur.startAt, endAt, elapsed,
-      limitMin: cur.limitMin, crown, sessionId: id
-    },
-    ['sessions/' + id]: {
-      id, operator: o.name, operatorKey: o.key, type: cur.type, area: cur.type,
-      startAt: cur.startAt, endAt, elapsedMs: elapsed,
-      elapsedMin: Math.round(elapsed/60000), limitMin: cur.limitMin,
-      crown, day: today(endAt), v: 2
-    }
-  }).catch(dbErr);
+  const upd = { ['ops/' + o.key + '/current']: null };
+  const crown = fileJob(upd, o, cur);
+  db.ref('timers').update(upd).catch(dbErr);
   phase[o.key] = null;
   if (crown) fanfare(); else sadTone();
 }
