@@ -14376,6 +14376,11 @@ window.addEventListener('load',function(){
 .cbm-row .nm{font-size:.86rem;font-weight:800;color:#f3e3c8;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .cbm-row .jb{font-size:.66rem;color:#8d8574;text-transform:uppercase;letter-spacing:.06em}
+/* Her picture, under her name — the same upright frame the wall boards use, cut
+   down to the size a side panel can spare. */
+.cbm-row .pic{display:block;margin:4px 0 3px;width:27px;height:36px;
+  object-fit:cover;object-position:50% 8%;border-radius:6px;
+  border:1px solid rgba(212,169,106,.55);background:#1c1a14}
 .cbm-row .tm{font-size:1.02rem;font-weight:800;color:#6d6559;font-variant-numeric:tabular-nums}
 .cbm-run{background:rgba(46,158,91,.15);border-color:rgba(46,158,91,.5)}
 .cbm-run .tm{color:#5fcb8c}
@@ -14426,6 +14431,12 @@ window.addEventListener('load',function(){
     return (h? h+':'+String(m).padStart(2,'0') : String(m))+':'+String(ss).padStart(2,'0');
   }
   function esc(s){ return String(s==null?'':s).replace(/[<>&"']/g,''); }
+  // Her picture, from crown-config.js. Missing file, or no photo named for her:
+  // the row simply carries on without one.
+  function pic(o){
+    return o.photo ? '<img class="pic" src="'+esc(o.photo)+'" alt="" '+
+      'onerror="this.style.display=\'none\'">' : '';
+  }
 
   // One row per technician: what she is on, and how long she has left on it.
   function row(o){
@@ -14435,7 +14446,7 @@ window.addEventListener('load',function(){
       var cls=left<=0?'cbm-over':(left<=C.warnMs?'cbm-warn':'cbm-run');
       var ty=C.types[cur.type]||{label:cur.type,icon:''};
       return '<div class="cbm-row '+cls+'" onclick="cbmFinish(\''+o.key+'\')">'+
-        '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+
+        '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
         '<div class="jb">'+ty.icon+' '+esc(ty.label)+'</div></div>'+
         '<div class="tm">'+(left<=0?'+'+fmt(-left):fmt(left))+'</div></div>';
     }
@@ -14445,13 +14456,13 @@ window.addEventListener('load',function(){
     if(best){
       var t2=C.types[best.type]||{label:best.type,icon:''};
       return '<div class="cbm-row '+(best.crown?'cbm-crown':'cbm-sad')+'" onclick="cbmType(\''+o.key+'\')">'+
-        '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+
+        '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
         '<div class="jb">'+t2.icon+' '+esc(t2.label)+' · '+
           (best.noPress?'basılmadı':Math.round((best.elapsed||0)/60000)+'dk')+'</div></div>'+
         '<div class="tm">'+(best.crown?'👑':'😢')+'</div></div>';
     }
     return '<div class="cbm-row" onclick="cbmType(\''+o.key+'\')">'+
-      '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+
+      '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
       '<div class="jb">boş</div></div><div class="tm">–</div></div>';
   }
 

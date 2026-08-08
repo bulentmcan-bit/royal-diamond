@@ -7,7 +7,7 @@
    refresh: both TV boards (timers.html) and reception's monitor inside the main
    app. Nothing else needs editing.
 
-       { key:'sara', name:'Sara', manicure:90, pedicure:60 }
+       { key:'sara', name:'Sara', manicure:90, pedicure:60, photo:'op-sara.png' }
 
    `key`   is what her jobs are filed under in Firebase. Lower case, no spaces,
            and it must never change once she has worked a day — the records
@@ -15,6 +15,9 @@
    `name`  is what the boards show.
    The two numbers are her crown limits in minutes: how long she has for a
    manicure and for a pedicure before the crown is lost.
+   `photo` is her picture, shown under her name on the boards and in reception's
+           monitor. Drop the file next to this one and name it here. Leave it
+           out and her tile simply shows no picture — nothing else changes.
 
    A technician who has left: take her line out and her tiles stop appearing.
    The sessions she already earned stay in Firebase for the commission.
@@ -22,9 +25,9 @@
 window.CROWN = {
 
   operators: [
-    { key:'helen',  name:'Helen',  manicure:60, pedicure:60 },
-    { key:'hannah', name:'Hannah', manicure:90, pedicure:60 },
-    { key:'lissa',  name:'Lissa',  manicure:90, pedicure:60 }
+    { key:'helen',  name:'Helen',  manicure:60, pedicure:60, photo:'op-helen.png'  },
+    { key:'hannah', name:'Hannah', manicure:90, pedicure:60, photo:'op-hannah.png' },
+    { key:'lissa',  name:'Lissa',  manicure:90, pedicure:60, photo:'op-lissa.png'  }
   ],
 
   // The two kinds of job. A board is one of these; so is a tile's colour.
