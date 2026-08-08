@@ -14276,9 +14276,26 @@ window.addEventListener('load',function(){
   box-shadow:0 14px 40px rgba(0,0,0,.45);font-family:Nunito,'Segoe UI',sans-serif}
 #cbm-panel.on{display:block}
 #cbm-head{position:sticky;top:0;background:#14120d;color:#d4a96a;padding:10px 12px;font-weight:800;
-  font-size:.86rem;display:flex;justify-content:space-between;align-items:center;gap:8px;
+  font-size:.86rem;display:flex;align-items:center;gap:6px;flex-wrap:nowrap;
   border-bottom:1px solid rgba(212,169,106,.25)}
-#cbm-head .x{cursor:pointer;font-size:1.05rem;opacity:.7}
+/* The title yields first, so the buttons never wrap onto a second line */
+#cbm-head .ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Minimise and close sit side by side, each with room enough for a thumb */
+#cbm-head .x,#cbm-head .m{cursor:pointer;font-size:1.05rem;opacity:.7;line-height:1;
+  padding:2px 7px;border-radius:6px;user-select:none}
+#cbm-head .m{font-size:1.25rem}
+#cbm-head .x:hover,#cbm-head .m:hover{opacity:1;background:rgba(212,169,106,.14)}
+/* Minimised: a small pill out of the dashboard's way, low on the right. It
+   sits under the toast stack's z-index so a toast is never hidden by it. */
+#cbm-min{position:fixed;right:14px;bottom:96px;z-index:9990;display:none;align-items:center;gap:8px;
+  max-width:calc(100vw - 28px);padding:9px 14px;border-radius:30px;cursor:pointer;
+  background:#14120d;border:1.5px solid #d4a96a;color:#d4a96a;
+  font-family:Nunito,'Segoe UI',sans-serif;font-weight:800;font-size:.82rem;white-space:nowrap;
+  box-shadow:0 6px 18px rgba(0,0,0,.32)}
+#cbm-min.on{display:flex}
+#cbm-min b{color:#f3e3c8;font-weight:800}
+#cbm-min.late{border-color:#f2708b;color:#f2708b}
+@media(max-width:560px){ #cbm-min{bottom:80px;font-size:.78rem;padding:8px 12px} }
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
@@ -14298,7 +14315,8 @@ window.addEventListener('load',function(){
 .cbm-sad{background:rgba(242,112,139,.09);border-color:rgba(242,112,139,.38)}
 .cbm-sad .tm{color:#f2708b}
 #cbm-start{background:rgba(212,169,106,.12);border:1px solid #d4a96a;color:#d4a96a;border-radius:8px;
-  padding:4px 10px;font-family:inherit;font-weight:800;font-size:.72rem;cursor:pointer}
+  padding:4px 9px;font-family:inherit;font-weight:800;font-size:.72rem;cursor:pointer;
+  white-space:nowrap;flex:none}
 .cbm-pick{padding:4px 10px 8px}
 .cbm-pick button{display:block;width:100%;text-align:left;margin-top:5px;border-radius:9px;
   border:1px solid rgba(212,169,106,.4);background:transparent;color:#f3e3c8;
@@ -14310,11 +14328,12 @@ window.addEventListener('load',function(){
 .cbm-foot a{color:#d4a96a;text-decoration:none;font-weight:800}
 </style>
 <div id="cbm-tab" onclick="cbmToggle()"><span id="cbm-tab-run">⏱ –</span><span class="cbm-n" id="cbm-tab-n">👑 –</span></div>
+<div id="cbm-min" onclick="cbmOpen()">👑 Crown Board <b id="cbm-min-n">–</b></div>
 <div id="cbm-panel">
-  <div id="cbm-head">👑 Crown Board
-    <span style="flex:1"></span>
+  <div id="cbm-head"><span class="ttl">👑 Crown Board</span>
     <button id="cbm-start" onclick="cbmStart()">＋ Başlat</button>
-    <span class="x" onclick="cbmToggle()">✕</span></div>
+    <span class="m" onclick="cbmMinimise()" title="Küçült">–</span>
+    <span class="x" onclick="cbmClose()" title="Kapat">✕</span></div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
     No press → no 👑 → no commission on that job.<br>
@@ -14326,6 +14345,7 @@ window.addEventListener('load',function(){
 (function(){
   var C=window.CROWN;
   var _ops={}, _off=0, _open=false, _started=false, _startTimer=null, _pick=null;
+  var _state='closed';   // 'open' | 'min' | 'closed'
 
   function now(){ return Date.now()+_off; }
   function fmt(ms){
@@ -14382,6 +14402,10 @@ window.addEventListener('load',function(){
     if(cr)  cr.textContent='👑 '+c.crown;
     var tab=document.getElementById('cbm-tab');
     if(tab) tab.classList.toggle('late', c.late>0);
+    // Minimised, it keeps saying the one thing worth a glance.
+    var mn=document.getElementById('cbm-min-n'), mb=document.getElementById('cbm-min');
+    if(mn) mn.textContent=c.run+' running'+(c.late?' ⚠':'');
+    if(mb) mb.classList.toggle('late', c.late>0);
     if(!_open) return;
     var body=document.getElementById('cbm-body');
     if(_pick){ body.innerHTML=_pick(); return; }
@@ -14461,13 +14485,24 @@ window.addEventListener('load',function(){
     render();
   };
 
-  window.cbmToggle=function(){
-    _open=!_open; _pick=null;
+  // ── open · minimised · closed ───────────────────────────────────────────
+  // Three states, not two. Minimised is for "I still want to see it, just not
+  // this big"; closed is for "off my screen". Both are remembered, so the panel
+  // comes back the way reception left it.
+  function apply(){
+    _pick=null;
+    _open = (_state==='open');
     document.getElementById('cbm-panel').classList.toggle('on',_open);
-    document.getElementById('cbm-tab').style.display=_open?'none':'block';
-    try{ localStorage.setItem('rdns_cbm_open',_open?'1':'0'); }catch(e){}
+    document.getElementById('cbm-min').classList.toggle('on',_state==='min');
+    document.getElementById('cbm-tab').style.display=(_state==='closed')?'block':'none';
+    try{ localStorage.setItem('rdns_cbm_state',_state); }catch(e){}
     render();
-  };
+  }
+  window.cbmOpen     =function(){ _state='open';   apply(); };
+  window.cbmMinimise =function(){ _state='min';    apply(); };
+  window.cbmClose    =function(){ _state='closed'; apply(); };
+  // The edge tab still toggles, so nothing that called cbmToggle before breaks.
+  window.cbmToggle   =function(){ _state=(_state==='open')?'closed':'open'; apply(); };
 
   // The boards write to 'timers' without signing in, so this only waits for the
   // database handle — not for the login the rest of the sync needs.
@@ -14484,7 +14519,14 @@ window.addEventListener('load',function(){
   }
   _startTimer=setInterval(start,3000); start();
   setInterval(render,1000);
-  try{ if(localStorage.getItem('rdns_cbm_open')==='1') cbmToggle(); }catch(e){}
+  // Come back the way she left it. Devices still holding the old open/closed
+  // flag are carried over so nobody's panel jumps on the day this ships.
+  try{
+    var saved=localStorage.getItem('rdns_cbm_state');
+    if(!saved) saved=(localStorage.getItem('rdns_cbm_open')==='1')?'open':'closed';
+    _state=(saved==='open'||saved==='min')?saved:'closed';
+  }catch(e){}
+  apply();
 })();
 </script>
 
