@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="crown-config.js"></script>
 <style>
   :root{
     --bg:#141019; --panel:#1E1826; --line:#3A3046; --gold:#D9BC7A; --gold-deep:#A8873F;
@@ -26,14 +27,12 @@
   body{
     margin:0; color:var(--ivory); font-family:'Jost',sans-serif;
     background:radial-gradient(1100px 600px at 50% -10%, #241B2F 0%, var(--bg) 60%) var(--bg);
-    display:flex; flex-direction:column;
-    padding:var(--overscan);
+    display:flex; flex-direction:column; padding:var(--overscan);
   }
   .hidden{display:none !important;}
   button{font-family:'Jost',sans-serif; cursor:pointer;}
 
-  /* ── header ───────────────────────────────────────────── */
-  header{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:10px;}
+  header{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding-bottom:10px;}
   .crest{color:var(--gold); letter-spacing:.4em; font-size:10px; text-transform:uppercase;}
   .area-title{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3.4vmin,38px); line-height:1; margin:0;}
   .head-left{display:flex; flex-direction:column; gap:4px;}
@@ -43,13 +42,13 @@
   .icon-btn{background:transparent; border:1px solid var(--line); color:var(--dim);
     border-radius:10px; padding:8px 12px; font-size:13px;}
   .icon-btn.on{border-color:var(--gold-deep); color:var(--gold);}
+  .icon-btn.start{border-color:var(--gold); color:var(--gold); font-weight:600;}
   .icon-btn:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
 
-  /* ── board ────────────────────────────────────────────── */
   main{flex:1; display:grid; gap:clamp(10px,1.6vmin,22px); min-height:0;
        grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);}
   @media(min-width:640px){ main{grid-template-columns:repeat(2,1fr);} }
-  @media(min-width:1000px){ main{grid-template-columns:repeat(3,1fr);} }
+  @media(min-width:1100px){ main{grid-template-columns:repeat(3,1fr);} }
 
   .tile{
     position:relative; display:flex; flex-direction:column; justify-content:space-between;
@@ -57,13 +56,14 @@
     background:var(--panel); border:2px solid var(--line); border-radius:18px;
     cursor:pointer; overflow:hidden; transition:border-color .2s, background .2s;
   }
-  /* A Fire Stick has no pointer — the D-pad moves this ring around the board */
   .tile:focus{outline:none;}
   .tile:focus-visible, .tile.dpad{outline:4px solid var(--gold); outline-offset:-2px;}
   .t-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
-  .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(19px,2.8vmin,32px); line-height:1;}
-  .t-op{font-size:clamp(13px,1.9vmin,22px); color:var(--gold); letter-spacing:.04em;}
-  .t-mid{display:flex; align-items:center; justify-content:center; gap:clamp(6px,1.4vmin,18px); flex:1; min-height:0;}
+  .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3.4vmin,42px); line-height:1;}
+  .t-job{font-size:clamp(12px,1.7vmin,20px); color:var(--gold); letter-spacing:.06em;
+    text-transform:uppercase;}
+  .t-mid{display:flex; align-items:center; justify-content:center; gap:clamp(6px,1.4vmin,18px);
+    flex:1; min-height:0;}
   .t-time{font-family:'Cormorant Garamond',serif; font-variant-numeric:tabular-nums;
     font-size:clamp(40px,10vmin,120px); line-height:.95;}
   .t-mark{font-size:clamp(34px,8vmin,96px); line-height:1;}
@@ -81,6 +81,10 @@
   .tile.crown .t-time{color:var(--gold); font-size:clamp(20px,3.2vmin,38px);}
   .tile.sad{background:var(--red-bg); border-color:var(--red-line);}
   .tile.sad .t-time{color:var(--red); font-size:clamp(20px,3.2vmin,38px);}
+  /* she is on the floor, but on the other kind of job — shown so nobody starts
+     a second one for her by mistake */
+  .tile.elsewhere{opacity:.62; border-style:dashed;}
+  .tile.elsewhere .t-time{color:var(--dim); font-size:clamp(26px,4.4vmin,52px);}
   @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 0 rgba(242,112,139,0);}
                    50%{box-shadow:inset 0 0 60px 0 rgba(242,112,139,.16);}}
   .t-flag{position:absolute; top:9px; right:12px; font-size:10px; letter-spacing:.12em;
@@ -88,11 +92,9 @@
   .bar{position:absolute; left:0; bottom:0; height:5px; width:0; background:currentColor; opacity:.6;}
   .tile.run .bar{color:var(--green);} .tile.warn .bar{color:var(--amber);} .tile.over .bar{color:var(--red);}
 
-  /* the rule of the house, kept in front of everyone all day */
   .reminder{text-align:center; padding-top:clamp(8px,1.4vmin,16px); color:var(--gold-deep);
     font-size:clamp(11px,1.6vmin,19px); letter-spacing:.14em; text-transform:uppercase;}
 
-  /* ── sheets ───────────────────────────────────────────── */
   .veil{position:fixed; inset:0; background:rgba(10,7,14,.78); backdrop-filter:blur(3px);
     display:flex; align-items:center; justify-content:center; padding:20px; z-index:50;}
   .sheet{width:100%; max-width:460px; background:var(--panel); border:1px solid var(--line);
@@ -112,7 +114,6 @@
     font-family:'Jost',sans-serif;}
   .err{color:var(--red); font-size:13px; text-align:center; margin-top:10px; min-height:18px;}
 
-  /* ── area picker / setup ──────────────────────────────── */
   .center-wrap{max-width:460px; margin:auto; text-align:center;}
   .center-wrap h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; margin:8px 0 4px;}
   .setup-warn{background:var(--panel); border:1px solid var(--red-line); border-radius:14px;
@@ -136,16 +137,14 @@ const firebaseConfig = {
   so the boards cannot sync between screens.
 </div>
 
-<!-- AREA PICKER (no ?area= in the URL) -->
 <div id="pickPage" class="center-wrap hidden">
   <div class="crest">Royal ◆ Diamond</div>
   <h1>Crown Board</h1>
-  <p class="sub" style="color:var(--dim);font-size:13px;">Which screen is this?</p>
-  <a class="btn gold" style="text-decoration:none;" href="?area=manicure">💅 Manicure<small>6 seats · M1–M6</small></a>
-  <a class="btn gold" style="text-decoration:none;" href="?area=pedicure">🦶 Pedicure<small>3 chairs · P1–P3</small></a>
+  <p style="color:var(--dim);font-size:13px;">Which screen is this?</p>
+  <a class="btn gold" style="text-decoration:none;" href="?area=manicure">💅 Manicure</a>
+  <a class="btn gold" style="text-decoration:none;" href="?area=pedicure">🦶 Pedicure</a>
 </div>
 
-<!-- BOARD -->
 <header id="boardHead" class="hidden">
   <div class="head-left">
     <div class="crest">Royal ◆ Diamond</div>
@@ -153,6 +152,7 @@ const firebaseConfig = {
   </div>
   <div class="head-spacer"></div>
   <div class="head-stat" id="headStat"></div>
+  <button class="icon-btn start" onclick="startSheet()">＋ Start</button>
   <button class="icon-btn" id="soundBtn" onclick="toggleSound()">🔔 Sound</button>
   <button class="icon-btn" onclick="toggleFull()">⛶ Full screen</button>
   <button class="icon-btn" id="otherAreaBtn" onclick="goOther()">Switch</button>
@@ -160,7 +160,6 @@ const firebaseConfig = {
 <main id="board" class="hidden"></main>
 <div id="reminder" class="reminder hidden">No press → no 👑 → no commission on that job</div>
 
-<!-- MODAL HOST -->
 <div id="veil" class="veil hidden" onclick="if(event.target===this) closeSheet()">
   <div class="sheet" id="sheet"></div>
 </div>
@@ -169,46 +168,36 @@ const firebaseConfig = {
 /* ============================================================================
    Royal Diamond — Crown Board
    ----------------------------------------------------------------------------
-   The operator starts her own station and it counts DOWN from her crown limit.
-   Green while there is time left, amber for the last fifteen minutes, red once
-   it runs out and keeps counting the overrun. She presses Done: finished with
-   time still on the clock is a crown, finished late is a sad face. Every
-   finished job is filed in Firebase so the other board, the reception laptop
-   and the later commission step all read the same thing.
+   The timer follows the TECHNICIAN, not the seat. Helen does a manicure, then a
+   pedicure, then moves to another chair — it is the same woman with the same
+   clock, so she has exactly one job running at a time and it counts DOWN from
+   her crown limit for that kind of work.
+
+   Green while there is time, amber for the last fifteen minutes with a chime,
+   red once it runs out and keeps counting the overrun. Finish in time and the
+   tile keeps a crown; finish late — or never press start at all — and it keeps
+   a sad face. Every finished job is filed for the commission step to read.
+
+   The roster and the limits live in crown-config.js. Add a technician there.
 
    Firebase layout, all under the 'timers' path the screens share:
-     timers/board/<area>/<station>   the tile every screen is looking at now
-     timers/sessions/<pushId>        one permanent record per finished job
+     timers/ops/<key>/name            who she is
+     timers/ops/<key>/current         the job running right now (one at a time)
+     timers/ops/<key>/last/<type>     her last finished manicure / pedicure
+     timers/sessions/<pushId>         one permanent record per finished job
    ========================================================================== */
 
-const AREAS = {
-  manicure: {
-    label:'Manicure', unit:'Seat', other:'pedicure',
-    stations:['M1','M2','M3','M4','M5','M6'],
-    askOperator:true,
-    // Helen works to the hour; the other two are given the longer hand.
-    limitFor: op => (op === 'Helen' ? 60 : 90)
-  },
-  pedicure: {
-    label:'Pedicure', unit:'Chair', other:'manicure',
-    stations:['P1','P2','P3'],
-    askOperator:false,
-    limitFor: () => 60
-  }
-};
-const OPERATORS = ['Helen','Lissa','Hannah'];
-const WARN_MS = 15*60000;    // amber, and the two-note chime, at fifteen minutes left
-const UNDO_MS = 2*60000;     // a mis-tapped start can be undone this long
-
+const C = window.CROWN;
 const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
 const areaKey = (qs.get('area')||'').toLowerCase();
-const AREA = AREAS[areaKey] || null;
+const AREA = C.types[areaKey] ? areaKey : null;
+const OTHER = AREA === 'manicure' ? 'pedicure' : 'manicure';
 
-let db = null, board = {}, srvOffset = 0, audioCtx = null, soundOn = true;
+let db = null, ops = {}, srvOffset = 0, audioCtx = null, soundOn = true;
 let ownerCloudHash = '';
-const phase = {};            // station -> last colour seen, so the chime fires on the crossing only
-const tiles = {};            // station -> cached DOM handles
+const phase = {};    // operator key -> colour last seen, so the chime fires on the crossing only
+const tiles = {};
 const now = () => Date.now() + srvOffset;
 
 /* ── Firebase ─────────────────────────────────────────────────────────────── */
@@ -216,12 +205,9 @@ const configured = firebaseConfig && firebaseConfig.databaseURL;
 if (configured) {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  // Clocks differ from screen to screen; the server's clock is the one they all
-  // agree on, so every countdown is measured against that.
+  // Clocks differ from screen to screen; the server's is the one they agree on.
   db.ref('.info/serverTimeOffset').on('value', s => { srvOffset = s.val() || 0; });
-  if (AREA) db.ref('timers/board/' + areaKey).on('value', s => { board = s.val() || {}; paint(); });
-  // The owner password lives in its own node (see index.html). A board that
-  // cannot read it simply sends the override to the reception laptop.
+  db.ref('timers/ops').on('value', s => { ops = s.val() || {}; paint(); });
   db.ref('rdns_owner_pin_v1').on('value',
     s => { const v = s.val(); try {
             const o = typeof v === 'string' ? JSON.parse(v) : v;
@@ -237,12 +223,12 @@ if (configured) {
 if (!AREA) {
   $('pickPage').classList.remove('hidden');
 } else {
-  document.title = 'Royal Diamond — ' + AREA.label + ' Board';
+  document.title = 'Royal Diamond — ' + C.types[AREA].label + ' Board';
   $('boardHead').classList.remove('hidden');
   $('board').classList.remove('hidden');
   $('reminder').classList.remove('hidden');
-  $('areaTitle').textContent = AREA.label;
-  $('otherAreaBtn').textContent = AREAS[AREA.other].label + ' →';
+  $('areaTitle').textContent = C.types[AREA].label;
+  $('otherAreaBtn').textContent = C.types[OTHER].label + ' →';
   buildBoard();
   requestWake();
   setInterval(paint, 500);
@@ -251,14 +237,15 @@ if (!AREA) {
 
 function buildBoard(){
   const host = $('board');
-  AREA.stations.forEach(st => {
+  host.innerHTML = '';
+  C.operators.forEach(o => {
     const el = document.createElement('div');
     el.className = 'tile free';
-    el.tabIndex = 0;                       // reachable from a TV remote
+    el.tabIndex = 0;
     el.setAttribute('role','button');
     el.innerHTML =
       `<div class="t-flag hidden"></div>
-       <div class="t-head"><span class="t-name">${st}</span><span class="t-op"></span></div>
+       <div class="t-head"><span class="t-name">${o.name}</span><span class="t-job"></span></div>
        <div class="t-mid">
          <span class="t-time hidden">0:00</span>
          <span class="t-mark hidden"></span>
@@ -266,11 +253,11 @@ function buildBoard(){
        </div>
        <div class="t-foot"></div>
        <div class="bar"></div>`;
-    el.onclick = () => tapTile(st);
-    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapTile(st); } };
+    el.onclick = () => tapTile(o.key);
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapTile(o.key); } };
     host.appendChild(el);
-    tiles[st] = {
-      el, op: el.querySelector('.t-op'), time: el.querySelector('.t-time'),
+    tiles[o.key] = {
+      el, job: el.querySelector('.t-job'), time: el.querySelector('.t-time'),
       mark: el.querySelector('.t-mark'), free: el.querySelector('.t-free'),
       foot: el.querySelector('.t-foot'), flag: el.querySelector('.t-flag'),
       bar: el.querySelector('.bar')
@@ -282,54 +269,72 @@ function buildBoard(){
 function paint(){
   if (!AREA) return;
   const t = now();
-  let running = 0, crowns = 0, late = 0;
+  let running = 0, late = 0, crowns = 0;
 
-  AREA.stations.forEach(st => {
-    const rec = board[st], ui = tiles[st];
+  C.operators.forEach(o => {
+    const rec = ops[o.key] || {}, ui = tiles[o.key];
+    const cur = rec.current, last = (rec.last || {})[AREA];
     ui.el.className = 'tile' + (ui.el.classList.contains('dpad') ? ' dpad' : '');
     ui.mark.classList.add('hidden');
     ui.flag.classList.add('hidden');
+    ui.time.classList.add('hidden');
+    ui.free.classList.add('hidden');
     ui.bar.style.width = '0';
-    ui.time.classList.toggle('hidden', !rec);
-    ui.free.classList.toggle('hidden', !!rec);
 
-    if (!rec) {
-      ui.el.classList.add('free');
-      ui.op.textContent = '';
-      ui.foot.textContent = 'Tap to start';
-      phase[st] = null;
+    // 1. she is working on THIS kind of job — the countdown this screen is for
+    if (cur && cur.type === AREA) {
+      running++;
+      const limitMs = (cur.limitMin || 60) * 60000;
+      const leftMs = cur.startAt + limitMs - t;
+      const state = leftMs <= 0 ? 'over' : (leftMs <= C.warnMs ? 'warn' : 'run');
+      if (state === 'over') late++;
+      ui.el.classList.add(state);
+      ui.job.textContent = C.types[AREA].icon + ' ' + C.types[AREA].label;
+      ui.time.classList.remove('hidden');
+      ui.time.textContent = leftMs <= 0 ? '+' + fmt(-leftMs) : fmt(leftMs);
+      ui.bar.style.width = Math.max(0, Math.min(100, leftMs / limitMs * 100)) + '%';
+      ui.foot.textContent = leftMs <= 0 ? 'Over the limit · tap to finish'
+                                        : cur.limitMin + ' min job · tap to finish';
+      // Amber and the chime arrive together, and only on the crossing — a board
+      // opened mid-job does not chime for something that already happened.
+      if (phase[o.key] === 'run' && state === 'warn') chimeWarn();
+      phase[o.key] = state;
       return;
     }
 
-    const limitMs = (rec.limitMin || 60) * 60000;
-    ui.op.textContent = rec.op || '';
-
-    if (rec.s === 'run') {
-      running++;
-      const left = rec.startAt + limitMs - t;          // the clock counts DOWN
-      const state = left <= 0 ? 'over' : (left <= WARN_MS ? 'warn' : 'run');
-      if (state === 'over') late++;
-      ui.el.classList.add(state);
-      ui.time.textContent = left <= 0 ? '+' + fmt(-left) : fmt(left);
-      ui.bar.style.width = Math.max(0, Math.min(100, left / limitMs * 100)) + '%';
-      ui.foot.textContent = left <= 0
-        ? 'Over the limit · press done'
-        : rec.limitMin + ' min job · press done when finished';
-      // Amber and the chime arrive together, and only on the crossing — a board
-      // opened mid-job does not chime for something that already happened.
-      if (phase[st] === 'run' && state === 'warn') chimeWarn();
-      phase[st] = state;
-    } else {
-      const good = !!rec.crown;
-      if (good) crowns++;
-      ui.el.classList.add(good ? 'crown' : 'sad');
-      ui.time.textContent = Math.round(rec.elapsed/60000) + ' / ' + rec.limitMin + ' min';
-      ui.mark.classList.remove('hidden');
-      ui.mark.textContent = good ? '👑' : '😢';
-      ui.foot.textContent = good ? 'Crown earned · tap for next' : 'Over the limit · tap for next';
-      if (rec.ovr) { ui.flag.classList.remove('hidden'); ui.flag.textContent = 'adjusted'; }
-      phase[st] = 'done';
+    // 2. she is busy on the other kind of job, over on the other screen
+    if (cur) {
+      const limitMs = (cur.limitMin || 60) * 60000;
+      const leftMs = cur.startAt + limitMs - t;
+      ui.el.classList.add('elsewhere');
+      ui.job.textContent = C.types[cur.type].icon + ' ' + C.types[cur.type].label;
+      ui.time.classList.remove('hidden');
+      ui.time.textContent = leftMs <= 0 ? '+' + fmt(-leftMs) : fmt(leftMs);
+      ui.foot.textContent = 'On a ' + C.types[cur.type].label.toLowerCase() + ' · tap to finish';
+      phase[o.key] = null;
+      return;
     }
+
+    // 3. free — but showing how her last job of this kind ended
+    if (last) {
+      if (last.crown) crowns++;
+      ui.el.classList.add(last.crown ? 'crown' : 'sad');
+      ui.job.textContent = C.types[AREA].icon + ' ' + C.types[AREA].label;
+      ui.time.classList.remove('hidden');
+      ui.time.textContent = last.noPress ? 'no press'
+        : Math.round(last.elapsed/60000) + ' / ' + last.limitMin + ' min';
+      ui.mark.classList.remove('hidden');
+      ui.mark.textContent = last.crown ? '👑' : '😢';
+      ui.foot.textContent = last.crown ? 'Crown earned · tap to start next'
+                                       : 'No crown · tap to start next';
+      if (last.ovr) { ui.flag.classList.remove('hidden'); ui.flag.textContent = 'adjusted'; }
+    } else {
+      ui.el.classList.add('free');
+      ui.job.textContent = '';
+      ui.free.classList.remove('hidden');
+      ui.foot.textContent = 'Tap to start';
+    }
+    phase[o.key] = null;
   });
 
   $('headStat').innerHTML = `<b>${running}</b> running · <b>${late}</b> over · <b>${crowns}</b> 👑`;
@@ -345,134 +350,192 @@ function today(ts){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
-/* ── tapping a tile ───────────────────────────────────────────────────────── */
-function tapTile(st){
+/* ── tapping ──────────────────────────────────────────────────────────────── */
+function tapTile(key){
   unlockAudio();
-  const rec = board[st];
-  if (!rec)            return askStart(st);
-  if (rec.s === 'run') return runningSheet(st, rec);
-  return finishedSheet(st, rec);
+  const rec = ops[key] || {};
+  if (rec.current) return runningSheet(key, rec.current);
+  // a finished tile opens the verdict — start the next, or put the crown right
+  if ((rec.last || {})[AREA]) return tapFinished(key, AREA);
+  return whichType(key);
 }
 
-// Manicure asks who is starting, because the crown limit is hers. Pedicure just
-// goes — the chair is the same hour for everybody.
-function askStart(st){
-  if (!AREA.askOperator) return startJob(st, '');
+// The header's ＋ Start: pick the woman first, then the kind of job.
+function startSheet(){
+  unlockAudio();
+  const free = C.operators.filter(o => !(ops[o.key] || {}).current);
+  const busy = C.operators.filter(o =>  (ops[o.key] || {}).current);
   openSheet(`
-    <h2>${AREA.unit} ${st}</h2>
+    <h2>Start a job</h2>
     <p class="sub">Who is starting?</p>
-    ${OPERATORS.map(o => `<button class="btn gold" onclick="startJob('${st}','${o}')">${o}
-        <small>${AREA.limitFor(o)} minutes on the clock</small></button>`).join('')}
+    ${free.map(o => `<button class="btn gold" onclick="whichType('${o.key}')">${o.name}</button>`).join('')}
+    ${free.length ? '' : '<p class="sub">Everyone has a job running.</p>'}
+    ${busy.map(o => {
+      const cur = ops[o.key].current;
+      return `<button class="btn" onclick="runningSheet('${o.key}', null)">${o.name}
+        <small>Already on a ${C.types[cur.type].label.toLowerCase()} — tap to finish it</small></button>`;
+    }).join('')}
     <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
 
-function runningSheet(st, rec){
-  const left = rec.startAt + rec.limitMin*60000 - now();
-  const verdict = left > 0
-    ? `<small>Finishing now earns the crown 👑 (${fmt(left)} still on the clock)</small>`
-    : `<small>This one is ${fmt(-left)} over — finishing now is a 😢</small>`;
+// Manicure or pedicure — this screen's kind first, because that is usually it.
+function whichType(key){
+  const o = C.find(key);
+  if (!o) return closeSheet();
+  const mine = AREA || 'manicure', other = AREA ? OTHER : 'pedicure';
   openSheet(`
-    <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
-    <p class="sub">${left > 0 ? fmt(left) + ' left' : fmt(-left) + ' over'} of ${rec.limitMin} min</p>
-    <button class="btn primary" onclick="finishJob('${st}')">✓ Done ${verdict}</button>
-    ${now() - rec.startAt < UNDO_MS
-      ? `<button class="btn quiet" onclick="undoStart('${st}')">Started by mistake — undo</button>`
-      : `<button class="btn quiet" onclick="ownerClear('${st}')">Started by mistake — needs reception</button>`}
+    <h2>${o.name}</h2>
+    <p class="sub">What is she starting?</p>
+    <button class="btn primary" onclick="startJob('${o.key}','${mine}')">
+      ${C.types[mine].icon} ${C.types[mine].label} — ${o[mine]} min</button>
+    <button class="btn gold" onclick="startJob('${o.key}','${other}')">
+      ${C.types[other].icon} ${C.types[other].label} — ${o[other]} min
+      <small>Shows on the ${C.types[other].label.toLowerCase()} screen</small></button>
+    <button class="btn danger" onclick="noPressSheet('${o.key}')">
+      😢 She finished one without pressing start<small>Records the job with no crown</small></button>
+    <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
+}
+
+function runningSheet(key, cur){
+  const o = C.find(key);
+  cur = cur || (ops[key] || {}).current;
+  if (!o || !cur) return closeSheet();
+  const leftMs = cur.startAt + cur.limitMin*60000 - now();
+  openSheet(`
+    <h2>${o.name}</h2>
+    <p class="sub">${C.types[cur.type].icon} ${C.types[cur.type].label} ·
+      ${leftMs > 0 ? fmt(leftMs) + ' left' : fmt(-leftMs) + ' over'} of ${cur.limitMin} min</p>
+    <button class="btn primary" onclick="finishJob('${o.key}')">✓ Finish
+      ${leftMs > 0 ? `<small>In time — this one earns the crown 👑</small>`
+                   : `<small>Over the limit — this one is a 😢</small>`}</button>
+    ${now() - cur.startAt < C.undoMs
+      ? `<button class="btn quiet" onclick="cancelJob('${o.key}')">Started by mistake — undo</button>`
+      : `<button class="btn quiet" onclick="ownerCancel('${o.key}')">Started by mistake — needs reception</button>`}
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
 }
 
-function finishedSheet(st, rec){
+// A job done with no press at all: it still happened, so it is still recorded —
+// as the sad face the reminder line promises.
+function noPressSheet(key){
+  const o = C.find(key);
   openSheet(`
-    <h2>${AREA.unit} ${st}${rec.op ? ' · ' + rec.op : ''}</h2>
-    <p class="sub">${Math.round(rec.elapsed/60000)} min of ${rec.limitMin} · ${rec.crown ? 'crown earned 👑' : 'over the limit 😢'}</p>
-    <button class="btn primary" onclick="tapStartNext('${st}')">Start the next job here</button>
-    ${rec.crown
-      ? `<button class="btn danger" onclick="override('${st}',false)">😢 Take the crown back<small>Needs the owner password</small></button>`
-      : `<button class="btn gold" onclick="override('${st}',true)">👑 Give the crown anyway<small>Needs the owner password</small></button>`}
-    <button class="btn danger" onclick="ownerClear('${st}')">🗑 Clear this tile<small>Needs the owner password</small></button>
-    <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+    <h2>${o.name}</h2>
+    <p class="sub">Which job was finished without pressing start?</p>
+    ${Object.keys(C.types).map(ty => `<button class="btn danger" onclick="noPress('${o.key}','${ty}')">
+      ${C.types[ty].icon} ${C.types[ty].label}<small>Filed with no crown</small></button>`).join('')}
+    <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
-function tapStartNext(st){ closeSheet(); askStart(st); }
 
-/* ── the one way in and out of a station ──────────────────────────────────────
-   Everything that starts or ends a job goes through these three functions, and
-   they are published on window.CrownBoard at the bottom of this file. When the
-   physical per-operator buttons are wired in, they call these — no second copy
-   of the rules, no second way for a job to reach Firebase. ------------------ */
-function startJob(st, op){
+/* ── the one way in and out of a job ──────────────────────────────────────────
+   Every start and finish goes through these, and they are published on
+   window.CrownBoard at the bottom of this file. The Wi-Fi buttons will call the
+   same functions — double press starts a manicure, triple press a pedicure and
+   a long press finishes — so there is never a second copy of the rules. ---- */
+function startJob(who, type){
   closeSheet();
-  if (!db || !AREA.stations.includes(st)) return;
-  phase[st] = null;
-  db.ref('timers/board/' + areaKey + '/' + st).set({
-    s:'run', op: op || '', startAt: now(), limitMin: AREA.limitFor(op)
+  const o = C.find(who);
+  if (!db || !o || !C.types[type]) return;
+  // One job per technician. Starting again while she is running would lose the
+  // first one, so the second press is turned into a question instead.
+  if ((ops[o.key] || {}).current) return runningSheet(o.key, null);
+  phase[o.key] = null;
+  db.ref('timers/ops/' + o.key).update({
+    name: o.name,
+    current: { type, startAt: now(), limitMin: o[type] || 60 }
   }).catch(dbErr);
 }
 
-// Judge the job against the limit, show the verdict on the tile, and file the
-// permanent record the commission step will read.
-function finishJob(st){
+function finishJob(who){
   closeSheet();
-  const rec = board[st];
-  if (!db || !rec || rec.s !== 'run') return;
-  const endAt = now(), elapsed = Math.max(0, endAt - rec.startAt);
-  const crown = elapsed < rec.limitMin * 60000;      // finished with time left
+  const o = C.find(who);
+  const cur = o && (ops[o.key] || {}).current;
+  if (!db || !cur) return;
+  const endAt = now(), elapsed = Math.max(0, endAt - cur.startAt);
+  const crown = elapsed < cur.limitMin * 60000;      // finished with time left
   const id = db.ref('timers/sessions').push().key;
   db.ref('timers').update({
-    ['board/' + areaKey + '/' + st]: {
-      s:'done', op: rec.op || '', startAt: rec.startAt, endAt, elapsed,
-      limitMin: rec.limitMin, crown, sessionId: id
+    ['ops/' + o.key + '/current']: null,
+    ['ops/' + o.key + '/last/' + cur.type]: {
+      type: cur.type, startAt: cur.startAt, endAt, elapsed,
+      limitMin: cur.limitMin, crown, sessionId: id
     },
     ['sessions/' + id]: {
-      id, area: areaKey, station: st, operator: rec.op || '',
-      startAt: rec.startAt, endAt, elapsedMs: elapsed,
-      elapsedMin: Math.round(elapsed/60000), limitMin: rec.limitMin,
-      crown, day: today(endAt), v: 1
+      id, operator: o.name, operatorKey: o.key, type: cur.type, area: cur.type,
+      startAt: cur.startAt, endAt, elapsedMs: elapsed,
+      elapsedMin: Math.round(elapsed/60000), limitMin: cur.limitMin,
+      crown, day: today(endAt), v: 2
     }
   }).catch(dbErr);
-  phase[st] = 'done';
+  phase[o.key] = null;
   if (crown) fanfare(); else sadTone();
 }
 
-function undoStart(st){
+function cancelJob(who){
   closeSheet();
-  const rec = board[st];
-  if (!db || !rec || rec.s !== 'run') return;
-  if (now() - rec.startAt >= UNDO_MS) return ownerClear(st);
-  db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
+  const o = C.find(who);
+  const cur = o && (ops[o.key] || {}).current;
+  if (!db || !cur) return;
+  if (now() - cur.startAt >= C.undoMs) return ownerCancel(o.key);
+  db.ref('timers/ops/' + o.key + '/current').remove().catch(dbErr);
+}
+
+// Never started: no crown, but the job is still on the books.
+function noPress(who, type){
+  closeSheet();
+  const o = C.find(who);
+  if (!db || !o || !C.types[type]) return;
+  const at = now();
+  const id = db.ref('timers/sessions').push().key;
+  db.ref('timers').update({
+    ['ops/' + o.key + '/name']: o.name,
+    ['ops/' + o.key + '/last/' + type]: {
+      type, startAt: at, endAt: at, elapsed: 0,
+      limitMin: o[type] || 60, crown:false, noPress:true, sessionId: id
+    },
+    ['sessions/' + id]: {
+      id, operator: o.name, operatorKey: o.key, type, area: type,
+      startAt: at, endAt: at, elapsedMs: 0, elapsedMin: 0,
+      limitMin: o[type] || 60, crown:false, noPress:true, day: today(at), v: 2
+    }
+  }).catch(dbErr);
+  sadTone();
 }
 
 /* ── reception / owner override ───────────────────────────────────────────── */
-function override(st, giveCrown){
-  const rec = board[st];
-  if (!rec || rec.s !== 'done') return closeSheet();
+function override(key, type, giveCrown){
+  const last = ((ops[key] || {}).last || {})[type];
+  if (!last) return closeSheet();
   askOwner(() => {
-    const upd = { ['board/' + areaKey + '/' + st + '/crown']: giveCrown,
-                  ['board/' + areaKey + '/' + st + '/ovr']: true };
-    if (rec.sessionId) {
-      upd['sessions/' + rec.sessionId + '/crown'] = giveCrown;
-      upd['sessions/' + rec.sessionId + '/overridden'] = true;
-      upd['sessions/' + rec.sessionId + '/overriddenAt'] = now();
+    const upd = { ['ops/' + key + '/last/' + type + '/crown']: giveCrown,
+                  ['ops/' + key + '/last/' + type + '/ovr']: true };
+    if (last.sessionId) {
+      upd['sessions/' + last.sessionId + '/crown'] = giveCrown;
+      upd['sessions/' + last.sessionId + '/overridden'] = true;
+      upd['sessions/' + last.sessionId + '/overriddenAt'] = now();
     }
     db.ref('timers').update(upd).catch(dbErr);
     closeSheet();
     if (giveCrown) fanfare();
   });
 }
-
-// Clearing wipes the tile off the wall only — the session it already filed
-// stays put, because that is what the commission will be paid from.
-function ownerClear(st){
+// Clearing wipes the tile only — the session it filed stays, because that is
+// what the commission will be paid from.
+function clearTile(key, type){
   askOwner(() => {
-    db.ref('timers/board/' + areaKey + '/' + st).remove().catch(dbErr);
+    db.ref('timers/ops/' + key + '/last/' + type).remove().catch(dbErr);
+    closeSheet();
+  });
+}
+function ownerCancel(key){
+  askOwner(() => {
+    db.ref('timers/ops/' + key + '/current').remove().catch(dbErr);
     closeSheet();
   });
 }
 
 /* ── owner password ───────────────────────────────────────────────────────── */
 // The same check the rest of the site uses: nothing but SHA-256 hashes, no
-// password in this file. rdns_pin_hash is this device's own PIN,
-// rdns_owner_cloud_hash is the boss's master mirrored to every device, and the
-// recovery code still works as a way in.
+// password in this file.
 function ownerHashes(){
   const ls = k => { try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } };
   return [ls('rdns_pin_hash'), ls('rdns_owner_cloud_hash'), ownerCloudHash, ls('rdns_recovery_hash')]
@@ -562,12 +625,30 @@ function dbErr(err){
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
 }
 
+// A finished tile is where the owner puts a verdict right.
+function tapFinished(key, type){
+  const last = ((ops[key] || {}).last || {})[type];
+  const o = C.find(key);
+  if (!last || !o) return;
+  openSheet(`
+    <h2>${o.name}</h2>
+    <p class="sub">${C.types[type].label} · ${last.noPress ? 'never started' :
+      Math.round(last.elapsed/60000) + ' min of ' + last.limitMin} ·
+      ${last.crown ? 'crown earned 👑' : 'no crown 😢'}</p>
+    <button class="btn primary" onclick="whichType('${key}')">Start her next job</button>
+    ${last.crown
+      ? `<button class="btn danger" onclick="override('${key}','${type}',false)">😢 Take the crown back<small>Needs the owner password</small></button>`
+      : `<button class="btn gold" onclick="override('${key}','${type}',true)">👑 Give the crown anyway<small>Needs the owner password</small></button>`}
+    <button class="btn danger" onclick="clearTile('${key}','${type}')">🗑 Clear this tile<small>Needs the owner password</small></button>
+    <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+}
+
 /* ── TV remote ────────────────────────────────────────────────────────────────
    A Fire Stick has no pointer: the D-pad sends arrow keys and OK sends Enter.
    Arrows walk the tiles (or the buttons in an open sheet), Back closes. ----- */
 function dpadTargets(){
   if (!$('veil').classList.contains('hidden')) return [...$('sheet').querySelectorAll('input, button')];
-  return AREA ? AREA.stations.map(st => tiles[st].el) : [];
+  return AREA ? C.operators.map(o => tiles[o.key].el) : [];
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack') {
@@ -578,7 +659,7 @@ document.addEventListener('keydown', e => {
   const list = dpadTargets();
   if (!list.length) return;
   const inSheet = !$('veil').classList.contains('hidden');
-  const cols = inSheet ? 1 : (window.innerWidth >= 1000 ? 3 : window.innerWidth >= 640 ? 2 : 1);
+  const cols = inSheet ? 1 : (window.innerWidth >= 1100 ? 3 : window.innerWidth >= 640 ? 2 : 1);
   let i = list.indexOf(document.activeElement);
   if (i === -1) i = 0;
   else if (e.key === 'ArrowRight') i += inSheet ? 0 : 1;
@@ -593,7 +674,7 @@ document.addEventListener('keydown', e => {
 });
 
 /* ── screen, sound ────────────────────────────────────────────────────────── */
-function goOther(){ location.search = '?area=' + AREA.other; }
+function goOther(){ location.search = '?area=' + OTHER; }
 function toggleFull(){
   if (document.fullscreenElement) document.exitFullscreen();
   else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
@@ -632,9 +713,9 @@ function fanfare(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
   [523.3,659.3,784,1046.5,1318.5,1568].forEach((f,i) => tone(f, t0 + i*.08, .45, .2, 'triangle'));
-  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .07));   // glitter on top
+  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .07));
 }
-// Over the limit: a soft sigh downwards.
+// Over the limit, or never started: a soft sigh downwards.
 function sadTone(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
@@ -650,23 +731,33 @@ document.addEventListener('visibilitychange', () => {
 });
 if ($('soundBtn')) $('soundBtn').classList.add('on');
 
-/* ── the entry point the physical buttons will use ────────────────────────────
-   One switch per operator, wired to a little box that opens this page, will
-   call these directly:
-       CrownBoard.start('M1','Helen')   begin a job (limit comes from the name)
-       CrownBoard.done('M1')            press Done — crown or sad, and file it
-       CrownBoard.cancel('M1')          undo a start made by mistake
-       CrownBoard.state('M1')           read what the tile is showing now
+/* ── the entry point the Wi-Fi buttons will use ───────────────────────────────
+   One button per technician, on the wall by her station. The connector that
+   receives the press calls straight into these:
+
+       CrownBoard.start('Helen','manicure')   double press
+       CrownBoard.start('Helen','pedicure')   triple press
+       CrownBoard.finish('Helen')             long press
+
+   or hand the gesture over and let the board map it:
+
+       CrownBoard.onButton('Helen','double' | 'triple' | 'long')
+
+   Names are matched case-insensitively against crown-config.js, so the button
+   can be configured with 'Helen' or 'helen'.
    ------------------------------------------------------------------------- */
 window.CrownBoard = {
-  get area(){ return areaKey; },
-  get stations(){ return AREA ? AREA.stations.slice() : []; },
-  operators: OPERATORS.slice(),
-  limitFor: op => AREA ? AREA.limitFor(op) : null,
+  operators: () => C.operators.map(o => o.name),
   start: startJob,
-  done: finishJob,
-  cancel: undoStart,
-  state: st => board[st] || null
+  finish: finishJob,
+  cancel: cancelJob,
+  noPress: noPress,
+  state: who => { const o = C.find(who); return o ? (ops[o.key] || null) : null; },
+  onButton: (who, gesture) => {
+    if (gesture === 'double') return startJob(who, 'manicure');
+    if (gesture === 'triple') return startJob(who, 'pedicure');
+    if (gesture === 'long')   return finishJob(who);
+  }
 };
 </script>
 </body>
