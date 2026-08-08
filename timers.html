@@ -870,6 +870,54 @@ function sadTone(){
   [415.3, 349.2, 277.2].forEach((f,i) => tone(f, t0 + i*.26, .8, 1.0, 'triangle'));
 }
 
+/* ── keeping the board on the current code ───────────────────────────────────
+   These screens are televisions. Nobody reloads them: a board switched on in
+   January is still running January's code in June, because nothing ever asks
+   the server for the page again. GitHub Pages serves this file with a ten
+   minute cache on top of that, so even a device that is restarted can come back
+   up on the old copy.
+
+   So the board asks for itself. Every few minutes it re-fetches this page and
+   the roster, telling the browser not to use its cache, and compares what the
+   server says the files are now against what they were when the board started.
+   A different answer means something has been published, and the board reloads
+   onto it. Reloading costs nothing: every piece of state a board shows lives in
+   Firebase, so it comes straight back to the same countdowns.
+
+   There is no service worker and never has been — nothing else is holding an
+   offline copy of this app. This is the whole of the caching story.
+   ------------------------------------------------------------------------- */
+const UPDATE_EVERY_MS = 5*60000;
+const WATCHED = ['', 'crown-config.js'];   // '' is this page; the other is the roster
+let bootTag = null;
+
+async function serverTag(path){
+  // The query is only there to defeat anything caching between here and Pages;
+  // it does not change which file is served, so the tag still describes the file.
+  const r = await fetch((path || location.pathname) + '?_=' + Date.now(), { cache:'no-store' });
+  return r.ok ? (r.headers.get('etag') || r.headers.get('last-modified') || '') : '';
+}
+async function checkForNewCode(){
+  // Never mid-sentence: an open sheet may be somebody part way through typing
+  // the owner password, and a reload would throw that away.
+  if (!$('veil').classList.contains('hidden')) return;
+  try {
+    const tags = (await Promise.all(WATCHED.map(serverTag))).join('|');
+    if (!tags.replace(/\|/g, '')) return;     // nothing answered — try again later
+    if (bootTag === null) { bootTag = tags; return; }
+    if (tags !== bootTag) location.reload();
+  } catch(e){}
+}
+if (AREA) {
+  checkForNewCode();
+  setInterval(checkForNewCode, UPDATE_EVERY_MS);
+  // A board that has been asleep asks the moment it wakes, rather than waiting
+  // out the rest of its interval on stale code.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForNewCode();
+  });
+}
+
 let wakeLock = null;
 async function requestWake(){
   try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
