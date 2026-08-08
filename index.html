@@ -12459,10 +12459,15 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 // Clean up any previously-installed service worker + caches.
-// (A cache-first service worker used to run here, which caused people to
-// keep seeing an outdated version of the app even after a hard refresh.
-// The app relies on live Firebase data anyway, so offline caching isn't
-// worth that risk — this just makes sure old installs get cleared out.)
+// (A cache-first service worker used to be registered here. It never actually
+// installed on anyone: it was handed to register() as a blob: URL, which every
+// browser refuses — "The URL protocol of the script is not supported" — and the
+// error went into an empty .catch(). So no device has ever held an offline copy
+// of this app, and a service worker has never been the reason a screen was
+// showing old code. This stays as insurance, nothing more: if one is ever
+// registered by accident, every device that opens any page tears it out.
+// Deliberately not narrowed to index.html — see the same block in timers.html,
+// because the boards are the devices that go months without being reloaded.)
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.getRegistrations().then(regs=>{
@@ -12496,8 +12501,13 @@ if('serviceWorker' in navigator){
   const RETRY_MS = 45*1000;      // once an update is waiting, how often to look for a quiet moment
   const IDLE_MS  = 90*1000;      // "nobody is using it" = this long since the last touch
   const MIN_GAP  = 5*60*1000;    // never reload twice in a row inside this window
-  const FILE     = location.pathname.replace(/[^/]*$/,'') + 'index.html';
-  let current=null, pending=false, lastCheck=0, lastTouch=Date.now(), snoozeUntil=0, waiting=false;
+  const PATIENCE = 20*60*1000;   // how long an update may sit waiting for a quiet moment
+  const BASE     = location.pathname.replace(/[^/]*$/,'');
+  const FILE     = BASE + 'index.html';
+  // Everything the page asks for on its way back up. A reload is only as fresh as
+  // the least fresh file in this list.
+  const FILES    = ['index.html', 'crown-config.js'];
+  let current=null, pending=false, pendingSince=0, lastCheck=0, lastTouch=Date.now(), snoozeUntil=0, waiting=false;
 
   ['pointerdown','keydown','touchstart','wheel'].forEach(function(ev){
     document.addEventListener(ev, function(){ lastTouch=Date.now(); }, {passive:true, capture:true});
@@ -12524,18 +12534,19 @@ if('serviceWorker' in navigator){
       if(current===null){ current=m; return; }
       if(m===current) return;
       pending=true;
+      pendingSince=Date.now();
       console.log('[update] newer version deployed:', m, '(was', current+')');
       attempt();
     });
   }
 
-  // Is this a safe instant to pull the rug out from under the user?
-  function idle(){
+  // Reloading through any of these loses somebody's work, so they are absolute —
+  // no amount of waiting relaxes them.
+  function safe(){
     try{
       if(document.querySelector('.overlay.open')) return false;        // a form is open — mid-booking
       const el=document.activeElement;
       if(el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||'') || el.isContentEditable)) return false;
-      if(Date.now()-lastTouch < IDLE_MS) return false;                 // still in someone's hands
       if(typeof _isSyncing==='object' && _isSyncing){                  // data still in flight
         for(const k in _isSyncing) if(_isSyncing[k]) return false;
       }
@@ -12544,20 +12555,47 @@ if('serviceWorker' in navigator){
     }catch(e){ return false; }
   }
 
+  // Nobody's hands on it. A courtesy, not a safety rule.
+  function quiet(){ return Date.now()-lastTouch >= IDLE_MS; }
+
+  // A plain location.reload() revalidates this document but is allowed to keep
+  // cached subresources, and Pages puts a ten minute cache on all of them — so a
+  // reload can come back up on new page code paired with the old roster. Asking
+  // for each file with cache:'reload' bypasses the cache *and replaces what is in
+  // it*, so the reload that follows finds a fresh copy of everything.
+  function warmFresh(){
+    try{
+      return Promise.all(FILES.map(function(f){
+        return fetch(BASE+f, {cache:'reload'}).catch(function(){});
+      }));
+    }catch(e){ return Promise.resolve(); }
+  }
+
   // Everything on this device goes up before anything comes down.
-  function go(){
+  // force: a person asked for this. The gap guard is there to stop the automatic
+  // check reloading in a loop; it has no business refusing a deliberate tap.
+  function go(force){
     let last=0;
     try{ last=Number(localStorage.getItem('rdns_last_auto_update'))||0; }catch(e){}
-    if(Date.now()-last < MIN_GAP) return false;   // belt and braces against a reload loop
+    if(!force && Date.now()-last < MIN_GAP) return false;   // belt and braces against a reload loop
     try{ if(typeof saveAll==='function') saveAll(); }catch(e){}
     try{ localStorage.setItem('rdns_last_auto_update', String(Date.now())); }catch(e){}
-    setTimeout(function(){ try{ location.reload(); }catch(e){} }, 2000);
+    setTimeout(function(){
+      warmFresh().then(function(){ try{ location.reload(); }catch(e){} });
+    }, 2000);
     return true;
   }
 
   function attempt(){
     if(!pending || waiting) return;
-    if(idle() && go()) return;      // reloading in a moment
+    // The quiet spell is a courtesy, and on reception's tablet — touched every few
+    // seconds from open to close — it can simply never arrive. That is how a device
+    // ends up running yesterday's code all day with nothing but a pill in the
+    // corner to show for it, which is exactly what happened with the countdown fix.
+    // So the courtesy expires: once an update has waited PATIENCE, any moment that
+    // cannot lose work will do.
+    const overdue = Date.now()-pendingSince > PATIENCE;
+    if(safe() && (quiet() || overdue) && go()) return;   // reloading in a moment
     pill();                         // wasn't the right instant — offer it and keep watching
     waiting=true;
     setTimeout(function(){ waiting=false; attempt(); }, RETRY_MS);
@@ -12584,7 +12622,7 @@ if('serviceWorker' in navigator){
         d.remove();
         return;
       }
-      if(go()) d.remove();
+      if(go(true)) d.remove();
     });
     document.body.appendChild(d);
   }
@@ -12596,6 +12634,17 @@ if('serviceWorker' in navigator){
     window.addEventListener('online', check);
   });
   window.rdUpdateCheck=check;   // for a manual poke from the console
+  // The last resort for a device that is somehow still behind: tear out anything
+  // holding a copy, refill the cache from the server, and come back up on it.
+  window.rdForceFresh=function(){
+    try{
+      if('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); });
+      if('caches' in window) caches.keys().then(function(ns){ ns.forEach(function(n){ caches.delete(n); }); });
+    }catch(e){}
+    try{ if(typeof saveAll==='function') saveAll(); }catch(e){}
+    setTimeout(function(){ warmFresh().then(function(){ location.reload(); }); }, 1500);
+    return 'refreshing…';
+  };
 })();
 
 // Show install prompt on Android Chrome

@@ -897,17 +897,45 @@ function sadTone(){
    Firebase, so it comes straight back to the same countdowns.
 
    There is no service worker and never has been — nothing else is holding an
-   offline copy of this app. This is the whole of the caching story.
+   offline copy of this app. That was checked properly rather than assumed: the
+   old cache-first worker index.html used to register was handed to register() as
+   a blob: URL, which every browser refuses outright, and the rejection went into
+   an empty .catch(). It never installed on a single device. The cleanup below is
+   only insurance in case one ever appears by accident.
    ------------------------------------------------------------------------- */
 const UPDATE_EVERY_MS = 5*60000;
 const WATCHED = ['', 'crown-config.js'];   // '' is this page; the other is the roster
 let bootTag = null;
+
+// Insurance, and deliberately not left to index.html: a board can run for months
+// without anyone opening the main app on it, so cleanup that only lives there
+// would never run on the devices that most need it.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(rs => rs.forEach(r => r.unregister())).catch(()=>{});
+}
+if ('caches' in window) {
+  caches.keys().then(ns => ns.forEach(n => caches.delete(n))).catch(()=>{});
+}
 
 async function serverTag(path){
   // The query is only there to defeat anything caching between here and Pages;
   // it does not change which file is served, so the tag still describes the file.
   const r = await fetch((path || location.pathname) + '?_=' + Date.now(), { cache:'no-store' });
   return r.ok ? (r.headers.get('etag') || r.headers.get('last-modified') || '') : '';
+}
+
+// A plain reload revalidates this document but may keep cached subresources, and
+// Pages caches those for ten minutes — so the board could come back up on new
+// code paired with the old roster. cache:'reload' bypasses the cache and replaces
+// what is in it, so the reload finds every file fresh.
+async function reloadOnFreshCopies(){
+  try {
+    await Promise.all(['', 'crown-config.js'].map(f =>
+      fetch(f || location.pathname, { cache:'reload' }).catch(()=>{})
+    ));
+  } catch(e){}
+  location.reload();
 }
 async function checkForNewCode(){
   // Never mid-sentence: an open sheet may be somebody part way through typing
@@ -917,18 +945,20 @@ async function checkForNewCode(){
     const tags = (await Promise.all(WATCHED.map(serverTag))).join('|');
     if (!tags.replace(/\|/g, '')) return;     // nothing answered — try again later
     if (bootTag === null) { bootTag = tags; return; }
-    if (tags !== bootTag) location.reload();
+    if (tags !== bootTag) reloadOnFreshCopies();
   } catch(e){}
 }
-if (AREA) {
-  checkForNewCode();
-  setInterval(checkForNewCode, UPDATE_EVERY_MS);
-  // A board that has been asleep asks the moment it wakes, rather than waiting
-  // out the rest of its interval on stale code.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') checkForNewCode();
-  });
-}
+// Every copy of this page checks, whether or not it is showing a board. This used
+// to be gated on AREA, which left the picker out — and a device parked on the
+// picker would sit on old code indefinitely, then hand that old code straight to
+// the board the moment somebody chose an area.
+checkForNewCode();
+setInterval(checkForNewCode, UPDATE_EVERY_MS);
+// A board that has been asleep asks the moment it wakes, rather than waiting out
+// the rest of its interval on stale code.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForNewCode();
+});
 
 let wakeLock = null;
 async function requestWake(){
