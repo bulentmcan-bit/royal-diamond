@@ -15,10 +15,16 @@
   :root{
     --bg:#141019; --panel:#1E1826; --line:#3A3046; --gold:#D9BC7A; --gold-deep:#A8873F;
     --ivory:#F5EFE4; --dim:#9B8FA8;
-    --green:#5FCB8C; --green-bg:#16301F; --green-line:#3E8F60;
-    --amber:#F0C14B; --amber-bg:#3A2C0E; --amber-line:#A9861F;
-    --red:#F2708B; --red-bg:#3A1119; --red-line:#A33A50;
-    --crown-bg:#3A2C14; --crown-line:#D2AC58;
+    /* The boards hang in a room with the sun coming in, so a state is a lit
+       tile rather than a coloured edge: saturated hue, a wash of it across the
+       whole face, an outer glow, and the number lit from inside. Each colour is
+       kept as r,g,b so the washes and glows can be mixed at any opacity. */
+    --green:#2FE47C; --green-rgb:47,228,124; --green-lit:#8CFFC0;
+    --amber:#FFC02E; --amber-rgb:255,192,46; --amber-lit:#FFE08A;
+    --red:#FF5B4F;   --red-rgb:255,91,79;    --red-lit:#FFB3A9;
+    --crown:#E8C97A; --crown-rgb:226,190,110; --crown-lit:#FFE49E;
+    /* the sheets are read at arm's length, so they keep a quiet edge */
+    --red-line:#A34038;
     /* TVs cut the edges off the picture, so nothing important goes in the margin */
     --overscan:clamp(12px, 2.6vmin, 34px);
   }
@@ -71,25 +77,67 @@
   .t-foot{font-size:clamp(10px,1.35vmin,15px); color:var(--dim); letter-spacing:.1em;
     text-transform:uppercase; text-align:center;}
 
-  .tile.run{background:var(--green-bg); border-color:var(--green-line);}
-  .tile.run .t-time{color:var(--green);}
-  .tile.warn{background:var(--amber-bg); border-color:var(--amber-line);}
-  .tile.warn .t-time{color:var(--amber);}
-  .tile.over{background:var(--red-bg); border-color:var(--red-line); animation:pulse 2.2s ease-in-out infinite;}
-  .tile.over .t-time{color:var(--red);}
-  .tile.crown{background:var(--crown-bg); border-color:var(--crown-line);}
-  .tile.crown .t-time{color:var(--gold); font-size:clamp(20px,3.2vmin,38px);}
-  .tile.sad{background:var(--red-bg); border-color:var(--red-line);}
-  .tile.sad .t-time{color:var(--red); font-size:clamp(20px,3.2vmin,38px);}
+  .tile.run{
+    background:linear-gradient(158deg, rgba(var(--green-rgb),.28), rgba(var(--green-rgb),.22) 58%,
+              rgba(var(--green-rgb),.18)), var(--panel);
+    border-color:var(--green);
+    box-shadow:0 0 34px rgba(var(--green-rgb),.42), 0 0 96px rgba(var(--green-rgb),.20);
+  }
+  .tile.run .t-time{color:var(--green-lit);
+    text-shadow:0 0 12px rgba(var(--green-rgb),.95), 0 0 40px rgba(var(--green-rgb),.55);}
+
+  .tile.warn{
+    background:linear-gradient(158deg, rgba(var(--amber-rgb),.28), rgba(var(--amber-rgb),.22) 58%,
+              rgba(var(--amber-rgb),.18)), var(--panel);
+    border-color:var(--amber);
+    box-shadow:0 0 34px rgba(var(--amber-rgb),.45), 0 0 96px rgba(var(--amber-rgb),.22);
+  }
+  .tile.warn .t-time{color:var(--amber-lit);
+    text-shadow:0 0 12px rgba(var(--amber-rgb),.95), 0 0 40px rgba(var(--amber-rgb),.58);}
+
+  .tile.over{
+    background:linear-gradient(158deg, rgba(var(--red-rgb),.30), rgba(var(--red-rgb),.22) 58%,
+              rgba(var(--red-rgb),.18)), var(--panel);
+    border-color:var(--red);
+    animation:pulse 2.2s ease-in-out infinite;
+  }
+  .tile.over .t-time{color:var(--red-lit);
+    text-shadow:0 0 14px rgba(var(--red-rgb),1), 0 0 44px rgba(var(--red-rgb),.62);}
+
+  .tile.crown{
+    background:linear-gradient(158deg, rgba(var(--crown-rgb),.26), rgba(var(--crown-rgb),.22) 58%,
+              rgba(var(--crown-rgb),.18)), var(--panel);
+    border-color:var(--crown);
+    box-shadow:0 0 34px rgba(var(--crown-rgb),.44), 0 0 100px rgba(var(--crown-rgb),.22);
+  }
+  .tile.crown .t-time{color:var(--crown-lit); font-size:clamp(20px,3.2vmin,38px);
+    text-shadow:0 0 12px rgba(var(--crown-rgb),.9), 0 0 36px rgba(var(--crown-rgb),.5);}
+  .tile.crown .t-mark{filter:drop-shadow(0 0 16px rgba(var(--crown-rgb),.85));}
+
+  .tile.sad{
+    background:linear-gradient(158deg, rgba(var(--red-rgb),.22), rgba(var(--red-rgb),.22) 58%,
+              rgba(var(--red-rgb),.18)), var(--panel);
+    border-color:var(--red);
+    box-shadow:0 0 30px rgba(var(--red-rgb),.34), 0 0 84px rgba(var(--red-rgb),.15);
+  }
+  .tile.sad .t-time{color:var(--red-lit); font-size:clamp(20px,3.2vmin,38px);
+    text-shadow:0 0 12px rgba(var(--red-rgb),.9), 0 0 36px rgba(var(--red-rgb),.5);}
   /* she is on the floor, but on the other kind of job — shown so nobody starts
      a second one for her by mistake */
   .tile.elsewhere{opacity:.62; border-style:dashed;}
   .tile.elsewhere .t-time{color:var(--dim); font-size:clamp(26px,4.4vmin,52px);}
-  @keyframes pulse{0%,100%{box-shadow:inset 0 0 0 0 rgba(242,112,139,0);}
-                   50%{box-shadow:inset 0 0 60px 0 rgba(242,112,139,.16);}}
+  /* The over-limit pulse carries the outer glow as well, because the animation
+     owns box-shadow on this tile — it breathes between lit and brighter still,
+     never down to nothing. */
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 30px rgba(var(--red-rgb),.40), 0 0 84px rgba(var(--red-rgb),.18),
+                       inset 0 0 0 0 rgba(var(--red-rgb),0);}
+    50%    {box-shadow:0 0 54px rgba(var(--red-rgb),.72), 0 0 132px rgba(var(--red-rgb),.32),
+                       inset 0 0 70px 0 rgba(var(--red-rgb),.22);}}
   .t-flag{position:absolute; top:9px; right:12px; font-size:10px; letter-spacing:.12em;
     text-transform:uppercase; color:var(--gold-deep);}
-  .bar{position:absolute; left:0; bottom:0; height:5px; width:0; background:currentColor; opacity:.6;}
+  .bar{position:absolute; left:0; bottom:0; height:5px; width:0; background:currentColor; opacity:.9;
+    box-shadow:0 0 14px currentColor;}
   .tile.run .bar{color:var(--green);} .tile.warn .bar{color:var(--amber);} .tile.over .bar{color:var(--red);}
 
   .reminder{text-align:center; padding-top:clamp(8px,1.4vmin,16px); color:var(--gold-deep);
