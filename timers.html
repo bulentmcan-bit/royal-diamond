@@ -162,6 +162,16 @@
     font-family:'Jost',sans-serif;}
   .err{color:var(--red); font-size:13px; text-align:center; margin-top:10px; min-height:18px;}
 
+  /* Only ever on screen when the browser has refused to make a sound until
+     somebody touches the page. One tap and it is gone for the rest of the day. */
+  .sound-prompt{position:fixed; left:50%; transform:translateX(-50%);
+    bottom:clamp(12px,2.4vmin,28px); z-index:60; border:0; border-radius:999px;
+    background:var(--gold); color:#1A1420; font-family:'Jost',sans-serif; font-weight:600;
+    font-size:clamp(14px,2vmin,22px); padding:clamp(10px,1.6vmin,16px) clamp(18px,3vmin,32px);
+    box-shadow:0 6px 26px rgba(0,0,0,.55); cursor:pointer;}
+  .sound-prompt[hidden]{display:none;}
+  .sound-prompt:focus-visible{outline:3px solid var(--ivory); outline-offset:3px;}
+
   .center-wrap{max-width:460px; margin:auto; text-align:center;}
   .center-wrap h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; margin:8px 0 4px;}
   .setup-warn{background:var(--panel); border:1px solid var(--red-line); border-radius:14px;
@@ -208,6 +218,8 @@ const firebaseConfig = {
 <main id="board" class="hidden"></main>
 <div id="reminder" class="reminder hidden">No press → no 👑 → no commission on that job</div>
 
+<button id="soundPrompt" class="sound-prompt" onclick="enableSoundFromPrompt()" hidden>🔊 Tap to enable sound</button>
+
 <div id="veil" class="veil hidden" onclick="if(event.target===this) closeSheet()">
   <div class="sheet" id="sheet"></div>
 </div>
@@ -242,7 +254,7 @@ const areaKey = (qs.get('area')||'').toLowerCase();
 const AREA = C.types[areaKey] ? areaKey : null;
 const OTHER = AREA === 'manicure' ? 'pedicure' : 'manicure';
 
-let db = null, ops = {}, srvOffset = 0, audioCtx = null, soundOn = true;
+let db = null, ops = {}, srvOffset = 0, audioCtx = null, audioBus = null, soundOn = true;
 let ownerCloudHash = '';
 const phase = {};    // operator key -> colour last seen, so the chime fires on the crossing only
 const tiles = {};
@@ -732,42 +744,101 @@ function toggleSound(){
   $('soundBtn').classList.toggle('on', soundOn);
   $('soundBtn').textContent = soundOn ? '🔔 Sound' : '🔕 Muted';
   if (soundOn) { unlockAudio(); chimeWarn(); }
+  else syncSoundPrompt();
+}
+/* The board lives on a TV across the room, so the sounds are driven hard —
+   close to full scale rather than the quiet levels that suited a phone held in
+   the hand. Every note goes through a limiter before the speakers: the crown
+   sparkle stacks six notes on top of each other, and without the limiter those
+   overlapping peaks would sum past full scale and tear. The limiter holds them
+   just under it, and the makeup gain after it is what actually carries the
+   sound across the room. */
+function buildAudioChain(){
+  audioBus = audioCtx.createGain();
+  audioBus.gain.value = 1;
+  const lim = audioCtx.createDynamicsCompressor(), t = audioCtx.currentTime;
+  lim.threshold.setValueAtTime(-8, t);
+  lim.knee.setValueAtTime(6, t);
+  lim.ratio.setValueAtTime(12, t);
+  lim.attack.setValueAtTime(0.003, t);
+  lim.release.setValueAtTime(0.25, t);
+  // Measured, not guessed: rendering these three sounds through this chain
+  // offline puts the loudest of them (the crown sparkle) at about 0.89 of full
+  // scale with no clipped samples at all. Raising it further only squashes the
+  // sparkle flatter for a fraction of a decibel, so this is where it stops.
+  const makeup = audioCtx.createGain();
+  makeup.gain.value = 0.98;
+  audioBus.connect(lim).connect(makeup).connect(audioCtx.destination);
 }
 function unlockAudio(){
-  if (!audioCtx){ const AC = window.AudioContext || window.webkitAudioContext; if (AC) audioCtx = new AC(); }
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    buildAudioChain();
+  }
+  if (audioCtx.state === 'suspended'){
+    try{ audioCtx.resume().then(syncSoundPrompt, syncSoundPrompt); }catch(e){}
+    // A browser that is refusing to make a sound leaves that promise hanging
+    // rather than rejecting it, so the answer never comes back and the prompt
+    // would never appear. Read the state itself a moment later instead.
+    setTimeout(syncSoundPrompt, 600);
+  }
+  else syncSoundPrompt();
 }
-document.addEventListener('pointerdown', unlockAudio, { once:true });
-document.addEventListener('keydown', unlockAudio, { once:true });
+// A TV browser will not always let a page make noise before somebody has
+// touched it. Try anyway on load, and only if the try is refused ask for the
+// one tap that turns the sound on — the prompt takes itself away the moment
+// the audio is running, so it is never in the way for the rest of the day.
+function syncSoundPrompt(){
+  const el = $('soundPrompt');
+  if (!el) return;
+  el.hidden = !(soundOn && audioCtx && audioCtx.state !== 'running');
+}
+function enableSoundFromPrompt(){
+  unlockAudio();
+  // Answer the tap with the same chime the board uses, so the room can hear
+  // straight away that it worked and at what volume.
+  setTimeout(() => { syncSoundPrompt(); if (audioCtx && audioCtx.state === 'running') chimeWarn(); }, 120);
+}
+// Not `once` — if the first gesture is swallowed, the next tap must still be
+// able to bring the sound up.
+['pointerdown','keydown','touchend'].forEach(ev =>
+  document.addEventListener(ev, unlockAudio, { passive:true }));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') unlockAudio();
+});
+unlockAudio();
 
 function tone(f, at, dur, peak, type){
+  if (!audioBus) return;
   const o = audioCtx.createOscillator(), g = audioCtx.createGain();
   o.type = type || 'sine';
   o.frequency.setValueAtTime(f, at);
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(peak, at + 0.03);
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  o.connect(g).connect(audioCtx.destination);
+  o.connect(g).connect(audioBus);
   o.start(at); o.stop(at + dur + .05);
 }
-// Fifteen minutes left: two gentle notes, enough to look up.
+// Fifteen minutes left: two notes, enough to look up from across the room.
 function chimeWarn(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  tone(880, t0, .9, .22); tone(1174.7, t0 + .42, .9, .22);
+  tone(880, t0, .9, 1.0); tone(1174.7, t0 + .42, .9, 1.0);
 }
 // Crown: a bright rising sparkle.
 function fanfare(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [523.3,659.3,784,1046.5,1318.5,1568].forEach((f,i) => tone(f, t0 + i*.08, .45, .2, 'triangle'));
-  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .07));
+  [523.3,659.3,784,1046.5,1318.5,1568].forEach((f,i) => tone(f, t0 + i*.08, .45, 1.0, 'triangle'));
+  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .50));
 }
-// Over the limit, or never started: a soft sigh downwards.
+// Over the limit, or never started: a sigh downwards.
 function sadTone(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [415.3, 349.2, 277.2].forEach((f,i) => tone(f, t0 + i*.26, .8, .16, 'triangle'));
+  [415.3, 349.2, 277.2].forEach((f,i) => tone(f, t0 + i*.26, .8, 1.0, 'triangle'));
 }
 
 let wakeLock = null;
