@@ -14485,7 +14485,8 @@ window.addEventListener('load',function(){
     <span class="m" onclick="cbmMinimise()" title="Küçült">–</span>
     <span class="x" onclick="cbmClose()" title="Kapat">✕</span></div>
   <div id="cbm-sound" onclick="cbmEnableSound()">🔔 Sesi aç
-    <span>Tap once — the chime and the alarm ring out here, on this laptop</span></div>
+    <span>Tap once, then turn the volume up — the chimes and the spoken alerts
+      for every station play here, on this laptop</span></div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
     No press → no 👑 → no commission on that job.<br>
@@ -14604,7 +14605,20 @@ window.addEventListener('load',function(){
   // Try on every gesture, not once: if the first tap is swallowed the next one
   // must still be able to bring the sound up. A laptop that has been shut and
   // reopened comes back suspended, which is why visibility retries too.
+  // Speech has its own gate, separate from Web Audio's: a browser can be happy
+  // to play the chimes and still refuse to talk until it has been touched, and
+  // it can leave the voice paused after the laptop has been shut and reopened.
+  // Both are answered by the same gesture that unlocks everything else.
+  function unlockSpeech(){
+    try{
+      var S=window.speechSynthesis;
+      if(!S) return;
+      if(S.paused) S.resume();
+      pickVoice();
+    }catch(e){}
+  }
   function unlockAudio(){
+    unlockSpeech();
     try{
       if(!_ac){
         var AC=window.AudioContext||window.webkitAudioContext;
@@ -14653,28 +14667,107 @@ window.addEventListener('load',function(){
     o.connect(g).connect(_bus);
     o.start(at); o.stop(at+dur+.05);
   }
-  // Fifteen minutes left: the boards' two notes, note for note.
+  // Fifteen minutes left: the boards' two notes, note for note. Returns how
+  // long it lasts, in seconds, so speech can be laid in behind it.
   function chimeWarn(){
-    if(!audioReady()) return;
+    if(!audioReady()) return 0;
     var t0=_ac.currentTime;
     tone(1760,t0,.9,1.0); tone(2349.3,t0+.42,.9,1.0);
+    return 1.4;
   }
-  // Over the limit: the falling phrase three times over. One pass is easy to
-  // miss with a dryer running; three is unmistakable and still ends by itself.
-  function alarmOver(){
-    if(!audioReady()) return;
+  // Over the limit: the falling phrase, once per pass. One pass is easy to miss
+  // with a dryer running; three is unmistakable and still ends by itself. Two
+  // is what brackets a spoken announcement, so the whole thing stays short
+  // enough to listen to.
+  function alarmOver(passes){
+    var n=passes||3;
+    if(!audioReady()) return 0;
     var t0=_ac.currentTime;
-    for(var p=0;p<3;p++){
+    for(var p=0;p<n;p++){
       (function(base){
         [830.6,698.5,554.4].forEach(function(f,i){ tone(f,base+i*.26,.8,1.0,'triangle'); });
       })(t0+p*.9);
     }
+    return (n-1)*.9 + .52 + .8 + .1;
+  }
+
+  /* ── saying it out loud ──────────────────────────────────────────────────
+     A sound tells reception that something happened; it does not say WHO. With
+     three technicians on two kinds of job, that is the whole question, and the
+     answer is otherwise only on a screen she may not be looking at. So every
+     announcement is bracketed: the sound to make her look up, the name and the
+     news, then the sound again for anyone who missed the first.
+
+     The speech is the browser's own voice and does NOT run through the limiter
+     and makeup gain the chimes use — that chain only carries what Web Audio
+     generates. Its volume is asked for at the maximum the API allows, and the
+     rest is the laptop's own volume knob, which is what the one tap is for. */
+  var _voice=null;
+  function pickVoice(){
+    if(_voice) return _voice;
+    try{
+      var vs=(window.speechSynthesis.getVoices()||[]);
+      // English, whichever the machine happens to have. The salon speaks
+      // Turkish, but a Turkish voice reading an English sentence is worse than
+      // an English one, and these two sentences are all it ever says.
+      _voice=vs.filter(function(v){ return /^en\b|^en[-_]/i.test(v.lang||''); })[0]||null;
+    }catch(e){}
+    return _voice;
+  }
+  try{
+    if(window.speechSynthesis){
+      // The list is often empty until the engine has loaded them.
+      window.speechSynthesis.addEventListener('voiceschanged',function(){ _voice=null; pickVoice(); });
+      pickVoice();
+    }
+  }catch(e){}
+
+  function say(text, after){
+    var done=false;
+    function fin(){ if(done) return; done=true; if(after) after(); }
+    try{
+      var S=window.speechSynthesis;
+      if(!S || typeof SpeechSynthesisUtterance!=='function'){ fin(); return; }
+      S.cancel();   // clear anything stuck, so a jammed utterance cannot mute the rest of the day
+      var u=new SpeechSynthesisUtterance(text);
+      u.lang='en-GB'; u.volume=1; u.rate=.95; u.pitch=1;
+      var v=pickVoice(); if(v) u.voice=v;
+      u.onend=fin; u.onerror=fin;
+      // Chrome does not always fire onend. Without this the closing chime would
+      // never arrive and the queue behind it would stop for good.
+      setTimeout(fin, 7000);
+      S.speak(u);
+    }catch(e){ fin(); }
+  }
+
+  // One at a time. Two stations crossing in the same minute is ordinary here,
+  // and two announcements on top of each other say nothing at all.
+  var _queue=[], _talking=false;
+  function announce(kind, text){
+    if(_queue.length>=6) return;   // a backlog nobody could follow anyway
+    _queue.push({kind:kind,text:text});
+    pump();
+  }
+  function pump(){
+    if(_talking || !_queue.length) return;
+    _talking=true;
+    var it=_queue.shift();
+    var lead=(it.kind==='over') ? alarmOver(2) : chimeWarn();
+    setTimeout(function(){
+      say(it.text, function(){
+        var tail=(it.kind==='over') ? alarmOver(2) : chimeWarn();
+        setTimeout(function(){ _talking=false; pump(); }, Math.round(tail*1000));
+      });
+    }, Math.round(lead*1000));
   }
 
   // Every technician, every kind of job, once a second. A job seen for the
   // first time only has its colour written down — a panel opened halfway
   // through the afternoon does not shout about crossings that already
   // happened, exactly as the wall boards behave.
+  // How often "time is up" comes round again while a job is still over.
+  var OVER_REPEAT=2*60000;
+
   function watch(){
     var t=now();
     C.operators.forEach(function(o){
@@ -14686,13 +14779,27 @@ window.addEventListener('load',function(){
       var left=cur.startAt+(cur.limitMin||60)*60000-t;
       var state=left<=0?'over':(left<=C.warnMs?'warn':'run');
       var was=_phase[o.key];
-      _phase[o.key]={id:id,state:state};
-      if(!was||was.id!==id||was.state===state) return;
-      if(state==='warn'&&was.state==='run') chimeWarn();
-      // A laptop that slept through the crossing wakes to find the job long
-      // over. Ring for the ones that have just gone past, not for one that
-      // went past forty minutes ago and has been sitting red ever since.
-      else if(state==='over'&&-left<=5*60000) alarmOver();
+      var fresh=!was||was.id!==id;
+      var saidAt=fresh?0:(was.saidAt||0);
+
+      if(state==='over'){
+        if(!fresh && was.state!=='over' && -left<=5*60000){
+          // the crossing itself — a laptop that slept through it wakes to a red
+          // row rather than an announcement of something half an hour gone
+          announce('over', o.name+', time is up'); saidAt=t;
+        } else if(!saidAt){
+          // first sight of a job already over: start the clock rather than
+          // shouting the moment the page opens. It is still over, and nobody
+          // has finished it, so it comes round in two minutes like the rest.
+          saidAt=t;
+        } else if(t-saidAt>=OVER_REPEAT){
+          announce('over', o.name+', time is up'); saidAt=t;
+        }
+      } else if(state==='warn' && !fresh && was.state==='run'){
+        announce('warn', o.name+', fifteen minutes');
+      }
+
+      _phase[o.key]={id:id, state:state, saidAt:(state==='over'?saidAt:0)};
     });
   }
 
