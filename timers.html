@@ -804,11 +804,11 @@ function buildAudioChain(){
   lim.attack.setValueAtTime(0.003, t);
   lim.release.setValueAtTime(0.25, t);
   // Measured, not guessed: rendering these three sounds through this chain
-  // offline puts the loudest of them (the crown sparkle) at about 0.89 of full
-  // scale with no clipped samples at all. Raising it further only squashes the
-  // sparkle flatter for a fraction of a decibel, so this is where it stops.
+  // offline puts the loudest of them (the crown sparkle) at about 0.97 of full
+  // scale with no clipped samples at all, at both 44.1kHz and 48kHz. The next
+  // step up starts clipping the sparkle at 44.1kHz, so this is where it stops.
   const makeup = audioCtx.createGain();
-  makeup.gain.value = 0.98;
+  makeup.gain.value = 1.05;
   audioBus.connect(lim).connect(makeup).connect(audioCtx.destination);
 }
 function unlockAudio(){
@@ -866,20 +866,20 @@ function tone(f, at, dur, peak, type){
 function chimeWarn(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  tone(880, t0, .9, 1.0); tone(1174.7, t0 + .42, .9, 1.0);
+  tone(1760, t0, .9, 1.0); tone(2349.3, t0 + .42, .9, 1.0);
 }
 // Crown: a bright rising sparkle.
 function fanfare(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [523.3,659.3,784,1046.5,1318.5,1568].forEach((f,i) => tone(f, t0 + i*.08, .45, 1.0, 'triangle'));
-  [2093,2637,3136].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .50));
+  [1046.5,1318.5,1568,2093,2637,3136].forEach((f,i) => tone(f, t0 + i*.08, .45, 1.0, 'triangle'));
+  [4186,5274,6272].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .50));
 }
 // Over the limit, or never started: a sigh downwards.
 function sadTone(){
   if (!audioCtx || !soundOn) return;
   const t0 = audioCtx.currentTime;
-  [415.3, 349.2, 277.2].forEach((f,i) => tone(f, t0 + i*.26, .8, 1.0, 'triangle'));
+  [830.6, 698.5, 554.4].forEach((f,i) => tone(f, t0 + i*.26, .8, 1.0, 'triangle'));
 }
 
 /* ── keeping the board on the current code ───────────────────────────────────
