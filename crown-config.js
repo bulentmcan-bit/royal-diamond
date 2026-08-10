@@ -70,7 +70,7 @@ window.CROWN = {
   voice: {
     prefer: ['Hazel', 'Susan', 'Zira', 'UK English Female', 'US English'],
     lang:   'en-GB',
-    pitch:  1.4,
+    pitch:  1.8,
     rate:   1.1,
     volume: 1
   },
