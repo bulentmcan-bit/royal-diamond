@@ -83,30 +83,35 @@ window.CROWN = {
      sound plays in full over the top, and the music comes back up. Down fast so
      nothing is lost under it, up slowly so the room does not notice the seam.
 
-     `playlist` can be left empty — reception pastes a YouTube playlist link
-     into the panel and it is remembered on that laptop. Fill it in here to give
-     every device the same one by default. Signed into YouTube Premium in this
-     browser means no adverts; nothing here can do that on its own.  */
+     The music itself comes off a USB stick: reception points the panel at a
+     folder once and the laptop remembers which one, so it comes back on its own
+     the next morning. Nothing streams, nothing needs the wifi, and there is
+     nothing to sign into.  */
   music: {
-    playlist:  '',      // e.g. 'PLxxxxxxxxxxxxxxxxxx', or leave empty and set it in the panel
     shuffle:   true,
     loop:      true,
     volume:    35,      // 0-100, what it plays at normally
     duckTo:     5,      // 0-100, what it drops to while a sound is playing
     fadeDownMs: 220,    // quick, so the first note is never buried
     fadeUpMs:   900,    // slow, so the room does not hear it come back
-    holdMs:     350     // a breath after the sound before the music returns
+    holdMs:     350,    // a breath after the sound before the music returns
+    // What counts as music on the stick. Anything else in the folder — cover
+    // art, a stray document, the player software that came with it — is ignored.
+    types:     ['mp3','m4a','aac','wav','ogg','oga','opus','flac','weba','webm','mp4'],
+    maxTracks: 2000,    // a stick with more than this on it is scanned this far and no further
+    maxDepth:  6        // album folders inside artist folders inside a year — but not forever
   },
 
   // Helpers both pages use, so the lookup rules live here too.
-  // A playlist link, an embed link or a bare id — all reception should have to
-  // do is paste whatever YouTube gave her.
-  playlistId: function(s){
-    if (!s) return '';
-    var t = String(s).trim();
-    var m = t.match(/[?&]list=([A-Za-z0-9_-]+)/);
-    if (m) return m[1];
-    return /^[A-Za-z0-9_-]{12,}$/.test(t) ? t : '';
+  isMusicFile: function(name){
+    var m = String(name||'').toLowerCase().match(/\.([a-z0-9]+)$/);
+    return !!m && this.music.types.indexOf(m[1]) !== -1;
+  },
+  // What the panel shows for a track: the file's name, with the extension and
+  // any leading track number taken off.
+  trackName: function(name){
+    return String(name||'').replace(/\.[^.]+$/,'').replace(/^\s*\d{1,3}[\s._-]+/,'').trim()
+      || String(name||'');
   },
   pickVoice: function(){
     try{

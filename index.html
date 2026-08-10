@@ -14428,8 +14428,8 @@ window.addEventListener('load',function(){
 #cbm-sound span{display:block;margin-top:2px;font-size:.66rem;font-weight:700;opacity:.72}
 /* The music strip. Small, because it is not the job — but always reachable,
    because the one thing reception will want to change during a shift is what
-   is playing and how loud. The player itself is a YouTube iframe parked off
-   screen: it is only ever a sound source, never something to look at. */
+   is playing and how loud. The player itself is a bare <audio> tag: it is only
+   ever a sound source, never something to look at. */
 #cbm-music{margin:8px 10px 0;padding:8px 9px;border-radius:10px;
   border:1px solid #2a2a22;background:#1c1a14}
 #cbm-music .mus-top{display:flex;align-items:center;gap:7px}
@@ -14440,15 +14440,13 @@ window.addEventListener('load',function(){
 #mus-title{flex:1;min-width:0;font-size:.68rem;color:#8d8574;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 #mus-vol{width:100%;margin-top:7px;accent-color:#d4a96a;height:16px}
-#cbm-music .mus-set{margin-top:5px;font-size:.63rem;color:#8d8574;cursor:pointer;text-align:center}
-#cbm-music .mus-set:hover{color:#d4a96a}
-#mus-url{display:block;width:100%;margin-top:6px;border-radius:8px;border:1px solid rgba(212,169,106,.4);
-  background:#14120d;color:#f3e3c8;padding:7px 9px;font-family:inherit;font-size:.72rem}
-#mus-url::placeholder{color:#6d6559}
-/* Parked off screen rather than display:none — a hidden iframe is allowed to
-   keep playing, a removed one is not. */
-#cbm-yt-wrap{position:fixed;left:-9999px;top:0;width:320px;height:180px;
-  opacity:.01;pointer-events:none;z-index:-1}
+#cbm-music .mus-set{display:block;width:100%;margin-top:6px;border-radius:8px;padding:7px 9px;
+  cursor:pointer;border:1px solid rgba(212,169,106,.55);background:rgba(212,169,106,.12);
+  color:#d4a96a;font-family:inherit;font-weight:800;font-size:.7rem;text-align:center}
+#cbm-music .mus-set:hover{background:rgba(212,169,106,.24)}
+#cbm-music .mus-where{margin-top:4px;font-size:.6rem;color:#6d6559;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mus-pick{display:none}
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
@@ -14502,7 +14500,7 @@ window.addEventListener('load',function(){
 </style>
 <div id="cbm-tab" onclick="cbmToggle()"><span id="cbm-tab-run">⏱ –</span><span class="cbm-n" id="cbm-tab-n">👑 –</span></div>
 <div id="cbm-min" onclick="cbmOpen()">👑 Crown Board <b id="cbm-min-n">–</b></div>
-<div id="cbm-yt-wrap"><div id="cbm-yt"></div></div>
+<audio id="cbm-audio" preload="auto"></audio>
 <div id="cbm-panel">
   <div id="cbm-head"><span class="ttl">👑 Crown Board</span>
     <button id="cbm-start" onclick="cbmStart()">＋ Başlat</button>
@@ -14518,7 +14516,13 @@ window.addEventListener('load',function(){
       <div id="mus-title">Müzik kapalı</div>
     </div>
     <input id="mus-vol" type="range" min="0" max="100" step="1" oninput="musVol(this.value)">
-    <div class="mus-set" onclick="musSettings()">🎵 Çalma listesini değiştir</div>
+    <button class="mus-set" onclick="musPickFolder()">🎵 Müzik klasörü seç</button>
+    <div class="mus-where" id="mus-where"></div>
+    <!-- The fallback for a browser without the folder picker. It cannot be
+         remembered between visits, so it is only reached if the good one is
+         missing. -->
+    <input id="mus-pick" type="file" webkitdirectory directory multiple
+           accept="audio/*" onchange="musFromInput(this)">
   </div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
@@ -14653,8 +14657,8 @@ window.addEventListener('load',function(){
   function unlockAudio(){
     unlockSpeech();
     // Music that was playing when the laptop was last closed comes back with
-    // the first touch of the day: YouTube will not start without a gesture, so
-    // this is tried on every one until it takes.
+    // the first touch of the day: a browser will not start audio without a
+    // gesture, so this is tried on every one until it takes.
     try{
       if(Music && !Music.wanted() && localStorage.getItem('rdns_cbm_musicon')==='1') Music.play();
     }catch(e){}
@@ -14803,25 +14807,163 @@ window.addEventListener('load',function(){
      chime is never half-buried; slow up means the room hears the music return
      without hearing the moment it did.
 
-     The player is YouTube's own, in an iframe parked off screen. Signed into
-     Premium in this browser, there are no adverts — that is the account's doing
-     and not something this code can arrange. A playlist link pasted here is
-     remembered on this laptop. */
+     The music is a folder on a USB stick, played by an ordinary <audio> tag.
+     Reception points the panel at the folder once; the handle is kept in
+     IndexedDB, so the next morning the laptop asks her for nothing more than a
+     single "allow" — and on a browser too old for that picker, it falls back to
+     a plain folder input that has to be chosen again each session. */
   var Music=(function(){
-    var yt=null, ready=false, wanted=false, ducks=0, duckedAt=0;
-    var fade=null, cur=0, apiAsked=false;
+    var el=null, wanted=false, ducks=0, duckedAt=0;
+    var fade=null, cur=0;
+    var tracks=[], order=[], at=-1, url=null, dirName='', fails=0, scanning=false;
+
+    function audio(){
+      if(el) return el;
+      el=document.getElementById('cbm-audio');
+      if(!el) return null;
+      el.addEventListener('ended', function(){ step(1); });
+      // A file the laptop cannot decode — a stray video, something half copied
+      // off the stick — must not stop the music dead. Skip it and carry on, and
+      // give up only once every track has refused.
+      //
+      // Only for the track actually loaded now. Letting go of the PREVIOUS
+      // track's blob makes the element complain about it, and treating that as
+      // a broken file skipped to the next one, which let go of another blob,
+      // which complained: the folder went past in a couple of seconds flat.
+      el.addEventListener('error', function(){
+        if(!url || el.src!==url) return;
+        if(++fails <= tracks.length) step(1); else { wanted=false; paintMusic(); }
+      });
+      el.addEventListener('playing', function(){ fails=0; paintMusic(); });
+      el.addEventListener('pause', paintMusic);
+      return el;
+    }
 
     function vol(){
       var v=parseInt(localStorage.getItem('rdns_cbm_musicvol'),10);
       return isNaN(v) ? C.music.volume : Math.max(0,Math.min(100,v));
     }
-    function list(){
-      return C.playlistId(localStorage.getItem('rdns_cbm_playlist')||'') ||
-             C.playlistId(C.music.playlist||'');
-    }
+    function list(){ return tracks.length; }
+    // The one line the ducking actually turns. Everything that fades, counts
+    // ducks or watches for a stuck one goes through here and knows nothing
+    // about where the music comes from — which is why swapping the source out
+    // underneath it changed none of that.
     function set(v){
       cur=Math.max(0,Math.min(100,Math.round(v)));
-      try{ if(yt&&yt.setVolume) yt.setVolume(cur); }catch(e){}
+      try{ if(el) el.volume=cur/100; }catch(e){}
+    }
+
+    /* ── the folder ──────────────────────────────────────────────────────── */
+    // The picked folder is remembered as a handle, which only IndexedDB can
+    // hold — localStorage would flatten it to "[object Object]".
+    function idb(cb){
+      try{
+        var r=indexedDB.open('rdns-music',1);
+        r.onupgradeneeded=function(){ try{ r.result.createObjectStore('h'); }catch(e){} };
+        r.onsuccess=function(){ cb(r.result); };
+        r.onerror=function(){ cb(null); };
+      }catch(e){ cb(null); }
+    }
+    function keepDir(h){
+      idb(function(db){ if(!db) return;
+        try{ db.transaction('h','readwrite').objectStore('h').put(h,'dir'); }catch(e){} });
+    }
+    function savedDir(cb){
+      idb(function(db){ if(!db) return cb(null);
+        try{
+          var q=db.transaction('h').objectStore('h').get('dir');
+          q.onsuccess=function(){ cb(q.result||null); };
+          q.onerror=function(){ cb(null); };
+        }catch(e){ cb(null); }
+      });
+    }
+
+    function shuffle(n){
+      var a=[], i, j, t;
+      for(i=0;i<n;i++) a.push(i);
+      if(C.music.shuffle)
+        for(i=a.length-1;i>0;i--){ j=Math.floor(Math.random()*(i+1)); t=a[i]; a[i]=a[j]; a[j]=t; }
+      return a;
+    }
+
+    // Straight through the folder and everything under it, album folders and
+    // all, stopping at the bounds in crown-config.js rather than walking a
+    // stick somebody has put their whole life on.
+    function scan(handle, out, depth){
+      if(depth>C.music.maxDepth || out.length>=C.music.maxTracks) return Promise.resolve();
+      var it=handle.values ? handle.values() : null;
+      if(!it) return Promise.resolve();
+      function nextEntry(){
+        if(out.length>=C.music.maxTracks) return Promise.resolve();
+        return it.next().then(function(r){
+          if(r.done) return;
+          var e=r.value;
+          if(e.kind==='file'){ if(C.isMusicFile(e.name)) out.push(e); return nextEntry(); }
+          if(e.kind==='directory') return scan(e,out,depth+1).then(nextEntry);
+          return nextEntry();
+        });
+      }
+      return nextEntry();
+    }
+
+    function adopt(found, name){
+      tracks=found; dirName=name||'';
+      order=shuffle(tracks.length); at=-1; fails=0;
+      try{ localStorage.setItem('rdns_cbm_musicdir', dirName); }catch(e){}
+      paintMusic();
+      if(wanted && tracks.length) step(1);
+    }
+
+    function useHandle(h, ask){
+      if(!h) return Promise.resolve(false);
+      scanning=true; paintMusic();
+      var q=h.queryPermission ? h.queryPermission({mode:'read'}) : Promise.resolve('granted');
+      return Promise.resolve(q).then(function(p){
+        if(p==='granted') return 'granted';
+        if(!ask || !h.requestPermission) return p;
+        return h.requestPermission({mode:'read'});
+      }).then(function(p){
+        if(p!=='granted'){ scanning=false; paintMusic(); return false; }
+        var found=[];
+        return scan(h,found,0).then(function(){
+          scanning=false;
+          keepDir(h);
+          adopt(found,h.name);
+          return true;
+        });
+      }).catch(function(){ scanning=false; paintMusic(); return false; });
+    }
+
+    /* ── playing ─────────────────────────────────────────────────────────── */
+    function fileOf(t){
+      // Either a handle from the picker, or a plain File from the fallback input
+      return t && t.getFile ? t.getFile() : Promise.resolve(t);
+    }
+    function step(dir){
+      var a=audio();
+      if(!a || !tracks.length) return;
+      at+=dir;
+      if(at>=order.length){
+        if(!C.music.loop){ wanted=false; paintMusic(); return; }
+        // Round again, in a new order — the same shuffle twice running would
+        // sound like a short playlist rather than a long one.
+        order=shuffle(tracks.length); at=0;
+      }
+      if(at<0) at=order.length-1;
+      var t=tracks[order[at]];
+      fileOf(t).then(function(f){
+        var old=url;
+        url=URL.createObjectURL(f);
+        a.src=url;
+        a.volume=cur/100;   // whatever the ducking has it at right now, kept across the join
+        if(wanted) { var p=a.play(); if(p&&p.catch) p.catch(function(){}); }
+        // The old blob is let go only once the element has moved off it, or the
+        // element reports the release as a broken file.
+        if(old) setTimeout(function(){ try{ URL.revokeObjectURL(old); }catch(e){} }, 2000);
+        paintMusic();
+      }).catch(function(){
+        if(++fails<=tracks.length) step(1);
+      });
     }
     // A ramp rather than a jump: a step every 40ms, smooth enough on a speaker
     // and cheap enough to run while three countdowns are going.
@@ -14845,81 +14987,71 @@ window.addEventListener('load',function(){
       },40);
     }
 
-    function onState(e){
-      // Shuffle only takes once there is a playlist loaded to shuffle.
-      try{
-        if(e.data===YT.PlayerState.PLAYING){
-          if(C.music.shuffle && yt.setShuffle) yt.setShuffle(true);
-          if(C.music.loop && yt.setLoop) yt.setLoop(true);
-        }
-        // A playlist that runs off the end starts again rather than stopping.
-        if(e.data===YT.PlayerState.ENDED && wanted && yt.playVideo) yt.playVideo();
-      }catch(err){}
-      paintMusic();
-    }
-
-    function build(){
-      var id=list();
-      if(!id || yt) return;
-      yt=new YT.Player('cbm-yt',{
-        height:'180', width:'320',
-        playerVars:{ listType:'playlist', list:id, autoplay:1, controls:0,
-                     disablekb:1, playsinline:1, modestbranding:1, rel:0 },
-        events:{
-          onReady:function(){
-            ready=true;
-            try{
-              if(C.music.shuffle && yt.setShuffle) yt.setShuffle(true);
-              if(C.music.loop && yt.setLoop) yt.setLoop(true);
-            }catch(e){}
-            set(ducks>0 ? C.music.duckTo : vol());
-            if(wanted && yt.playVideo) yt.playVideo();
-            paintMusic();
-          },
-          onStateChange:onState,
-          onError:function(){ paintMusic(); }
-        }
-      });
-    }
-    function api(cb){
-      if(window.YT && window.YT.Player) return cb();
-      var prev=window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady=function(){
-        if(prev) try{ prev(); }catch(e){}
-        cb();
-      };
-      if(apiAsked) return;
-      apiAsked=true;
-      var s=document.createElement('script');
-      s.src='https://www.youtube.com/iframe_api';
-      document.head.appendChild(s);
-    }
-
     return {
       play:function(){
         wanted=true;
         try{ localStorage.setItem('rdns_cbm_musicon','1'); }catch(e){}
-        if(!list()){ paintMusic(); return; }
-        if(yt && ready){ if(yt.playVideo) yt.playVideo(); }
-        else api(build);
+        var a=audio();
+        if(!a || !tracks.length){ paintMusic(); return; }
+        if(at<0) step(1);
+        else { var p=a.play(); if(p&&p.catch) p.catch(function(){}); }
         paintMusic();
       },
       pause:function(){
         wanted=false;
         try{ localStorage.setItem('rdns_cbm_musicon','0'); }catch(e){}
-        try{ if(yt&&yt.pauseVideo) yt.pauseVideo(); }catch(e){}
+        try{ if(el) el.pause(); }catch(e){}
         paintMusic();
       },
-      next:function(){ try{ if(yt&&yt.nextVideo) yt.nextVideo(); }catch(e){} },
+      next:function(){ step(1); },
       wanted:function(){ return wanted; },
-      playing:function(){
-        try{ return !!(yt&&yt.getPlayerState&&yt.getPlayerState()===1); }catch(e){ return false; }
-      },
+      playing:function(){ return !!(el && !el.paused && !el.ended); },
       title:function(){
-        try{
-          var d=yt&&yt.getVideoData&&yt.getVideoData();
-          return (d&&d.title)||'';
-        }catch(e){ return ''; }
+        var t=tracks[order[at]];
+        return t ? C.trackName(t.name) : '';
+      },
+      // What the panel says underneath: which stick, and how much is on it.
+      folder:function(){ return dirName || localStorage.getItem('rdns_cbm_musicdir') || ''; },
+      count:function(){ return tracks.length; },
+      scanning:function(){ return scanning; },
+      // Asking for the folder must happen inside the click itself — a browser
+      // will not open the picker for a page that wandered off and came back.
+      pick:function(){
+        var self=this;
+        if(window.showDirectoryPicker){
+          return window.showDirectoryPicker({id:'rdns-music', mode:'read'})
+            .then(function(h){ return useHandle(h,true); })
+            .catch(function(){ return false; });
+        }
+        // No picker in this browser: the plain folder input, which cannot be
+        // remembered and so has to be chosen again each session.
+        var inp=document.getElementById('mus-pick');
+        if(inp) inp.click();
+        return Promise.resolve(false);
+      },
+      // Files from that fallback input arrive already read, as plain Files.
+      fromFiles:function(files){
+        var found=[], i, name='';
+        for(i=0;i<files.length && found.length<C.music.maxTracks;i++)
+          if(C.isMusicFile(files[i].name)) found.push(files[i]);
+        if(files[0] && files[0].webkitRelativePath)
+          name=files[0].webkitRelativePath.split('/')[0];
+        adopt(found,name);
+      },
+      // On the next morning's load: the folder is still known, and all the
+      // browser wants is permission to read it again.
+      restore:function(){
+        savedDir(function(h){
+          if(!h){ paintMusic(); return; }
+          dirName=localStorage.getItem('rdns_cbm_musicdir')||h.name||'';
+          useHandle(h,false);
+        });
+      },
+      reconnect:function(){
+        savedDir(function(h){ if(h) useHandle(h,true); });
+      },
+      needsPermission:function(){
+        return !tracks.length && !!(localStorage.getItem('rdns_cbm_musicdir')||'');
       },
       volume:vol,
       // What the player is actually set to right now, ducking included — the
@@ -14931,16 +15063,7 @@ window.addEventListener('load',function(){
         if(!ducks) fadeTo(v,120);
       },
       hasList:function(){ return !!list(); },
-      reload:function(){
-        // A new playlist means a new player: cueing a different list into the
-        // old one leaves the shuffle in a state the API will not talk about.
-        try{ if(yt&&yt.destroy) yt.destroy(); }catch(e){}
-        yt=null; ready=false;
-        var host=document.getElementById('cbm-yt-wrap');
-        if(host) host.innerHTML='<div id="cbm-yt"></div>';
-        if(wanted) this.play();
-        paintMusic();
-      },
+      reload:function(){ this.reconnect(); },
       duck:function(){
         ducks++;
         duckedAt=Date.now();
@@ -14964,13 +15087,17 @@ window.addEventListener('load',function(){
   // cbmMusic.play(), .setVolume(50), .level() — handy when the salon rings up
   // to say the music is behaving oddly.
   window.cbmMusic=Music;
+  // Last night's folder, picked up again before anybody asks for it.
+  try{ Music.restore(); }catch(e){}
 
   function paintMusic(){
     var b=document.getElementById('mus-play'), t=document.getElementById('mus-title');
     if(!b||!t) return;
     var on=Music.wanted();
     b.textContent = on ? '⏸' : '▶';
-    if(!Music.hasList()) t.textContent='Çalma listesi seçilmedi';
+    if(Music.scanning()) t.textContent='Klasör taranıyor…';
+    else if(Music.needsPermission()) t.textContent='Klasöre erişim izni gerekiyor';
+    else if(!Music.hasList()) t.textContent='Müzik klasörü seçilmedi';
     else if(!on) t.textContent='Duraklatıldı';
     // Playing with the volume at nothing looks exactly like a broken player.
     // Say which it is, rather than leaving reception to guess.
@@ -14978,6 +15105,14 @@ window.addEventListener('load',function(){
     else t.textContent=Music.title()||'Yükleniyor…';
     var v=document.getElementById('mus-vol');
     if(v && document.activeElement!==v) v.value=Music.volume();
+    var w=document.getElementById('mus-where');
+    if(w){
+      var f=Music.folder();
+      w.textContent = f ? (f + (Music.count()? ' · '+Music.count()+' parça' : '')) : '';
+    }
+    var pickBtn=document.querySelector('#cbm-music .mus-set');
+    if(pickBtn) pickBtn.textContent = Music.needsPermission()
+      ? '🎵 Klasörü yeniden bağla' : '🎵 Müzik klasörü seç';
   }
   window.musToggle  =function(){ if(Music.wanted()) Music.pause(); else { unlockAudio(); Music.play(); } };
   window.musNext    =function(){ Music.next(); };
@@ -14989,24 +15124,16 @@ window.addEventListener('load',function(){
     if(isNaN(n)) return;
     Music.setVolume(Math.max(0,Math.min(100,n)));
   };
-  window.musSettings=function(){
-    var box=document.getElementById('mus-url');
-    if(box){ box.parentNode.removeChild(box); return; }
-    box=document.createElement('input');
-    box.id='mus-url'; box.type='text';
-    box.placeholder='YouTube çalma listesi bağlantısı';
-    box.value=localStorage.getItem('rdns_cbm_playlist')||'';
-    box.onkeydown=function(e){ if(e.key==='Enter'){ musSaveList(box.value); } };
-    box.onblur=function(){ musSaveList(box.value); };
-    document.getElementById('cbm-music').appendChild(box);
-    box.focus();
+  window.musPickFolder=function(){
+    unlockAudio();
+    // The same button does both jobs: a folder already known only needs its
+    // permission asked for again, and asking is far less to do than finding it
+    // on the stick a second time.
+    if(Music.needsPermission()) Music.reconnect();
+    else Music.pick();
   };
-  window.musSaveList=function(v){
-    var id=C.playlistId(v);
-    try{ localStorage.setItem('rdns_cbm_playlist', id?v:''); }catch(e){}
-    var box=document.getElementById('mus-url');
-    if(box) box.parentNode.removeChild(box);
-    Music.reload();
+  window.musFromInput=function(inp){
+    if(inp && inp.files && inp.files.length) Music.fromFiles(inp.files);
   };
 
   /* An announcement is a sound, optionally a sentence, optionally a sound after
