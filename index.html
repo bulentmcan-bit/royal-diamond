@@ -14418,6 +14418,14 @@ window.addEventListener('load',function(){
 #cbm-min b{color:#f3e3c8;font-weight:800}
 #cbm-min.late{border-color:#f2708b;color:#f2708b}
 @media(max-width:560px){ #cbm-min{bottom:80px;font-size:.78rem;padding:8px 12px} }
+/* The one tap that turns the sound on. It sits directly under the head, in gold
+   so it cannot be walked past, and it takes itself away for good the moment the
+   browser is actually letting this laptop make a noise. */
+#cbm-sound{display:none;margin:8px 10px 0;padding:11px 12px;border-radius:10px;cursor:pointer;
+  background:#d4a96a;color:#14120d;border:1.5px solid #d4a96a;text-align:center;
+  font-family:inherit;font-weight:800;font-size:.86rem;line-height:1.35}
+#cbm-sound.on{display:block}
+#cbm-sound span{display:block;margin-top:2px;font-size:.66rem;font-weight:700;opacity:.72}
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
@@ -14476,6 +14484,8 @@ window.addEventListener('load',function(){
     <button id="cbm-start" onclick="cbmStart()">＋ Başlat</button>
     <span class="m" onclick="cbmMinimise()" title="Küçült">–</span>
     <span class="x" onclick="cbmClose()" title="Kapat">✕</span></div>
+  <div id="cbm-sound" onclick="cbmEnableSound()">🔔 Sesi aç
+    <span>Tap once — the chime and the alarm ring out here, on this laptop</span></div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
     No press → no 👑 → no commission on that job.<br>
@@ -14558,18 +14568,151 @@ window.addEventListener('load',function(){
     return {run:run,late:late,crown:crown};
   }
 
+  /* ── the sound the floor actually hears ──────────────────────────────────
+     The two wall boards are televisions, and a TV browser will not let a page
+     make a noise: nobody ever touches the screen, so the audio never unlocks
+     and the chime is played to nobody. Reception's laptop is the one machine
+     in the building that IS touched all day, so it is the one that rings.
+
+     This panel therefore watches EVERY technician — not the ones started from
+     here, and not one kind of job — and sounds the fifteen-minute chime and
+     the over-the-limit alarm for whichever of them crosses, whether the job
+     was started at a station, on a board, or here. It does that whether the
+     panel is open, minimised or closed: the sound is the point, not the view.
+
+     Same chain and the same near-full-scale levels as the boards use, for the
+     same reason — this has to carry across a room. Every note goes through a
+     limiter first: the alarm stacks its notes on top of each other and without
+     it the overlapping peaks would sum past full scale and tear. */
+  var _ac=null, _bus=null;
+  var _phase={};   // operator key -> {id, state}, so a sound fires on the crossing only
+
+  function audioReady(){ return !!(_ac && _bus && _ac.state==='running'); }
+  function buildChain(){
+    _bus=_ac.createGain();
+    _bus.gain.value=1;
+    var lim=_ac.createDynamicsCompressor(), t=_ac.currentTime;
+    lim.threshold.setValueAtTime(-8,t);
+    lim.knee.setValueAtTime(6,t);
+    lim.ratio.setValueAtTime(12,t);
+    lim.attack.setValueAtTime(0.003,t);
+    lim.release.setValueAtTime(0.25,t);
+    var makeup=_ac.createGain();
+    makeup.gain.value=1.05;
+    _bus.connect(lim).connect(makeup).connect(_ac.destination);
+  }
+  // Try on every gesture, not once: if the first tap is swallowed the next one
+  // must still be able to bring the sound up. A laptop that has been shut and
+  // reopened comes back suspended, which is why visibility retries too.
+  function unlockAudio(){
+    try{
+      if(!_ac){
+        var AC=window.AudioContext||window.webkitAudioContext;
+        if(!AC) return;
+        _ac=new AC();
+        buildChain();
+      }
+      if(_ac.state==='suspended'){
+        try{ _ac.resume().then(syncSound,syncSound); }catch(e){}
+        // A browser refusing to make a sound leaves that promise hanging rather
+        // than rejecting it, so read the state itself a moment later instead.
+        setTimeout(syncSound,600);
+      } else syncSound();
+    }catch(e){}
+  }
+  // The gold bar is on screen only while the browser is still refusing, so it
+  // is a one-time thing and never in reception's way for the rest of the day.
+  function syncSound(){
+    var el=document.getElementById('cbm-sound');
+    if(el) el.classList.toggle('on', !audioReady());
+  }
+  window.cbmEnableSound=function(){
+    unlockAudio();
+    // Answer the tap with the chime itself, so reception hears straight away
+    // that it worked and at what volume. It waits for the audio to be genuinely
+    // running rather than looking once after a fixed moment: resume() can come
+    // back later than that, and the tap then makes no sound at all — which is
+    // indistinguishable from a dead button, on the one control every alarm in
+    // the building now depends on.
+    var tries=0;
+    var t=setInterval(function(){
+      syncSound();
+      if(audioReady()){ clearInterval(t); chimeWarn(); }
+      else if(++tries>40) clearInterval(t);   // four seconds: the tap was refused
+    },100);
+  };
+
+  function tone(f,at,dur,peak,type){
+    if(!_bus) return;
+    var o=_ac.createOscillator(), g=_ac.createGain();
+    o.type=type||'sine';
+    o.frequency.setValueAtTime(f,at);
+    g.gain.setValueAtTime(0.0001,at);
+    g.gain.exponentialRampToValueAtTime(peak,at+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+    o.connect(g).connect(_bus);
+    o.start(at); o.stop(at+dur+.05);
+  }
+  // Fifteen minutes left: the boards' two notes, note for note.
+  function chimeWarn(){
+    if(!audioReady()) return;
+    var t0=_ac.currentTime;
+    tone(1760,t0,.9,1.0); tone(2349.3,t0+.42,.9,1.0);
+  }
+  // Over the limit: the falling phrase three times over. One pass is easy to
+  // miss with a dryer running; three is unmistakable and still ends by itself.
+  function alarmOver(){
+    if(!audioReady()) return;
+    var t0=_ac.currentTime;
+    for(var p=0;p<3;p++){
+      (function(base){
+        [830.6,698.5,554.4].forEach(function(f,i){ tone(f,base+i*.26,.8,1.0,'triangle'); });
+      })(t0+p*.9);
+    }
+  }
+
+  // Every technician, every kind of job, once a second. A job seen for the
+  // first time only has its colour written down — a panel opened halfway
+  // through the afternoon does not shout about crossings that already
+  // happened, exactly as the wall boards behave.
+  function watch(){
+    var t=now();
+    C.operators.forEach(function(o){
+      var cur=(_ops[o.key]||{}).current;
+      if(!cur){ delete _phase[o.key]; return; }
+      // Keyed on the job, not the technician: a new start is a new countdown
+      // and gets its own crossings, even for the same woman.
+      var id=cur.type+'@'+cur.startAt;
+      var left=cur.startAt+(cur.limitMin||60)*60000-t;
+      var state=left<=0?'over':(left<=C.warnMs?'warn':'run');
+      var was=_phase[o.key];
+      _phase[o.key]={id:id,state:state};
+      if(!was||was.id!==id||was.state===state) return;
+      if(state==='warn'&&was.state==='run') chimeWarn();
+      // A laptop that slept through the crossing wakes to find the job long
+      // over. Ring for the ones that have just gone past, not for one that
+      // went past forty minutes ago and has been sitting red ever since.
+      else if(state==='over'&&-left<=5*60000) alarmOver();
+    });
+  }
+
   function render(){
     // Collapsed, the tab still says the two things reception needs: how many
     // are running, and whether any of them has gone past her limit.
+    watch();
+    syncSound();
     var c=counts();
+    // Sound still asleep is worth saying wherever the panel is put away, or
+    // nobody finds out it was silent until an alarm has already been missed.
+    var mute=audioReady()?'':' 🔇';
     var run=document.getElementById('cbm-tab-run'), cr=document.getElementById('cbm-tab-n');
     if(run) run.textContent='⏱ '+c.run+(c.late?' ⚠':'');
-    if(cr)  cr.textContent='👑 '+c.crown;
+    if(cr)  cr.textContent='👑 '+c.crown+mute;
     var tab=document.getElementById('cbm-tab');
     if(tab) tab.classList.toggle('late', c.late>0);
     // Minimised, it keeps saying the one thing worth a glance.
     var mn=document.getElementById('cbm-min-n'), mb=document.getElementById('cbm-min');
-    if(mn) mn.textContent=c.run+' running'+(c.late?' ⚠':'');
+    if(mn) mn.textContent=c.run+' running'+(c.late?' ⚠':'')+mute;
     if(mb) mb.classList.toggle('late', c.late>0);
     if(!_open) return;
     var body=document.getElementById('cbm-body');
@@ -14811,6 +14954,16 @@ window.addEventListener('load',function(){
   }
   _startTimer=setInterval(start,3000); start();
   setInterval(render,1000);
+  // Not `once`, and not only on the gold bar: reception taps this laptop all
+  // day anyway, so in practice the sound is live long before anything needs to
+  // ring. The bar is there for the morning nobody has touched it yet.
+  ['pointerdown','keydown','touchend'].forEach(function(ev){
+    document.addEventListener(ev, unlockAudio, {passive:true});
+  });
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState==='visible') unlockAudio();
+  });
+  unlockAudio();
   // Come back the way she left it. Devices still holding the old open/closed
   // flag are carried over so nobody's panel jumps on the day this ships.
   try{
