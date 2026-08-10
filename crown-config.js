@@ -39,6 +39,20 @@ window.CROWN = {
   warnMs: 15*60000,   // amber, and the two-note chime, at fifteen minutes left
   undoMs:  2*60000,   // a start pressed by mistake can be taken back this long
 
+  // The limits above are what a job normally runs on, and nothing below changes
+  // them. Management may set a DIFFERENT limit for one single job — either as it
+  // is started or on one already running. These four are the quick buttons; an
+  // "Other" box next to them takes any number of minutes. Both screens put the
+  // whole thing behind the owner password, so it is management's to give: an
+  // operator working the floor cannot reach it.
+  customLimits: [15, 30, 45, 60],
+  // The Other box is free to type in, so it needs an outer edge: a limit is a
+  // whole number of minutes, and these are the bounds a typo has to stay inside.
+  // Ten hours is longer than the salon is open — it is here to catch a stray
+  // keypress, not to tell management what to choose.
+  customLimitMin: 1,
+  customLimitMax: 600,
+
   // Helpers both pages use, so the lookup rules live here too.
   find: function(who){
     if (!who) return null;
@@ -50,5 +64,17 @@ window.CROWN = {
   limitFor: function(who, type){
     var o = this.find(who);
     return o ? (o[type] || 60) : 60;
+  },
+  // Every custom limit — quick button or typed into the Other box — comes
+  // through here, and it is the only thing that decides what counts as one.
+  // Nothing chosen, a stray word, a number outside the bounds above: all come
+  // back null, and the caller carries on with her automatic limit untouched.
+  customLimit: function(min){
+    if (min == null || min === '') return null;
+    var m = Number(String(min).trim().replace(',', '.'));
+    if (!isFinite(m)) return null;
+    m = Math.round(m);
+    if (m < this.customLimitMin || m > this.customLimitMax) return null;
+    return m;
   }
 };

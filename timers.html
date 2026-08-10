@@ -482,8 +482,75 @@ function whichType(key){
       <small>Shows on the ${C.types[other].label.toLowerCase()} screen</small></button>
     <button class="btn danger" onclick="noPressSheet('${o.key}')">
       😢 She finished one without pressing start<small>Records the job with no crown</small></button>
+    <button class="btn quiet" onclick="customType('${o.key}')">
+      ⚙ Management — custom limit<small>Owner password · this one job only</small></button>
     <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
+
+/* ── management: a custom limit for one job ───────────────────────────────────
+   A job normally runs on her automatic limit from crown-config.js, and the two
+   buttons above are still that. This is the exception: management may give one
+   single job 15, 30, 45 or 60 minutes instead. The owner password is what makes
+   it management's — it is asked before the lengths are even shown, so an
+   operator never sees them.
+
+   Nothing else in the countdown changes. Everything downstream — the clock, the
+   bar, the amber crossing, the crown-or-sad verdict — already reads limitMin off
+   the running job, so setting that one number is the whole of it. -------- */
+function customType(key){
+  const o = C.find(key);
+  if (!o) return closeSheet();
+  askOwner(() => {
+    const mine = AREA || 'manicure', other = AREA ? OTHER : 'pedicure';
+    openSheet(`
+      <h2>${o.name}</h2>
+      <p class="sub">Custom limit — which job is she starting?</p>
+      ${[mine, other].map((ty, i) => `<button class="btn ${i ? 'gold' : 'primary'}" onclick="customLimitSheet('${o.key}','${ty}')">
+        ${C.types[ty].icon} ${C.types[ty].label}<small>Normally ${o[ty] || 60} min</small></button>`).join('')}
+      <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
+  });
+}
+function customLimitSheet(key, type){
+  const o = C.find(key);
+  if (!o || !C.types[type]) return closeSheet();
+  openSheet(`
+    <h2>${o.name}</h2>
+    <p class="sub">${C.types[type].icon} ${C.types[type].label} — how long for this one job?</p>
+    ${C.customLimits.map(m => `<button class="btn gold" onclick="startJob('${o.key}','${type}',${m})">
+      ${m} minutes</button>`).join('')}
+    ${otherBox()}
+    <button class="btn gold" onclick="startOther('${o.key}','${type}')">Use this limit</button>
+    <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
+  otherEnter(() => startOther(key, type));
+}
+
+// The four buttons cover almost every case; the box is for the one they don't.
+// Anything that is not a sensible number of minutes is refused here and now,
+// rather than quietly starting a job on a limit nobody meant.
+function otherBox(){
+  return `<input class="pinbox" id="otherMin" type="number" inputmode="numeric"
+            min="${C.customLimitMin}" max="${C.customLimitMax}" placeholder="Other — minutes">
+          <div class="err" id="otherErr"></div>`;
+}
+function otherEnter(go){
+  const box = $('otherMin');
+  if (box) box.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); go(); }
+  });
+}
+function otherMins(){
+  const box = $('otherMin');
+  const m = C.customLimit(box && box.value);
+  if (!m) {
+    $('otherErr').textContent =
+      `Minutes — a whole number from ${C.customLimitMin} to ${C.customLimitMax}`;
+    if (box) { box.focus(); box.select(); }
+    return null;
+  }
+  return m;
+}
+function startOther(key, type){ const m = otherMins(); if (m) startJob(key, type, m); }
+function setOther(key){ const m = otherMins(); if (m) setLimit(key, m); }
 
 function runningSheet(key, cur){
   const o = C.find(key);
@@ -500,7 +567,43 @@ function runningSheet(key, cur){
     ${now() - cur.startAt < C.undoMs
       ? `<button class="btn quiet" onclick="cancelJob('${o.key}')">Started by mistake — undo</button>`
       : `<button class="btn quiet" onclick="ownerCancel('${o.key}')">Started by mistake — needs reception</button>`}
+    <button class="btn quiet" onclick="changeLimit('${o.key}')">
+      ⚙ Management — change the limit<small>Owner password · 15 / 30 / 45 / 60 min</small></button>
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
+}
+
+// The same override, given to a job already under way. She keeps the start time
+// she has — only the length of the job changes — so the clock simply re-reads
+// the new limit on the next paint half a second later, and the crown at the end
+// is judged against it.
+function changeLimit(key){
+  const o = C.find(key);
+  if (!o || !(ops[key] || {}).current) return closeSheet();
+  askOwner(() => {
+    const cur = (ops[key] || {}).current;
+    if (!cur) return closeSheet();
+    openSheet(`
+      <h2>${o.name}</h2>
+      <p class="sub">${C.types[cur.type].icon} ${C.types[cur.type].label} ·
+        running on ${cur.limitMin} min — what should it be?</p>
+      ${C.customLimits.map(m => `<button class="btn gold" onclick="setLimit('${o.key}',${m})">
+        ${m} minutes</button>`).join('')}
+      ${otherBox()}
+      <button class="btn gold" onclick="setOther('${o.key}')">Use this limit</button>
+      <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
+    otherEnter(() => setOther(key));
+  });
+}
+function setLimit(key, min){
+  closeSheet();
+  const m = C.customLimit(min);
+  if (!db || !m || !(ops[key] || {}).current) return;
+  // phase is deliberately left alone: whether the tile now chimes is the same
+  // fifteen-minute crossing rule as ever, just measured against the new limit.
+  db.ref('timers').update({
+    ['ops/' + key + '/current/limitMin']: m,
+    ['ops/' + key + '/current/limitOvr']: true
+  }).catch(dbErr);
 }
 
 // A job done with no press at all: it still happened, so it is still recorded —
@@ -528,20 +631,27 @@ function fileJob(upd, o, cur){
   const endAt = now(), elapsed = Math.max(0, endAt - cur.startAt);
   const crown = elapsed < cur.limitMin * 60000;      // finished with time left
   const id = db.ref('timers/sessions').push().key;
-  upd['ops/' + o.key + '/last/' + cur.type] = {
+  const tile = {
     type: cur.type, startAt: cur.startAt, endAt, elapsed,
     limitMin: cur.limitMin, crown, sessionId: id
   };
-  upd['sessions/' + id] = {
+  const session = {
     id, operator: o.name, operatorKey: o.key, type: cur.type, area: cur.type,
     startAt: cur.startAt, endAt, elapsedMs: elapsed,
     elapsedMin: Math.round(elapsed/60000), limitMin: cur.limitMin,
     crown, day: today(endAt), v: 2
   };
+  // Only a job management gave its own limit carries this, so a job run the
+  // normal way is filed byte for byte the way it always was.
+  if (cur.limitOvr) { tile.limitOvr = true; session.limitOvr = true; }
+  upd['ops/' + o.key + '/last/' + cur.type] = tile;
+  upd['sessions/' + id] = session;
   return crown;
 }
 
-function startJob(who, type){
+// customMin is the management override and is almost never passed: leave it out
+// and the job runs on her automatic limit, exactly as every start always has.
+function startJob(who, type, customMin){
   closeSheet();
   const o = C.find(who);
   if (!db || !o || !C.types[type]) return;
@@ -553,8 +663,13 @@ function startJob(who, type){
   const upd = {};
   const cur = (ops[o.key] || {}).current;
   if (cur) fileJob(upd, o, cur);
+  const ovr = C.customLimit(customMin);
+  const job = { type, startAt: now(), limitMin: ovr || o[type] || 60 };
+  // Marked so the finished session says why it ran to an unusual length, rather
+  // than looking like a limit somebody mistyped months later.
+  if (ovr) job.limitOvr = true;
   upd['ops/' + o.key + '/name'] = o.name;
-  upd['ops/' + o.key + '/current'] = { type, startAt: now(), limitMin: o[type] || 60 };
+  upd['ops/' + o.key + '/current'] = job;
   phase[o.key] = null;
   db.ref('timers').update(upd).catch(dbErr);
 }

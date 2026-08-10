@@ -14449,6 +14449,12 @@ window.addEventListener('load',function(){
   border:1px solid rgba(212,169,106,.4);background:transparent;color:#f3e3c8;
   padding:9px 11px;font-family:inherit;font-size:.82rem;font-weight:700;cursor:pointer}
 .cbm-pick button.q{border-color:#2a2a22;color:#8d8574;text-align:center;font-weight:600}
+/* The "Other" box, for a limit none of the quick buttons covers */
+.cbm-other{display:block;width:100%;margin-top:7px;border-radius:9px;
+  border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
+  padding:9px 11px;font-family:inherit;font-size:.82rem;font-weight:700}
+.cbm-other::placeholder{color:#8d8574;font-weight:600}
+.cbm-err{color:#f2708b;font-size:.68rem;font-weight:700;padding:4px 2px 0;min-height:1px}
 .cbm-pick .ttl{color:#d4a96a;font-size:.74rem;font-weight:800;padding:6px 2px 2px}
 .cbm-foot{padding:8px 12px 11px;color:#8d8574;font-size:.64rem;line-height:1.5;
   border-top:1px solid rgba(212,169,106,.18)}
@@ -14472,6 +14478,10 @@ window.addEventListener('load',function(){
 (function(){
   var C=window.CROWN;
   var _ops={}, _off=0, _open=false, _started=false, _startTimer=null, _pick=null;
+  // The panel redraws itself every second. A sheet with a box to type in must
+  // survive that, or the minutes being typed are wiped out from under the hand,
+  // so those two sheets ask to be left alone until they are done with.
+  var _pickHold=false;
   var _state='closed';   // 'open' | 'min' | 'closed'
 
   function now(){ return Date.now()+_off; }
@@ -14541,7 +14551,14 @@ window.addEventListener('load',function(){
     if(mb) mb.classList.toggle('late', c.late>0);
     if(!_open) return;
     var body=document.getElementById('cbm-body');
-    if(_pick){ body.innerHTML=_pick(); return; }
+    // A sheet with a box to type in is drawn once and then left alone: redrawing
+    // it every second would wipe the minutes out from under the hand. It is
+    // still drawn the first time, and again if anything else clears the body.
+    if(_pick){
+      if(!_pickHold || !body.querySelector('#cbm-other')) body.innerHTML=_pick();
+      return;
+    }
+    _pickHold=false;
     body.innerHTML=C.operators.map(row).join('');
   }
 
@@ -14568,11 +14585,72 @@ window.addEventListener('load',function(){
           return '<button onclick="cbmDoStart(\''+o.key+'\',\''+ty+'\')">'+C.types[ty].icon+' '+
             C.types[ty].label+' — '+(o[ty]||60)+' dk</button>';
         }).join('')+
+        '<button class="q" onclick="cbmCustom(\''+o.key+'\')">⚙ Özel süre (yönetim)</button>'+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
     };
     render();
   };
   window.cbmBack=function(){ _pick=null; render(); };
+
+  // ── management: a custom limit for one job ──────────────────────────────
+  // The buttons above are her automatic limit from crown-config.js and stay
+  // exactly that. This is the one exception management may make, for a single
+  // job: 15, 30, 45 or 60 minutes instead. The owner password — the same one
+  // the rest of the app asks for — is wanted before the lengths are even shown,
+  // so a receptionist or a technician never gets to them.
+  function mgmt(){
+    try{ return (typeof ownerPin==='function') ? !!ownerPin() : false; }catch(e){ return false; }
+  }
+  window.cbmCustom=function(key){
+    var o=C.find(key); if(!o) return cbmBack();
+    if(!mgmt()) return cbmBack();
+    _pick=function(){
+      return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — özel süre · hangi iş?</div>'+
+        Object.keys(C.types).map(function(ty){
+          return '<button onclick="cbmCustomLimit(\''+o.key+'\',\''+ty+'\')">'+C.types[ty].icon+' '+
+            C.types[ty].label+' <span style="color:#8d8574;font-weight:600">— normalde '+(o[ty]||60)+' dk</span></button>';
+        }).join('')+
+        '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
+    };
+    render();
+  };
+  window.cbmCustomLimit=function(key,type){
+    var o=C.find(key); if(!o||!C.types[type]) return cbmBack();
+    _pick=function(){
+      return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — '+
+        C.types[type].label+' · süre?</div>'+
+        C.customLimits.map(function(m){
+          return '<button onclick="cbmDoStart(\''+o.key+'\',\''+type+'\','+m+')">'+m+' dakika</button>';
+        }).join('')+
+        otherBox()+
+        '<button onclick="cbmStartOther(\''+o.key+'\',\''+type+'\')">Bu süreyi kullan</button>'+
+        '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
+    };
+    _pickHold=true;
+    render();
+  };
+
+  // The quick buttons cover almost every case; the box is for the one they
+  // don't. Anything that is not a sensible number of minutes is refused here
+  // and now, rather than quietly starting a job on a limit nobody meant.
+  function otherBox(){
+    return '<input class="cbm-other" id="cbm-other" type="number" inputmode="numeric" '+
+      'min="'+C.customLimitMin+'" max="'+C.customLimitMax+'" placeholder="Diğer — dakika">'+
+      '<div class="cbm-err" id="cbm-other-err"></div>';
+  }
+  function otherMins(){
+    var box=document.getElementById('cbm-other');
+    var m=C.customLimit(box && box.value);
+    if(!m){
+      var e=document.getElementById('cbm-other-err');
+      if(e) e.textContent='Dakika — '+C.customLimitMin+' ile '+C.customLimitMax+' arasında tam sayı';
+      if(box){ box.focus(); box.select(); }
+      return null;
+    }
+    return m;
+  }
+  window.cbmStartOther=function(key,type){ var m=otherMins(); if(m) cbmDoStart(key,type,m); };
+  window.cbmSetOther  =function(key){      var m=otherMins(); if(m) cbmSetLimit(key,m); };
 
   // Filing a job that is over: her tile's verdict and the permanent session the
   // commission is paid from — the same two writes the wall boards make, so a job
@@ -14583,15 +14661,22 @@ window.addEventListener('load',function(){
     var id=_fbDb.ref('timers/sessions').push().key;
     var d=new Date(endAt);
     var day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    upd['ops/'+o.key+'/last/'+cur.type]={type:cur.type,startAt:cur.startAt,endAt:endAt,
+    var tile={type:cur.type,startAt:cur.startAt,endAt:endAt,
       elapsed:elapsed,limitMin:cur.limitMin,crown:crown,sessionId:id};
-    upd['sessions/'+id]={id:id,operator:o.name,operatorKey:o.key,type:cur.type,area:cur.type,
+    var session={id:id,operator:o.name,operatorKey:o.key,type:cur.type,area:cur.type,
       startAt:cur.startAt,endAt:endAt,elapsedMs:elapsed,elapsedMin:Math.round(elapsed/60000),
       limitMin:cur.limitMin,crown:crown,day:day,v:2};
+    // Only a job management gave its own limit carries this, so a job run the
+    // normal way is filed byte for byte the way it always was.
+    if(cur.limitOvr){ tile.limitOvr=true; session.limitOvr=true; }
+    upd['ops/'+o.key+'/last/'+cur.type]=tile;
+    upd['sessions/'+id]=session;
     return crown;
   }
 
-  window.cbmDoStart=function(key,type){
+  // customMin is the management override and is almost never passed: leave it
+  // out and the job runs on her automatic limit, as every start always has.
+  window.cbmDoStart=function(key,type,customMin){
     var o=C.find(key); _pick=null;
     if(!o||!_fbDb) return render();
     // A start always begins a completely fresh countdown. Anything still open for
@@ -14599,8 +14684,13 @@ window.addEventListener('load',function(){
     // job starts on her full limit, carrying nothing of the old one.
     var upd={}, cur=(_ops[o.key]||{}).current;
     if(cur) file(upd,o,cur);
+    var ovr=C.customLimit(customMin);
+    var job={ type:type, startAt:now(), limitMin:(ovr||o[type]||60) };
+    // Marked so the finished session says why it ran to an unusual length,
+    // rather than looking like a limit somebody mistyped months later.
+    if(ovr) job.limitOvr=true;
     upd['ops/'+o.key+'/name']=o.name;
-    upd['ops/'+o.key+'/current']={ type:type, startAt:now(), limitMin:(o[type]||60) };
+    upd['ops/'+o.key+'/current']=job;
     _fbDb.ref('timers').update(upd).catch(function(e){ console.warn('[CBM] start failed:',e); });
     render();
   };
@@ -14615,8 +14705,42 @@ window.addEventListener('load',function(){
         '<div style="color:#8d8574;font-size:.72rem;padding:2px 2px 4px">'+
         (left>0? fmt(left)+' kaldı — bitirirse 👑' : fmt(-left)+' geçti — bitirirse 😢')+'</div>'+
         '<button onclick="cbmDoFinish(\''+o.key+'\')">✓ Bitir</button>'+
+        '<button class="q" onclick="cbmChangeLimit(\''+o.key+'\')">⚙ Süreyi değiştir (yönetim)</button>'+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
     };
+    render();
+  };
+
+  // The same override, given to a job already under way. She keeps the start
+  // time she has — only the length of the job changes — so the row simply
+  // re-reads the new limit, and the crown at the end is judged against it.
+  window.cbmChangeLimit=function(key){
+    var o=C.find(key); if(!o) return cbmBack();
+    if(!(_ops[o.key]||{}).current) return cbmBack();
+    if(!mgmt()) return cbmBack();
+    _pick=function(){
+      var c=(_ops[o.key]||{}).current;
+      if(!c) return '<div class="cbm-pick"><button class="q" onclick="cbmBack()">Vazgeç</button></div>';
+      return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — şu an '+
+        (c.limitMin||60)+' dk · yeni süre?</div>'+
+        C.customLimits.map(function(m){
+          return '<button onclick="cbmSetLimit(\''+o.key+'\','+m+')">'+m+' dakika</button>';
+        }).join('')+
+        otherBox()+
+        '<button onclick="cbmSetOther(\''+o.key+'\')">Bu süreyi kullan</button>'+
+        '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
+    };
+    _pickHold=true;
+    render();
+  };
+  window.cbmSetLimit=function(key,min){
+    var o=C.find(key); _pick=null;
+    var m=C.customLimit(min), cur=o&&(_ops[o.key]||{}).current;
+    if(!m||!cur||!_fbDb) return render();
+    var upd={};
+    upd['ops/'+o.key+'/current/limitMin']=m;
+    upd['ops/'+o.key+'/current/limitOvr']=true;
+    _fbDb.ref('timers').update(upd).catch(function(e){ console.warn('[CBM] limit change failed:',e); });
     render();
   };
 
