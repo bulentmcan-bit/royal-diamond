@@ -299,6 +299,8 @@ const OTHER = AREA === 'manicure' ? 'pedicure' : 'manicure';
 let db = null, ops = {}, srvOffset = 0, audioCtx = null, audioBus = null, soundOn = true;
 let ownerCloudHash = '';
 const phase = {};    // operator key -> colour last seen, so the chime fires on the crossing only
+const overSaid = {}; // operator key -> {id, at}, so "time is up" comes round rather than once
+const OVER_REPEAT = 2*60000;   // how often "time is up" repeats while a job is still over
 const tiles = {};
 const now = () => Date.now() + srvOffset;
 
@@ -409,9 +411,25 @@ function paint(){
       // reloaded has no colour written down for her yet, so it stays quiet; and
       // one coming back from a network outage does not shout about a limit that
       // went past half an hour ago while it was not looking.
-      if (phase[o.key] === 'run' && state === 'warn') chimeWarn();
-      else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
-               && -leftMs <= 5*60000) alarmOver();
+      const jobId = cur.type + '@' + cur.startAt;
+      if (phase[o.key] === 'run' && state === 'warn') {
+        announce('warn', o.name + ', fifteen minutes');
+      } else if (state === 'over') {
+        const said = overSaid[o.key], known = said && said.id === jobId;
+        if (phase[o.key] && phase[o.key] !== 'over' && -leftMs <= 5*60000) {
+          announce('over', o.name + ', time is up');
+          overSaid[o.key] = { id: jobId, at: t };
+        } else if (!known) {
+          // first sight of a job already over: start its clock rather than
+          // shouting about something that may be long past. It is still over
+          // and nobody has finished it, so it comes round with the rest.
+          overSaid[o.key] = { id: jobId, at: t };
+        } else if (t - said.at >= OVER_REPEAT) {
+          announce('over', o.name + ', time is up');
+          overSaid[o.key] = { id: jobId, at: t };
+        }
+      }
+      if (state !== 'over') delete overSaid[o.key];
       phase[o.key] = state;
       return;
     }
@@ -426,6 +444,7 @@ function paint(){
       ui.time.textContent = leftMs <= 0 ? '+' + fmt(-leftMs) : fmt(leftMs);
       ui.foot.textContent = 'On a ' + C.types[cur.type].label.toLowerCase() + ' · tap to finish';
       phase[o.key] = null;
+      delete overSaid[o.key];
       return;
     }
 
@@ -449,6 +468,7 @@ function paint(){
       ui.foot.textContent = 'Tap to start';
     }
     phase[o.key] = null;
+    delete overSaid[o.key];
   });
 
   $('headStat').innerHTML = `<b>${running}</b> running · <b>${late}</b> over · <b>${crowns}</b> 👑`;
@@ -951,7 +971,20 @@ function buildAudioChain(){
   makeup.gain.value = 1.05;
   audioBus.connect(lim).connect(makeup).connect(audioCtx.destination);
 }
+// Speech has its own gate, separate from Web Audio's: a television can be happy
+// to play the chimes and still refuse to talk until it has been touched, and it
+// can leave the voice paused after being switched off overnight. The one press
+// answers both.
+function unlockSpeech(){
+  try{
+    const S = window.speechSynthesis;
+    if (!S) return;
+    if (S.paused) S.resume();
+    pickVoice();
+  }catch(e){}
+}
 function unlockAudio(){
+  unlockSpeech();
   if (!audioCtx){
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -1028,10 +1061,12 @@ function tone(f, at, dur, peak, type){
   o.start(at); o.stop(at + dur + .05);
 }
 // Fifteen minutes left: two notes, enough to look up from across the room.
+// Returns how long it lasts, in seconds, so speech can be laid in behind it.
 function chimeWarn(){
-  if (!audioCtx || !soundOn) return;
+  if (!audioCtx || !soundOn) return 0;
   const t0 = audioCtx.currentTime;
   tone(1760, t0, .9, 1.0); tone(2349.3, t0 + .42, .9, 1.0);
+  return 1.4;
 }
 // Crown: a bright rising sparkle.
 function fanfare(){
@@ -1044,12 +1079,92 @@ function fanfare(){
 // over. One pass is easy to miss with a dryer going; three is unmistakable and
 // still ends by itself. The same alarm reception's monitor sounds, note for
 // note, so the two machines are saying the same thing about the same job.
-function alarmOver(){
-  if (!audioCtx || !soundOn) return;
+function alarmOver(passes){
+  const n = passes || 3;
+  if (!audioCtx || !soundOn) return 0;
   const t0 = audioCtx.currentTime;
-  for (let p = 0; p < 3; p++)
+  for (let p = 0; p < n; p++)
     [830.6, 698.5, 554.4].forEach((f,i) => tone(f, t0 + p*.9 + i*.26, .8, 1.0, 'triangle'));
+  return (n-1)*.9 + .52 + .8 + .1;
 }
+/* ── saying it out loud ─────────────────────────────────────────────────────
+   A sound says something happened; it does not say who. This board carries
+   three technicians, so it now says the name as well: the sound to make the
+   room look up, then the name and the news, then the sound again for anyone
+   who missed the first.
+
+   Which voice and how she sounds are in crown-config.js, the same settings
+   reception reads, so both screens are the same person rather than two.
+
+   The speech does NOT run through the limiter and makeup gain the chimes use —
+   that chain only carries what Web Audio generates. Its volume is asked for at
+   the maximum the API allows, and the television's own volume does the rest. */
+// `var`, not `let`, for the three bindings this section keeps: the page calls
+// unlockAudio() and paint() further up the file than this, and a `let` would
+// still be in its dead zone when they first run.
+var voice = null;
+function pickVoice(){
+  if (!voice) voice = C.pickVoice();
+  return voice;
+}
+if (window.speechSynthesis)
+  window.speechSynthesis.addEventListener('voiceschanged', () => { voice = null; pickVoice(); });
+
+function say(text, after){
+  let done = false;
+  const fin = () => { if (done) return; done = true; if (after) after(); };
+  try{
+    const S = window.speechSynthesis;
+    if (!S || typeof SpeechSynthesisUtterance !== 'function') return fin();
+    S.cancel();   // clear anything stuck, so one jammed utterance cannot mute the day
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = C.voice.lang; u.volume = C.voice.volume;
+    u.rate = C.voice.rate; u.pitch = C.voice.pitch;
+    const v = pickVoice(); if (v) u.voice = v;
+    u.onend = fin; u.onerror = fin;
+    // Chrome does not always fire onend. Without this the closing chime would
+    // never arrive and everything queued behind it would stop for good.
+    setTimeout(fin, 7000);
+    S.speak(u);
+  }catch(e){ fin(); }
+}
+
+// One at a time. Two technicians crossing in the same minute is ordinary, and
+// two announcements on top of each other say nothing at all.
+var queue = [];
+var talking = false;
+var talkingSince = 0;
+function announce(kind, text){
+  if (!soundOn) return;
+  // One announcement that gets stuck must never take the rest of the day's
+  // alarms down with it. Anything still "speaking" after longer than an
+  // announcement can possibly last has the floor taken back off it — a board
+  // that has gone quiet without saying so is the worst way for this to fail.
+  if (talking && Date.now() - talkingSince > 20000) talking = false;
+  if (queue.length >= 6) return;
+  queue.push({ kind, text });
+  pump();
+}
+function pump(){
+  if (talking || !queue.length) return;
+  talking = true; talkingSince = Date.now();
+  const it = queue.shift();
+  const release = () => { talking = false; pump(); };
+  // Every step is guarded: the queue must drain even if a sound or the speech
+  // engine throws, or nothing is ever announced again.
+  let lead = 0;
+  try { lead = it.kind === 'over' ? alarmOver(2) : chimeWarn(); } catch(e){}
+  setTimeout(() => {
+    try {
+      say(it.text, () => {
+        let tail = 0;
+        try { tail = it.kind === 'over' ? alarmOver(2) : chimeWarn(); } catch(e){}
+        setTimeout(release, Math.round(tail*1000));
+      });
+    } catch(e){ release(); }
+  }, Math.round(lead*1000));
+}
+
 // Over the limit, or never started: a sigh downwards.
 function sadTone(){
   if (!audioCtx || !soundOn) return;

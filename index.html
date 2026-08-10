@@ -14702,16 +14702,12 @@ window.addEventListener('load',function(){
      and makeup gain the chimes use — that chain only carries what Web Audio
      generates. Its volume is asked for at the maximum the API allows, and the
      rest is the laptop's own volume knob, which is what the one tap is for. */
+  // Which voice, and how she sounds, both live in crown-config.js — the wall
+  // boards read the very same settings, so the salon hears one person rather
+  // than two. Cached once found: the list does not change while a page is open.
   var _voice=null;
   function pickVoice(){
-    if(_voice) return _voice;
-    try{
-      var vs=(window.speechSynthesis.getVoices()||[]);
-      // English, whichever the machine happens to have. The salon speaks
-      // Turkish, but a Turkish voice reading an English sentence is worse than
-      // an English one, and these two sentences are all it ever says.
-      _voice=vs.filter(function(v){ return /^en\b|^en[-_]/i.test(v.lang||''); })[0]||null;
-    }catch(e){}
+    if(!_voice) _voice=C.pickVoice();
     return _voice;
   }
   try{
@@ -14730,7 +14726,7 @@ window.addEventListener('load',function(){
       if(!S || typeof SpeechSynthesisUtterance!=='function'){ fin(); return; }
       S.cancel();   // clear anything stuck, so a jammed utterance cannot mute the rest of the day
       var u=new SpeechSynthesisUtterance(text);
-      u.lang='en-GB'; u.volume=1; u.rate=.95; u.pitch=1;
+      u.lang=C.voice.lang; u.volume=C.voice.volume; u.rate=C.voice.rate; u.pitch=C.voice.pitch;
       var v=pickVoice(); if(v) u.voice=v;
       u.onend=fin; u.onerror=fin;
       // Chrome does not always fire onend. Without this the closing chime would
@@ -14742,22 +14738,34 @@ window.addEventListener('load',function(){
 
   // One at a time. Two stations crossing in the same minute is ordinary here,
   // and two announcements on top of each other say nothing at all.
-  var _queue=[], _talking=false;
+  var _queue=[], _talking=false, _talkingSince=0;
   function announce(kind, text){
+    // One announcement that gets stuck must never take the rest of the day's
+    // alarms down with it. Anything still "speaking" after longer than an
+    // announcement can possibly last has the floor taken back off it — silence
+    // that nobody can see is the worst way for this to fail.
+    if(_talking && Date.now()-_talkingSince>20000) _talking=false;
     if(_queue.length>=6) return;   // a backlog nobody could follow anyway
     _queue.push({kind:kind,text:text});
     pump();
   }
   function pump(){
     if(_talking || !_queue.length) return;
-    _talking=true;
+    _talking=true; _talkingSince=Date.now();
     var it=_queue.shift();
-    var lead=(it.kind==='over') ? alarmOver(2) : chimeWarn();
+    function release(){ _talking=false; pump(); }
+    // Every step is guarded: the queue must drain even if a sound or the speech
+    // engine throws, or nothing is ever announced again.
+    var lead=0;
+    try{ lead=(it.kind==='over') ? alarmOver(2) : chimeWarn(); }catch(e){}
     setTimeout(function(){
-      say(it.text, function(){
-        var tail=(it.kind==='over') ? alarmOver(2) : chimeWarn();
-        setTimeout(function(){ _talking=false; pump(); }, Math.round(tail*1000));
-      });
+      try{
+        say(it.text, function(){
+          var tail=0;
+          try{ tail=(it.kind==='over') ? alarmOver(2) : chimeWarn(); }catch(e){}
+          setTimeout(release, Math.round(tail*1000));
+        });
+      }catch(e){ release(); }
     }, Math.round(lead*1000));
   }
 

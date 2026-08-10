@@ -53,7 +53,45 @@ window.CROWN = {
   customLimitMin: 1,
   customLimitMax: 600,
 
+  /* The voice the screens announce in — one place, so reception and the wall
+     boards always sound like the same person.
+
+     Female and English by preference. The list is tried in order and the first
+     one the device actually has wins, matched loosely on the name because the
+     full names differ from machine to machine ("Microsoft Hazel - English
+     (United Kingdom)" on this one). Hazel and Susan are installed with Windows
+     and speak without a network; the Google voices are served over one, so they
+     come after — an alarm must not need the wifi to be up. Nothing female
+     installed at all and it falls back to any English voice rather than going
+     silent.
+
+     Bright and lively rather than a newsreader: pitched up and a little quick,
+     which also helps it cut through a room with dryers running. */
+  voice: {
+    prefer: ['Hazel', 'Susan', 'Zira', 'UK English Female', 'US English'],
+    lang:   'en-GB',
+    pitch:  1.4,
+    rate:   1.1,
+    volume: 1
+  },
+
   // Helpers both pages use, so the lookup rules live here too.
+  pickVoice: function(){
+    try{
+      var vs = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+      if (!vs.length) return null;
+      var pref = this.voice.prefer, i, hit;
+      for (i = 0; i < pref.length; i++){
+        hit = vs.filter(function(v){
+          return (v.name||'').toLowerCase().indexOf(pref[i].toLowerCase()) !== -1;
+        })[0];
+        if (hit) return hit;
+      }
+      var en = vs.filter(function(v){ return /^en\b|^en[-_]/i.test(v.lang||''); });
+      // anything that calls itself female, then any English voice at all
+      return en.filter(function(v){ return /female/i.test(v.name||''); })[0] || en[0] || null;
+    }catch(e){ return null; }
+  },
   find: function(who){
     if (!who) return null;
     var k = String(who).trim().toLowerCase();
