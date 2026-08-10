@@ -186,14 +186,33 @@
   .err{color:var(--red); font-size:13px; text-align:center; margin-top:10px; min-height:18px;}
 
   /* Only ever on screen when the browser has refused to make a sound until
-     somebody touches the page. One tap and it is gone for the rest of the day. */
-  .sound-prompt{position:fixed; left:50%; transform:translateX(-50%);
-    bottom:clamp(12px,2.4vmin,28px); z-index:60; border:0; border-radius:999px;
-    background:var(--gold); color:#1A1420; font-family:'Jost',sans-serif; font-weight:600;
-    font-size:clamp(14px,2vmin,22px); padding:clamp(10px,1.6vmin,16px) clamp(18px,3vmin,32px);
-    box-shadow:0 6px 26px rgba(0,0,0,.55); cursor:pointer;}
+     somebody touches the page. One press and it is gone for the rest of the day.
+
+     It is deliberately enormous: nobody walks up to a television, so this is
+     aimed at from across the room with the remote's on-screen pointer, and a
+     pointer pushed around with a d-pad cannot be asked to land on a small
+     button. The whole width of the screen is the target. It sits over the
+     header rather than pushing the board down, so the countdowns underneath
+     never jump when it goes — and there is nothing in the header worth reaching
+     before the sound is on anyway. */
+  .sound-prompt{position:fixed; left:0; right:0; top:0; z-index:60; width:100%;
+    display:flex; align-items:center; justify-content:center; gap:.4em;
+    min-height:clamp(74px,12vmin,150px); border:0; border-bottom:3px solid #1A1420;
+    background:var(--gold); color:#1A1420; font-family:'Jost',sans-serif; font-weight:700;
+    font-size:clamp(24px,5vmin,62px); letter-spacing:.06em; text-transform:uppercase;
+    padding:clamp(10px,1.6vmin,20px) clamp(12px,2vmin,28px); text-align:center;
+    box-shadow:0 10px 40px rgba(0,0,0,.6); cursor:pointer;
+    animation:soundPulse 1.7s ease-in-out infinite;}
+  /* A slow breath, so it reads as waiting for something rather than as part of
+     the furniture. Nothing fast enough to be a distraction on a wall all day —
+     and it is only ever on screen for the few seconds before the first press. */
+  @keyframes soundPulse{
+    0%,100%{background:var(--gold); box-shadow:0 10px 40px rgba(0,0,0,.6);}
+    50%    {background:#FFE7B8; box-shadow:0 10px 54px rgba(255,215,140,.45);}
+  }
+  @media (prefers-reduced-motion:reduce){ .sound-prompt{animation:none;} }
   .sound-prompt[hidden]{display:none;}
-  .sound-prompt:focus-visible{outline:3px solid var(--ivory); outline-offset:3px;}
+  .sound-prompt:focus-visible{outline:4px solid var(--ivory); outline-offset:-8px;}
 
   .center-wrap{max-width:460px; margin:auto; text-align:center;}
   .center-wrap h1{font-family:'Cormorant Garamond',serif; font-weight:500; font-size:34px; margin:8px 0 4px;}
@@ -241,7 +260,7 @@ const firebaseConfig = {
 <main id="board" class="hidden"></main>
 <div id="reminder" class="reminder hidden">No press → no 👑 → no commission on that job</div>
 
-<button id="soundPrompt" class="sound-prompt" onclick="enableSoundFromPrompt()" hidden>🔊 Tap to enable sound</button>
+<button id="soundPrompt" class="sound-prompt" onclick="enableSoundFromPrompt()" hidden>🔊 Press for sound</button>
 
 <div id="veil" class="veil hidden" onclick="if(event.target===this) closeSheet()">
   <div class="sheet" id="sheet"></div>
@@ -386,7 +405,13 @@ function paint(){
                                         : cur.limitMin + ' min job · tap to finish';
       // Amber and the chime arrive together, and only on the crossing — a board
       // opened mid-job does not chime for something that already happened.
+      // Red and the alarm arrive together in the same way. A board that has just
+      // reloaded has no colour written down for her yet, so it stays quiet; and
+      // one coming back from a network outage does not shout about a limit that
+      // went past half an hour ago while it was not looking.
       if (phase[o.key] === 'run' && state === 'warn') chimeWarn();
+      else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
+               && -leftMs <= 5*60000) alarmOver();
       phase[o.key] = state;
       return;
     }
@@ -899,7 +924,7 @@ function toggleSound(){
   soundOn = !soundOn;
   $('soundBtn').classList.toggle('on', soundOn);
   $('soundBtn').textContent = soundOn ? '🔔 Sound' : '🔕 Muted';
-  if (soundOn) { unlockAudio(); chimeWarn(); }
+  if (soundOn) { unlockAudio(); chimeWhenReady(); }
   else syncSoundPrompt();
 }
 /* The board lives on a TV across the room, so the sounds are driven hard —
@@ -953,9 +978,23 @@ function syncSoundPrompt(){
 }
 function enableSoundFromPrompt(){
   unlockAudio();
-  // Answer the tap with the same chime the board uses, so the room can hear
-  // straight away that it worked and at what volume.
-  setTimeout(() => { syncSoundPrompt(); if (audioCtx && audioCtx.state === 'running') chimeWarn(); }, 120);
+  chimeWhenReady();
+}
+// Answer the press with the same chime the board uses, so the room can hear
+// straight away that it worked and at what volume.
+//
+// It waits for the audio to be genuinely running rather than looking once after
+// a fixed moment. Measured on a real press: resume() came back well after that
+// moment had passed, the look found the audio still suspended, and the press
+// made no sound whatsoever — which from across the room is indistinguishable
+// from a dead button, on the one control the whole system's noise depends on.
+function chimeWhenReady(){
+  let tries = 0;
+  const t = setInterval(() => {
+    syncSoundPrompt();
+    if (audioCtx && audioCtx.state === 'running'){ clearInterval(t); chimeWarn(); }
+    else if (++tries > 40) clearInterval(t);   // four seconds: the press was refused
+  }, 100);
 }
 // Not `once` — if the first gesture is swallowed, the next tap must still be
 // able to bring the sound up.
@@ -964,6 +1003,17 @@ function enableSoundFromPrompt(){
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') unlockAudio();
 });
+// A television is left alone for months, and audio that was running in the
+// morning can be suspended by the evening — the set drops the tab into the
+// background, or the browser reclaims it. Nothing would ever say so: the board
+// would keep painting amber and red in perfect silence. So the state is read
+// every couple of seconds. Suspended means one quiet attempt to bring it back,
+// and if that is refused the big banner returns by itself and asks for the
+// press again.
+setInterval(() => {
+  if (soundOn && audioCtx && audioCtx.state !== 'running') unlockAudio();
+  else syncSoundPrompt();
+}, 2000);
 unlockAudio();
 
 function tone(f, at, dur, peak, type){
@@ -989,6 +1039,16 @@ function fanfare(){
   const t0 = audioCtx.currentTime;
   [1046.5,1318.5,1568,2093,2637,3136].forEach((f,i) => tone(f, t0 + i*.08, .45, 1.0, 'triangle'));
   [4186,5274,6272].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .50));
+}
+// Crossing the limit with the job still running: the falling phrase three times
+// over. One pass is easy to miss with a dryer going; three is unmistakable and
+// still ends by itself. The same alarm reception's monitor sounds, note for
+// note, so the two machines are saying the same thing about the same job.
+function alarmOver(){
+  if (!audioCtx || !soundOn) return;
+  const t0 = audioCtx.currentTime;
+  for (let p = 0; p < 3; p++)
+    [830.6, 698.5, 554.4].forEach((f,i) => tone(f, t0 + p*.9 + i*.26, .8, 1.0, 'triangle'));
 }
 // Over the limit, or never started: a sigh downwards.
 function sadTone(){
