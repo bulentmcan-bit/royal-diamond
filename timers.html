@@ -299,8 +299,6 @@ const OTHER = AREA === 'manicure' ? 'pedicure' : 'manicure';
 let db = null, ops = {}, srvOffset = 0, audioCtx = null, audioBus = null, soundOn = true;
 let ownerCloudHash = '';
 const phase = {};    // operator key -> colour last seen, so the chime fires on the crossing only
-const overSaid = {}; // operator key -> {id, at}, so "time is up" comes round rather than once
-const OVER_REPEAT = 2*60000;   // how often "time is up" repeats while a job is still over
 const tiles = {};
 const now = () => Date.now() + srvOffset;
 
@@ -411,25 +409,14 @@ function paint(){
       // reloaded has no colour written down for her yet, so it stays quiet; and
       // one coming back from a network outage does not shout about a limit that
       // went past half an hour ago while it was not looking.
-      const jobId = cur.type + '@' + cur.startAt;
-      if (phase[o.key] === 'run' && state === 'warn') {
-        announce('warn', o.name + ', fifteen minutes');
-      } else if (state === 'over') {
-        const said = overSaid[o.key], known = said && said.id === jobId;
-        if (phase[o.key] && phase[o.key] !== 'over' && -leftMs <= 5*60000) {
-          announce('over', o.name + ', time is up');
-          overSaid[o.key] = { id: jobId, at: t };
-        } else if (!known) {
-          // first sight of a job already over: start its clock rather than
-          // shouting about something that may be long past. It is still over
-          // and nobody has finished it, so it comes round with the rest.
-          overSaid[o.key] = { id: jobId, at: t };
-        } else if (t - said.at >= OVER_REPEAT) {
-          announce('over', o.name + ', time is up');
-          overSaid[o.key] = { id: jobId, at: t };
-        }
-      }
-      if (state !== 'over') delete overSaid[o.key];
+      // Said once, when the line is crossed, and not again. A sentence that
+      // comes round every couple of minutes stops being information and starts
+      // being noise, and a room learns to ignore noise.
+      if (phase[o.key] === 'run' && state === 'warn')
+        announce({ lead:'chime', text:o.name + ', fifteen minutes', tail:'chime' });
+      else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
+               && -leftMs <= 5*60000)
+        announce({ lead:'alarm', text:o.name + ', next customer', tail:'chime' });
       phase[o.key] = state;
       return;
     }
@@ -444,7 +431,6 @@ function paint(){
       ui.time.textContent = leftMs <= 0 ? '+' + fmt(-leftMs) : fmt(leftMs);
       ui.foot.textContent = 'On a ' + C.types[cur.type].label.toLowerCase() + ' · tap to finish';
       phase[o.key] = null;
-      delete overSaid[o.key];
       return;
     }
 
@@ -468,7 +454,6 @@ function paint(){
       ui.foot.textContent = 'Tap to start';
     }
     phase[o.key] = null;
-    delete overSaid[o.key];
   });
 
   $('headStat').innerHTML = `<b>${running}</b> running · <b>${late}</b> over · <b>${crowns}</b> 👑`;
@@ -1070,10 +1055,11 @@ function chimeWarn(){
 }
 // Crown: a bright rising sparkle.
 function fanfare(){
-  if (!audioCtx || !soundOn) return;
+  if (!audioCtx || !soundOn) return 0;
   const t0 = audioCtx.currentTime;
   [1046.5,1318.5,1568,2093,2637,3136].forEach((f,i) => tone(f, t0 + i*.08, .45, 1.0, 'triangle'));
   [4186,5274,6272].forEach((f,i) => tone(f, t0 + .30 + i*.07, .5, .50));
+  return 1.0;
 }
 // Crossing the limit with the job still running: the falling phrase three times
 // over. One pass is easy to miss with a dryer going; three is unmistakable and
@@ -1134,7 +1120,13 @@ function say(text, after){
 var queue = [];
 var talking = false;
 var talkingSince = 0;
-function announce(kind, text){
+function playSound(which){
+  if (which === 'alarm')   return alarmOver(2);
+  if (which === 'fanfare') return fanfare();
+  if (which === 'chime')   return chimeWarn();
+  return 0;
+}
+function announce(spec){
   if (!soundOn) return;
   // One announcement that gets stuck must never take the rest of the day's
   // alarms down with it. Anything still "speaking" after longer than an
@@ -1142,25 +1134,28 @@ function announce(kind, text){
   // that has gone quiet without saying so is the worst way for this to fail.
   if (talking && Date.now() - talkingSince > 20000) talking = false;
   if (queue.length >= 6) return;
-  queue.push({ kind, text });
+  queue.push(spec);
   pump();
 }
 function pump(){
   if (talking || !queue.length) return;
   talking = true; talkingSince = Date.now();
   const it = queue.shift();
-  const release = () => { talking = false; pump(); };
+  let released = false;
+  const release = () => { if (released) return; released = true; talking = false; pump(); };
   // Every step is guarded: the queue must drain even if a sound or the speech
   // engine throws, or nothing is ever announced again.
   let lead = 0;
-  try { lead = it.kind === 'over' ? alarmOver(2) : chimeWarn(); } catch(e){}
+  try { lead = playSound(it.lead); } catch(e){}
   setTimeout(() => {
+    const finishTail = () => {
+      let tail = 0;
+      try { if (it.tail) tail = playSound(it.tail); } catch(e){}
+      setTimeout(release, Math.round(tail*1000));
+    };
     try {
-      say(it.text, () => {
-        let tail = 0;
-        try { tail = it.kind === 'over' ? alarmOver(2) : chimeWarn(); } catch(e){}
-        setTimeout(release, Math.round(tail*1000));
-      });
+      if (!it.text) return finishTail();
+      say(it.text, finishTail);
     } catch(e){ release(); }
   }, Math.round(lead*1000));
 }

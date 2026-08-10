@@ -14426,6 +14426,29 @@ window.addEventListener('load',function(){
   font-family:inherit;font-weight:800;font-size:.86rem;line-height:1.35}
 #cbm-sound.on{display:block}
 #cbm-sound span{display:block;margin-top:2px;font-size:.66rem;font-weight:700;opacity:.72}
+/* The music strip. Small, because it is not the job — but always reachable,
+   because the one thing reception will want to change during a shift is what
+   is playing and how loud. The player itself is a YouTube iframe parked off
+   screen: it is only ever a sound source, never something to look at. */
+#cbm-music{margin:8px 10px 0;padding:8px 9px;border-radius:10px;
+  border:1px solid #2a2a22;background:#1c1a14}
+#cbm-music .mus-top{display:flex;align-items:center;gap:7px}
+#cbm-music button{flex:none;cursor:pointer;border-radius:8px;padding:5px 9px;
+  border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.8rem;line-height:1}
+#cbm-music button:hover{background:rgba(212,169,106,.24)}
+#mus-title{flex:1;min-width:0;font-size:.68rem;color:#8d8574;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#mus-vol{width:100%;margin-top:7px;accent-color:#d4a96a;height:16px}
+#cbm-music .mus-set{margin-top:5px;font-size:.63rem;color:#8d8574;cursor:pointer;text-align:center}
+#cbm-music .mus-set:hover{color:#d4a96a}
+#mus-url{display:block;width:100%;margin-top:6px;border-radius:8px;border:1px solid rgba(212,169,106,.4);
+  background:#14120d;color:#f3e3c8;padding:7px 9px;font-family:inherit;font-size:.72rem}
+#mus-url::placeholder{color:#6d6559}
+/* Parked off screen rather than display:none — a hidden iframe is allowed to
+   keep playing, a removed one is not. */
+#cbm-yt-wrap{position:fixed;left:-9999px;top:0;width:320px;height:180px;
+  opacity:.01;pointer-events:none;z-index:-1}
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
@@ -14479,6 +14502,7 @@ window.addEventListener('load',function(){
 </style>
 <div id="cbm-tab" onclick="cbmToggle()"><span id="cbm-tab-run">⏱ –</span><span class="cbm-n" id="cbm-tab-n">👑 –</span></div>
 <div id="cbm-min" onclick="cbmOpen()">👑 Crown Board <b id="cbm-min-n">–</b></div>
+<div id="cbm-yt-wrap"><div id="cbm-yt"></div></div>
 <div id="cbm-panel">
   <div id="cbm-head"><span class="ttl">👑 Crown Board</span>
     <button id="cbm-start" onclick="cbmStart()">＋ Başlat</button>
@@ -14487,6 +14511,15 @@ window.addEventListener('load',function(){
   <div id="cbm-sound" onclick="cbmEnableSound()">🔔 Sesi aç
     <span>Tap once, then turn the volume up — the chimes and the spoken alerts
       for every station play here, on this laptop</span></div>
+  <div id="cbm-music">
+    <div class="mus-top">
+      <button id="mus-play" onclick="musToggle()" title="Çal / duraklat">▶</button>
+      <button id="mus-next" onclick="musNext()" title="Sonraki">⏭</button>
+      <div id="mus-title">Müzik kapalı</div>
+    </div>
+    <input id="mus-vol" type="range" min="0" max="100" step="1" oninput="musVol(this.value)">
+    <div class="mus-set" onclick="musSettings()">🎵 Çalma listesini değiştir</div>
+  </div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
     No press → no 👑 → no commission on that job.<br>
@@ -14619,6 +14652,12 @@ window.addEventListener('load',function(){
   }
   function unlockAudio(){
     unlockSpeech();
+    // Music that was playing when the laptop was last closed comes back with
+    // the first touch of the day: YouTube will not start without a gesture, so
+    // this is tried on every one until it takes.
+    try{
+      if(Music && !Music.wanted() && localStorage.getItem('rdns_cbm_musicon')==='1') Music.play();
+    }catch(e){}
     try{
       if(!_ac){
         var AC=window.AudioContext||window.webkitAudioContext;
@@ -14690,6 +14729,22 @@ window.addEventListener('load',function(){
     }
     return (n-1)*.9 + .52 + .8 + .1;
   }
+  // A crown earned: the boards' bright rising sparkle, note for note. Reception
+  // never had it — the celebration happened on a television nobody was looking
+  // at. It is the one sound here that is good news.
+  function fanfare(){
+    if(!audioReady()) return 0;
+    var t0=_ac.currentTime;
+    [1046.5,1318.5,1568,2093,2637,3136].forEach(function(f,i){ tone(f,t0+i*.08,.45,1.0,'triangle'); });
+    [4186,5274,6272].forEach(function(f,i){ tone(f,t0+.30+i*.07,.5,.50); });
+    return 1.0;
+  }
+  function playSound(which){
+    if(which==='alarm')   return alarmOver(2);
+    if(which==='fanfare') return fanfare();
+    if(which==='chime')   return chimeWarn();
+    return 0;
+  }
 
   /* ── saying it out loud ──────────────────────────────────────────────────
      A sound tells reception that something happened; it does not say WHO. With
@@ -14738,34 +14793,270 @@ window.addEventListener('load',function(){
 
   // One at a time. Two stations crossing in the same minute is ordinary here,
   // and two announcements on top of each other say nothing at all.
+  /* ── the music, and getting it out of the way ────────────────────────────
+     The salon's music comes off this same laptop, through the same Bluetooth
+     speaker as everything above, so the two would otherwise fight. They do not:
+     every announcement holds the music down for its whole length and lets it
+     back up afterwards.
+
+     Down is fast and up is slow on purpose. Fast down means the first note of a
+     chime is never half-buried; slow up means the room hears the music return
+     without hearing the moment it did.
+
+     The player is YouTube's own, in an iframe parked off screen. Signed into
+     Premium in this browser, there are no adverts — that is the account's doing
+     and not something this code can arrange. A playlist link pasted here is
+     remembered on this laptop. */
+  var Music=(function(){
+    var yt=null, ready=false, wanted=false, ducks=0, duckedAt=0;
+    var fade=null, cur=0, apiAsked=false;
+
+    function vol(){
+      var v=parseInt(localStorage.getItem('rdns_cbm_musicvol'),10);
+      return isNaN(v) ? C.music.volume : Math.max(0,Math.min(100,v));
+    }
+    function list(){
+      return C.playlistId(localStorage.getItem('rdns_cbm_playlist')||'') ||
+             C.playlistId(C.music.playlist||'');
+    }
+    function set(v){
+      cur=Math.max(0,Math.min(100,Math.round(v)));
+      try{ if(yt&&yt.setVolume) yt.setVolume(cur); }catch(e){}
+    }
+    // A ramp rather than a jump: a step every 40ms, smooth enough on a speaker
+    // and cheap enough to run while three countdowns are going.
+    //
+    // Where it is on the ramp is worked out from the CLOCK, not from how many
+    // times the timer has fired. A browser throttles a tab it thinks nobody is
+    // looking at down to one timer tick a second, and counting steps there
+    // turned a 220ms duck into a six second one — the alarm would have been
+    // over before the music got out of its way. Reading the clock instead means
+    // a throttled tab simply ducks in one coarse jump and still arrives.
+    function fadeTo(target, ms){
+      clearInterval(fade); fade=null;
+      target=Math.max(0,Math.min(100,Math.round(target)));
+      var from=cur, t0=Date.now();
+      if(from===target) return;
+      if(ms<=0){ set(target); return; }
+      fade=setInterval(function(){
+        var k=Math.min(1,(Date.now()-t0)/ms);
+        set(from+(target-from)*k);
+        if(k>=1){ clearInterval(fade); fade=null; }
+      },40);
+    }
+
+    function onState(e){
+      // Shuffle only takes once there is a playlist loaded to shuffle.
+      try{
+        if(e.data===YT.PlayerState.PLAYING){
+          if(C.music.shuffle && yt.setShuffle) yt.setShuffle(true);
+          if(C.music.loop && yt.setLoop) yt.setLoop(true);
+        }
+        // A playlist that runs off the end starts again rather than stopping.
+        if(e.data===YT.PlayerState.ENDED && wanted && yt.playVideo) yt.playVideo();
+      }catch(err){}
+      paintMusic();
+    }
+
+    function build(){
+      var id=list();
+      if(!id || yt) return;
+      yt=new YT.Player('cbm-yt',{
+        height:'180', width:'320',
+        playerVars:{ listType:'playlist', list:id, autoplay:1, controls:0,
+                     disablekb:1, playsinline:1, modestbranding:1, rel:0 },
+        events:{
+          onReady:function(){
+            ready=true;
+            try{
+              if(C.music.shuffle && yt.setShuffle) yt.setShuffle(true);
+              if(C.music.loop && yt.setLoop) yt.setLoop(true);
+            }catch(e){}
+            set(ducks>0 ? C.music.duckTo : vol());
+            if(wanted && yt.playVideo) yt.playVideo();
+            paintMusic();
+          },
+          onStateChange:onState,
+          onError:function(){ paintMusic(); }
+        }
+      });
+    }
+    function api(cb){
+      if(window.YT && window.YT.Player) return cb();
+      var prev=window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady=function(){
+        if(prev) try{ prev(); }catch(e){}
+        cb();
+      };
+      if(apiAsked) return;
+      apiAsked=true;
+      var s=document.createElement('script');
+      s.src='https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    }
+
+    return {
+      play:function(){
+        wanted=true;
+        try{ localStorage.setItem('rdns_cbm_musicon','1'); }catch(e){}
+        if(!list()){ paintMusic(); return; }
+        if(yt && ready){ if(yt.playVideo) yt.playVideo(); }
+        else api(build);
+        paintMusic();
+      },
+      pause:function(){
+        wanted=false;
+        try{ localStorage.setItem('rdns_cbm_musicon','0'); }catch(e){}
+        try{ if(yt&&yt.pauseVideo) yt.pauseVideo(); }catch(e){}
+        paintMusic();
+      },
+      next:function(){ try{ if(yt&&yt.nextVideo) yt.nextVideo(); }catch(e){} },
+      wanted:function(){ return wanted; },
+      playing:function(){
+        try{ return !!(yt&&yt.getPlayerState&&yt.getPlayerState()===1); }catch(e){ return false; }
+      },
+      title:function(){
+        try{
+          var d=yt&&yt.getVideoData&&yt.getVideoData();
+          return (d&&d.title)||'';
+        }catch(e){ return ''; }
+      },
+      volume:vol,
+      // What the player is actually set to right now, ducking included — the
+      // one number that says whether the music really did get out of the way.
+      level:function(){ return cur; },
+      ducked:function(){ return ducks; },
+      setVolume:function(v){
+        try{ localStorage.setItem('rdns_cbm_musicvol',String(v)); }catch(e){}
+        if(!ducks) fadeTo(v,120);
+      },
+      hasList:function(){ return !!list(); },
+      reload:function(){
+        // A new playlist means a new player: cueing a different list into the
+        // old one leaves the shuffle in a state the API will not talk about.
+        try{ if(yt&&yt.destroy) yt.destroy(); }catch(e){}
+        yt=null; ready=false;
+        var host=document.getElementById('cbm-yt-wrap');
+        if(host) host.innerHTML='<div id="cbm-yt"></div>';
+        if(wanted) this.play();
+        paintMusic();
+      },
+      duck:function(){
+        ducks++;
+        duckedAt=Date.now();
+        if(ducks===1) fadeTo(C.music.duckTo, C.music.fadeDownMs);
+      },
+      unduck:function(){
+        if(ducks>0) ducks--;
+        if(ducks===0) fadeTo(vol(), C.music.fadeUpMs);
+      },
+      // The music being left quiet for the rest of the day is exactly as bad as
+      // an alarm being left silent, and just as invisible. If something has held
+      // it down for longer than any announcement can last, take it back.
+      unduckAll:function(){ ducks=0; fadeTo(vol(), C.music.fadeUpMs); },
+      watchdog:function(){
+        if(ducks>0 && Date.now()-duckedAt>30000) this.unduckAll();
+      }
+    };
+  })();
+
+  // Reachable from the console, the way the rest of the panel's controls are:
+  // cbmMusic.play(), .setVolume(50), .level() — handy when the salon rings up
+  // to say the music is behaving oddly.
+  window.cbmMusic=Music;
+
+  function paintMusic(){
+    var b=document.getElementById('mus-play'), t=document.getElementById('mus-title');
+    if(!b||!t) return;
+    var on=Music.wanted();
+    b.textContent = on ? '⏸' : '▶';
+    if(!Music.hasList()) t.textContent='Çalma listesi seçilmedi';
+    else if(!on) t.textContent='Duraklatıldı';
+    // Playing with the volume at nothing looks exactly like a broken player.
+    // Say which it is, rather than leaving reception to guess.
+    else if(Music.volume()===0) t.textContent='Ses kısık — çalıyor';
+    else t.textContent=Music.title()||'Yükleniyor…';
+    var v=document.getElementById('mus-vol');
+    if(v && document.activeElement!==v) v.value=Music.volume();
+  }
+  window.musToggle  =function(){ if(Music.wanted()) Music.pause(); else { unlockAudio(); Music.play(); } };
+  window.musNext    =function(){ Music.next(); };
+  // A slider that reports something unreadable is not a request for silence.
+  // It used to fall back to zero, which wrote zero away and left the salon with
+  // no music and nothing on screen to say why.
+  window.musVol     =function(v){
+    var n=parseInt(v,10);
+    if(isNaN(n)) return;
+    Music.setVolume(Math.max(0,Math.min(100,n)));
+  };
+  window.musSettings=function(){
+    var box=document.getElementById('mus-url');
+    if(box){ box.parentNode.removeChild(box); return; }
+    box=document.createElement('input');
+    box.id='mus-url'; box.type='text';
+    box.placeholder='YouTube çalma listesi bağlantısı';
+    box.value=localStorage.getItem('rdns_cbm_playlist')||'';
+    box.onkeydown=function(e){ if(e.key==='Enter'){ musSaveList(box.value); } };
+    box.onblur=function(){ musSaveList(box.value); };
+    document.getElementById('cbm-music').appendChild(box);
+    box.focus();
+  };
+  window.musSaveList=function(v){
+    var id=C.playlistId(v);
+    try{ localStorage.setItem('rdns_cbm_playlist', id?v:''); }catch(e){}
+    var box=document.getElementById('mus-url');
+    if(box) box.parentNode.removeChild(box);
+    Music.reload();
+  };
+
+  /* An announcement is a sound, optionally a sentence, optionally a sound after
+     it. The three the salon uses:
+
+       crown  fanfare                                    — she made it
+       warn   chime  → "Helen, fifteen minutes" → chime
+       over   alarm  → "Helen, next customer"   → chime
+
+     Only one at a time, and the music is held down for the whole of it — from
+     the first note to the last, speech included — so nothing is ever half
+     buried under a song. */
   var _queue=[], _talking=false, _talkingSince=0;
-  function announce(kind, text){
+  function announce(spec){
     // One announcement that gets stuck must never take the rest of the day's
     // alarms down with it. Anything still "speaking" after longer than an
     // announcement can possibly last has the floor taken back off it — silence
     // that nobody can see is the worst way for this to fail.
-    if(_talking && Date.now()-_talkingSince>20000) _talking=false;
+    if(_talking && Date.now()-_talkingSince>20000){ _talking=false; Music.unduckAll(); }
     if(_queue.length>=6) return;   // a backlog nobody could follow anyway
-    _queue.push({kind:kind,text:text});
+    _queue.push(spec);
     pump();
   }
   function pump(){
     if(_talking || !_queue.length) return;
     _talking=true; _talkingSince=Date.now();
-    var it=_queue.shift();
-    function release(){ _talking=false; pump(); }
-    // Every step is guarded: the queue must drain even if a sound or the speech
-    // engine throws, or nothing is ever announced again.
+    var it=_queue.shift(), released=false;
+    // Every step is guarded, and the music comes back up in the same breath the
+    // queue is released: if a sound or the speech engine throws, the salon must
+    // not be left both silent and quiet.
+    function release(){
+      if(released) return;
+      released=true;
+      Music.unduck();
+      _talking=false;
+      pump();
+    }
+    Music.duck();
     var lead=0;
-    try{ lead=(it.kind==='over') ? alarmOver(2) : chimeWarn(); }catch(e){}
+    try{ lead=playSound(it.lead); }catch(e){}
     setTimeout(function(){
       try{
-        say(it.text, function(){
-          var tail=0;
-          try{ tail=(it.kind==='over') ? alarmOver(2) : chimeWarn(); }catch(e){}
-          setTimeout(release, Math.round(tail*1000));
-        });
+        if(!it.text){ finishTail(); return; }
+        say(it.text, finishTail);
       }catch(e){ release(); }
+      function finishTail(){
+        var tail=0;
+        try{ if(it.tail) tail=playSound(it.tail); }catch(e){}
+        setTimeout(release, Math.round(tail*1000)+C.music.holdMs);
+      }
     }, Math.round(lead*1000));
   }
 
@@ -14773,11 +15064,28 @@ window.addEventListener('load',function(){
   // first time only has its colour written down — a panel opened halfway
   // through the afternoon does not shout about crossings that already
   // happened, exactly as the wall boards behave.
-  // How often "time is up" comes round again while a job is still over.
-  var OVER_REPEAT=2*60000;
+  // The last finished job seen for each technician, so a crown earned anywhere
+  // in the salon is celebrated here — she may have pressed Finish at her own
+  // station, on a wall board, or reception may have done it for her.
+  var _lastEnd={};
+  function watchCrowns(){
+    C.operators.forEach(function(o){
+      var last=(_ops[o.key]||{}).last||{}, newest=null;
+      Object.keys(last).forEach(function(k){
+        if(!newest||(last[k].endAt||0)>(newest.endAt||0)) newest=last[k];
+      });
+      var end=newest?(newest.endAt||0):0, was=_lastEnd[o.key];
+      _lastEnd[o.key]=end;
+      // First sight only writes it down: a panel opened in the afternoon does
+      // not celebrate crowns that were earned before it was looking.
+      if(was===undefined || end<=was || !newest) return;
+      if(newest.crown) announce({lead:'fanfare'});
+    });
+  }
 
   function watch(){
     var t=now();
+    watchCrowns();
     C.operators.forEach(function(o){
       var cur=(_ops[o.key]||{}).current;
       if(!cur){ delete _phase[o.key]; return; }
@@ -14788,26 +15096,20 @@ window.addEventListener('load',function(){
       var state=left<=0?'over':(left<=C.warnMs?'warn':'run');
       var was=_phase[o.key];
       var fresh=!was||was.id!==id;
-      var saidAt=fresh?0:(was.saidAt||0);
 
+      // Said once, when the line is crossed, and not again. A sentence that
+      // comes round every couple of minutes stops being information and starts
+      // being noise, and a room learns to ignore noise.
       if(state==='over'){
-        if(!fresh && was.state!=='over' && -left<=5*60000){
+        if(!fresh && was.state!=='over' && -left<=5*60000)
           // the crossing itself — a laptop that slept through it wakes to a red
           // row rather than an announcement of something half an hour gone
-          announce('over', o.name+', time is up'); saidAt=t;
-        } else if(!saidAt){
-          // first sight of a job already over: start the clock rather than
-          // shouting the moment the page opens. It is still over, and nobody
-          // has finished it, so it comes round in two minutes like the rest.
-          saidAt=t;
-        } else if(t-saidAt>=OVER_REPEAT){
-          announce('over', o.name+', time is up'); saidAt=t;
-        }
+          announce({lead:'alarm', text:o.name+', next customer', tail:'chime'});
       } else if(state==='warn' && !fresh && was.state==='run'){
-        announce('warn', o.name+', fifteen minutes');
+        announce({lead:'chime', text:o.name+', fifteen minutes', tail:'chime'});
       }
 
-      _phase[o.key]={id:id, state:state, saidAt:(state==='over'?saidAt:0)};
+      _phase[o.key]={id:id, state:state};
     });
   }
 
@@ -14816,6 +15118,7 @@ window.addEventListener('load',function(){
     // are running, and whether any of them has gone past her limit.
     watch();
     syncSound();
+    try{ Music.watchdog(); paintMusic(); }catch(e){}
     var c=counts();
     // Sound still asleep is worth saying wherever the panel is put away, or
     // nobody finds out it was silent until an alarm has already been missed.

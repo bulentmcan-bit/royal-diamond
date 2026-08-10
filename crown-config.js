@@ -75,7 +75,39 @@ window.CROWN = {
     volume: 1
   },
 
+  /* Music, and how it gets out of the way.
+
+     Reception's laptop feeds the Bluetooth speaker, so it is the machine that
+     plays the salon's music and the machine that has to stop the music burying
+     an alarm. Every sound the panel makes ducks it: the music slides down, the
+     sound plays in full over the top, and the music comes back up. Down fast so
+     nothing is lost under it, up slowly so the room does not notice the seam.
+
+     `playlist` can be left empty — reception pastes a YouTube playlist link
+     into the panel and it is remembered on that laptop. Fill it in here to give
+     every device the same one by default. Signed into YouTube Premium in this
+     browser means no adverts; nothing here can do that on its own.  */
+  music: {
+    playlist:  '',      // e.g. 'PLxxxxxxxxxxxxxxxxxx', or leave empty and set it in the panel
+    shuffle:   true,
+    loop:      true,
+    volume:    35,      // 0-100, what it plays at normally
+    duckTo:     5,      // 0-100, what it drops to while a sound is playing
+    fadeDownMs: 220,    // quick, so the first note is never buried
+    fadeUpMs:   900,    // slow, so the room does not hear it come back
+    holdMs:     350     // a breath after the sound before the music returns
+  },
+
   // Helpers both pages use, so the lookup rules live here too.
+  // A playlist link, an embed link or a bare id — all reception should have to
+  // do is paste whatever YouTube gave her.
+  playlistId: function(s){
+    if (!s) return '';
+    var t = String(s).trim();
+    var m = t.match(/[?&]list=([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    return /^[A-Za-z0-9_-]{12,}$/.test(t) ? t : '';
+  },
   pickVoice: function(){
     try{
       var vs = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
