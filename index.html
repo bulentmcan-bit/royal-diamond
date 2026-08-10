@@ -14420,7 +14420,14 @@ window.addEventListener('load',function(){
 @media(max-width:560px){ #cbm-min{bottom:80px;font-size:.78rem;padding:8px 12px} }
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
-  border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
+  border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
+/* The manager's limit button sits on the row itself, on its own line, so it is
+   visible without opening anything — reception could not find it when it was
+   only inside a sheet. */
+.cbm-lim{flex:0 0 100%;margin-top:7px;border-radius:8px;padding:7px 9px;cursor:pointer;
+  border:1px solid rgba(212,169,106,.55);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.72rem;text-align:center}
+.cbm-lim:hover{background:rgba(212,169,106,.24)}
 .cbm-row .who{flex:1;min-width:0}
 .cbm-row .nm{font-size:.86rem;font-weight:800;color:#f3e3c8;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
@@ -14449,6 +14456,8 @@ window.addEventListener('load',function(){
   border:1px solid rgba(212,169,106,.4);background:transparent;color:#f3e3c8;
   padding:9px 11px;font-family:inherit;font-size:.82rem;font-weight:700;cursor:pointer}
 .cbm-pick button.q{border-color:#2a2a22;color:#8d8574;text-align:center;font-weight:600}
+.cbm-pick button.lim{border-color:rgba(212,169,106,.7);background:rgba(212,169,106,.14);
+  color:#d4a96a;text-align:center;font-weight:800}
 /* The "Other" box, for a limit none of the quick buttons covers */
 .cbm-other{display:block;width:100%;margin-top:7px;border-radius:9px;
   border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
@@ -14497,6 +14506,16 @@ window.addEventListener('load',function(){
       'onerror="this.style.display=\'none\'">' : '';
   }
 
+  // The manager's limit button, on every row and always on screen. Running, it
+  // changes the limit of the job under way; idle, it starts her next one on a
+  // limit of management's choosing. Either way the owner password comes first.
+  // stopPropagation because the row itself is a button too — tapping the row
+  // finishes or starts, and that must not happen from a tap meant for this.
+  function limitBtn(o, running){
+    return '<button class="cbm-lim" onclick="event.stopPropagation();'+
+      (running?'cbmChangeLimit':'cbmCustom')+'(\''+o.key+'\')">⏱ Süre ayarla (Yönetici)</button>';
+  }
+
   // One row per technician: what she is on, and how long she has left on it.
   function row(o){
     var rec=_ops[o.key]||{}, cur=rec.current;
@@ -14506,8 +14525,9 @@ window.addEventListener('load',function(){
       var ty=C.types[cur.type]||{label:cur.type,icon:''};
       return '<div class="cbm-row '+cls+'" onclick="cbmFinish(\''+o.key+'\')">'+
         '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
-        '<div class="jb">'+ty.icon+' '+esc(ty.label)+'</div></div>'+
-        '<div class="tm">'+(left<=0?'+'+fmt(-left):fmt(left))+'</div></div>';
+        '<div class="jb">'+ty.icon+' '+esc(ty.label)+' · '+(cur.limitMin||60)+' dk</div></div>'+
+        '<div class="tm">'+(left<=0?'+'+fmt(-left):fmt(left))+'</div>'+
+        limitBtn(o,true)+'</div>';
     }
     // idle: show how her most recent job ended, whichever kind it was
     var last=rec.last||{}, best=null;
@@ -14518,11 +14538,13 @@ window.addEventListener('load',function(){
         '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
         '<div class="jb">'+t2.icon+' '+esc(t2.label)+' · '+
           (best.noPress?'basılmadı':Math.round((best.elapsed||0)/60000)+'dk')+'</div></div>'+
-        '<div class="tm">'+(best.crown?'👑':'😢')+'</div></div>';
+        '<div class="tm">'+(best.crown?'👑':'😢')+'</div>'+
+        limitBtn(o,false)+'</div>';
     }
     return '<div class="cbm-row" onclick="cbmType(\''+o.key+'\')">'+
       '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
-      '<div class="jb">boş</div></div><div class="tm">–</div></div>';
+      '<div class="jb">boş</div></div><div class="tm">–</div>'+
+      limitBtn(o,false)+'</div>';
   }
 
   function counts(){
@@ -14585,7 +14607,7 @@ window.addEventListener('load',function(){
           return '<button onclick="cbmDoStart(\''+o.key+'\',\''+ty+'\')">'+C.types[ty].icon+' '+
             C.types[ty].label+' — '+(o[ty]||60)+' dk</button>';
         }).join('')+
-        '<button class="q" onclick="cbmCustom(\''+o.key+'\')">⚙ Özel süre (yönetim)</button>'+
+        '<button class="lim" onclick="cbmCustom(\''+o.key+'\')">⏱ Süre ayarla (Yönetici)</button>'+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
     };
     render();
@@ -14705,7 +14727,7 @@ window.addEventListener('load',function(){
         '<div style="color:#8d8574;font-size:.72rem;padding:2px 2px 4px">'+
         (left>0? fmt(left)+' kaldı — bitirirse 👑' : fmt(-left)+' geçti — bitirirse 😢')+'</div>'+
         '<button onclick="cbmDoFinish(\''+o.key+'\')">✓ Bitir</button>'+
-        '<button class="q" onclick="cbmChangeLimit(\''+o.key+'\')">⚙ Süreyi değiştir (yönetim)</button>'+
+        '<button class="lim" onclick="cbmChangeLimit(\''+o.key+'\')">⏱ Süre ayarla (Yönetici)</button>'+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
     };
     render();

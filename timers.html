@@ -480,10 +480,10 @@ function whichType(key){
     <button class="btn gold" onclick="startJob('${o.key}','${other}')">
       ${C.types[other].icon} ${C.types[other].label} — ${o[other]} min
       <small>Shows on the ${C.types[other].label.toLowerCase()} screen</small></button>
+    <button class="btn gold" onclick="customType('${o.key}')">
+      ⏱ Set the limit (Manager)<small>15 / 30 / 45 / 60 or any number of minutes · owner password</small></button>
     <button class="btn danger" onclick="noPressSheet('${o.key}')">
       😢 She finished one without pressing start<small>Records the job with no crown</small></button>
-    <button class="btn quiet" onclick="customType('${o.key}')">
-      ⚙ Management — custom limit<small>Owner password · this one job only</small></button>
     <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
 
@@ -564,11 +564,11 @@ function runningSheet(key, cur){
     <button class="btn primary" onclick="finishJob('${o.key}')">✓ Finish
       ${leftMs > 0 ? `<small>In time — this one earns the crown 👑</small>`
                    : `<small>Over the limit — this one is a 😢</small>`}</button>
+    <button class="btn gold" onclick="changeLimit('${o.key}')">
+      ⏱ Set the limit (Manager)<small>Now ${cur.limitMin} min · change to 15 / 30 / 45 / 60 or any number · owner password</small></button>
     ${now() - cur.startAt < C.undoMs
       ? `<button class="btn quiet" onclick="cancelJob('${o.key}')">Started by mistake — undo</button>`
       : `<button class="btn quiet" onclick="ownerCancel('${o.key}')">Started by mistake — needs reception</button>`}
-    <button class="btn quiet" onclick="changeLimit('${o.key}')">
-      ⚙ Management — change the limit<small>Owner password · 15 / 30 / 45 / 60 min</small></button>
     <button class="btn quiet" onclick="closeSheet()">Close</button>`);
 }
 
