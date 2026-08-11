@@ -90,8 +90,12 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
 <script>
 const SALON='905488933333';
 // The times the salon actually starts a new booking: Helen on the hour to
-// 18:00, Lissa and Hannah every 90 minutes to 17:00. This list is the union of
-// the two — a customer is never shown a time nobody could begin at.
+// 18:00, Lissa and Hannah every 90 minutes to 17:00 — plus 18:00, so their last
+// start matches Helen's. This list is the union of the two — a customer is
+// never shown a time nobody could begin at. Which of them may START at each
+// time on a given day arrives with the availability data (`a` below): for the
+// 90-minute technicians 17:00 and 18:00 overlap, so the salon publishes only
+// whichever of the pair is still open once one of them is booked.
 const SLOTS=['08:00','09:00','09:30','10:00','11:00','12:00','12:30','13:00','14:00','15:00','15:30','16:00','17:00','18:00'];
 const CAP=3;
 // ── URL parametreleri: ?src=instagram  ?svc=Jel Başlangıç ──

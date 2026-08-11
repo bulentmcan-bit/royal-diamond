@@ -1307,13 +1307,44 @@
     return a;
   };
   const RD_OB_HOURLY=_obGrid(8*60, 18*60, 60);   // 08:00 … 18:00, on the hour
-  const RD_OB_90=_obGrid(8*60, 17*60, 90);       // 08:00 09:30 11:00 12:30 14:00 15:30 17:00
+  // 08:00 09:30 11:00 12:30 14:00 15:30 17:00 — and 18:00 on the end, so the
+  // 90-minute technicians can take a last booking as late as Helen can. It runs
+  // to 19:30, past the 18:30 the ladder would otherwise stop at, which is the
+  // point of it. Note it is only 60 minutes after 17:00, not the usual 90: the
+  // two OVERLAP, so they are one choice rather than two — see RD_OB_LATE_PAIR.
+  const RD_OB_90=[..._obGrid(8*60, 17*60, 90), '18:00'];
   const RD_OB_TECH_SLOTS={'Helen':RD_OB_HOURLY,'Hannah':RD_OB_90,'Lissa':RD_OB_90};
   const RD_OB_UNION=[...new Set(Object.values(RD_OB_TECH_SLOTS).flat())].sort();
-  // May this technician START a booking at this time?
+  // The clashing pair. A 17:00 start runs to 18:30 and so eats the 18:00 start;
+  // an 18:00 start is still running at 19:30 and so cannot be reached from
+  // 17:00. Whichever of the two a technician's day already holds, the other
+  // stops being offered for her — that is what keeps the late hour from being
+  // double-booked. It applies only to the 90-minute grid; Helen works in hours
+  // and 17:00 + 18:00 sit side by side for her, exactly as they always have.
+  const RD_OB_LATE_PAIR=['17:00','18:00'];
+  const RD_OB_LATE_DUR=90;
+  function _obLatePairTech(tech){ return RD_OB_TECH_SLOTS[tech]===RD_OB_90; }
+  // Is this time one of her start times at all? (Fixed grid, no day involved.)
   function _obTechHasSlot(tech,slot){
     const g=RD_OB_TECH_SLOTS[tech];
     return !!g && g.indexOf(slot)!==-1;
+  }
+  // May this technician START a booking at this time ON THIS DAY? Same as the
+  // grid, except that the overlapping late pair closes itself once either half
+  // of it is taken. `maps` is an _obDayMaps() result; without one this falls
+  // back to the plain grid.
+  function _obTechCanStart(tech,slot,maps){
+    if(!_obTechHasSlot(tech,slot)) return false;
+    if(!maps || !_obLatePairTech(tech) || RD_OB_LATE_PAIR.indexOf(slot)===-1) return true;
+    const starts=(maps.starts&&maps.starts[tech])||{};
+    if(RD_OB_LATE_PAIR.some(s=>starts[s])) return false;
+    // Both of these runs finish after 18:30, where the published half hours stop
+    // and the customer page can no longer see a clash for itself. So they are
+    // checked here against the real appointments — otherwise a job the salon
+    // entered by hand at, say, 18:30 would be invisible and bookable straight
+    // over.
+    const p=slot.split(':'), st=(+p[0])*60+(+p[1]), en=st+RD_OB_LATE_DUR;
+    return !((maps.spans&&maps.spans[tech])||[]).some(b=>st<b[1]&&b[0]<en);
   }
   const RD_OB_DAYS=14;
   let _obAvailTimer=null, _obListenerOn=false;
@@ -1324,14 +1355,19 @@
   function _obNearest(grid,mins,tol){let nearest=null,minDiff=Infinity;grid.forEach(s=>{const[h,m]=s.split(':').map(Number);const d=Math.abs(mins-(h*60+m));if(d<minDiff){minDiff=d;nearest=s;}});return minDiff<=tol?nearest:null;}
   function _obDurOf(a){var d=parseInt(a.duration);if(d)return d;try{var s2=staffSvcDur(a.staff,a.service);if(s2)return s2;}catch(e){}return 60;}
   function _obDayMaps(dateKey){
-    const total={},byTech={};RD_OB_UNION.forEach(s=>total[s]=0);
-    Object.keys(RD_OB_TECH_SLOTS).forEach(t=>{byTech[t]={};});
+    const total={},byTech={},starts={},spans={};RD_OB_UNION.forEach(s=>total[s]=0);
+    Object.keys(RD_OB_TECH_SLOTS).forEach(t=>{byTech[t]={};starts[t]={};spans[t]=[];});
     (appointments||[]).forEach(a=>{
       if(!a||a.status==='cancelled')return;
       const dt=new Date(a.datetime);if(isNaN(dt))return;
       if(_obDateKey(dt)!==dateKey)return;
       const tech=_obTechOf(a.staff);if(!tech)return;
       const st=dt.getHours()*60+dt.getMinutes(), en=st+_obDurOf(a);
+      // The times she is already starting something — the late pair is settled
+      // on starts, not on overlap, so a job that merely runs through 17:00 does
+      // not close the pair.
+      starts[tech][_obPad(Math.floor(st/60))+':'+_obPad(st%60)]=true;
+      spans[tech].push([st,en]);   // the real booked run, half hours or not
       RD_OB_UNION.forEach(slot=>{
         const p=slot.split(':');const sm=(+p[0])*60+(+p[1]);
         // Busy is tracked at EVERY slot she overlaps, in or out of her own
@@ -1344,7 +1380,7 @@
         }
       });
     });
-    return {total:total,byTech:byTech};
+    return {total:total,byTech:byTech,starts:starts,spans:spans};
   }
   function _obProcessedIds(){try{return JSON.parse(localStorage.getItem('rd_ob_processed')||'[]');}catch(e){return[];}}
   function _obMarkProcessed(id){try{const a=_obProcessedIds();if(!a.includes(id)){a.push(id);localStorage.setItem('rd_ob_processed',JSON.stringify(a.slice(-200)));}}catch(e){}}
@@ -1363,7 +1399,7 @@
             const t={}, a={};
             Object.keys(RD_OB_TECH_SLOTS).forEach(k=>{
               t[k]=maps.byTech[k][s]?1:0;              // busy at this half hour
-              a[k]=_obTechHasSlot(k,s)?1:0;            // may START at this time
+              a[k]=_obTechCanStart(k,s,maps)?1:0;      // may START at this time
             });
             slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t,a:a};
           });
@@ -1399,8 +1435,9 @@
       (function(){
         const rp=req.time.split(':');const rs=(+rp[0])*60+(+rp[1]), re2=rs+_reqDur;
         outer: for(const t of Object.keys(RD_OB_TECH_SLOTS)){
-          // Not one of her start times — she is not offered this booking at all.
-          if(!_obTechHasSlot(t, req.time)) continue;
+          // Not one of her start times today — she is not offered this booking
+          // at all. (Day-aware: the 17:00/18:00 pair shuts once either is hers.)
+          if(!_obTechCanStart(t, req.time, maps)) continue;
           for(const slot of RD_OB_UNION){const sp=slot.split(':');const smm=(+sp[0])*60+(+sp[1]);
             if(smm<re2 && smm+30>rs && maps.byTech[t][slot]) continue outer;}
           staffPick=t; break;
@@ -14026,6 +14063,16 @@ window.addEventListener('load',function(){
   const SLOT_STEP = {helen:60, hannah:90, lissa:90};
   function _stepFor(tech){ return SLOT_STEP[String(tech||'').toLowerCase().trim()] || 30; }
 
+  // The 90-minute technicians get one extra late start, 18:00, so their last
+  // booking can begin as late as Helen's. The ladder from 08:00 lands on 17:00
+  // and then steps clean over it, and 18:00 + 90 runs to 19:30, past the 18:30
+  // the windows close at — so it is added by hand rather than by the step.
+  // 17:00 and 18:00 overlap, so they are mutually exclusive: whichever one the
+  // day already holds takes the other off the column, and no 18:00 is offered
+  // over the top of anything already booked.
+  const LATE = 18*60, EARLY = 17*60, LATE_DUR = 90, LATE_END = LATE + LATE_DUR;
+  function _hasLateSlot(tech){ return _stepFor(tech) === 90; }
+
   function _ap(){ try{ return appointments || []; }catch(e){ return []; } }
   function _k(d){ const p=n=>String(n).padStart(2,'0');
     return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
@@ -14073,13 +14120,36 @@ window.addEventListener('load',function(){
 
       // her pencerenin başlangıcını göster (uzun pencerede ara başlangıçlar da)
       const step = _stepFor(tech);
-      const out = [];
+      let out = [];
       wins.forEach(function(w){
         for(let t = w[0]; t + MINSLOT <= w[1]; t += step){
           if(t >= from) out.push({ mins:t, hm:_hm(t), span:(w[1]-t) });
           if(out.length > 40) break;
         }
       });
+
+      // The late pair, settled on what she is already starting.
+      if(_hasLateSlot(tech)){
+        const startsAt = m => busy.some(function(b){ return b[0] === m; });
+        if(startsAt(LATE)){
+          // 18:00 taken → a 17:00 start would run to 18:30, straight into it.
+          out = out.filter(function(s){ return s.mins !== EARLY; });
+        }else if(!startsAt(EARLY) && LATE >= from
+                 && !busy.some(function(b){ return LATE < b[1] && b[0] < LATE_END; })){
+          // Free from 18:00 to 19:30. The ladder sometimes lands on 18:00 by
+          // itself (a window opening at 16:30); that entry is the same slot, so
+          // it is corrected rather than duplicated — its span was cut off at
+          // the 18:30 close, and this start is allowed to run past it.
+          const nextBusy = busy.filter(function(b){ return b[0] > LATE; })
+                               .reduce(function(m,b){ return Math.min(m, b[0]); }, LATE_END);
+          const already = out.filter(function(s){ return s.mins === LATE; })[0];
+          if(already){ already.span = nextBusy - LATE; }
+          else {
+            out.push({ mins:LATE, hm:_hm(LATE), span:(nextBusy - LATE) });
+            out.sort(function(x,y){ return x.mins - y.mins; });
+          }
+        }
+      }
       return out;
     }catch(e){ return []; }
   };
