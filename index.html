@@ -14726,6 +14726,7 @@ window.addEventListener('load',function(){
   }
   function unlockAudio(){
     unlockSpeech();
+    primeBell();
     // Music that was playing when the laptop was last closed comes back with
     // the first touch of the day: a browser will not start audio without a
     // gesture, so this is tried on every one until it takes.
@@ -14813,7 +14814,61 @@ window.addEventListener('load',function(){
     [4186,5274,6272].forEach(function(f,i){ tone(f,t0+.30+i*.07,.5,.50); });
     return 1.0;
   }
+  /* The failure bell — the same recording the wall boards ring, named in
+     crown-config.js so both machines are sounding one file rather than two.
+
+     It is an <audio> element and not part of the graph above: the file arrives
+     already mastered to 0 dB, and the limiter's 5% makeup gain would only break
+     it up. Full volume, once, never looped. This is the machine feeding the
+     Bluetooth speaker, so this is the copy the room actually hears — and being
+     inside announce() below, the music ducks under the bell and the name
+     together and comes back afterwards, exactly as it does for every other
+     sound the panel makes. */
+  var _bell=null;
+  function bellAudio(){
+    if(!_bell){
+      try{
+        _bell=new Audio(C.sounds.failure);
+        _bell.preload='auto';
+        _bell.loop=false;
+        _bell.volume=C.sounds.volume;
+      }catch(e){ return null; }
+    }
+    return _bell;
+  }
+  function primeBell(){
+    var a=bellAudio();
+    if(!a) return;
+    try{
+      a.load();
+      var was=a.muted;
+      a.muted=true;
+      var p=a.play();
+      var stop=function(){ try{ a.pause(); a.currentTime=0; a.muted=was; }catch(e){} };
+      if(p&&p.then) p.then(stop,stop); else stop();
+    }catch(e){}
+  }
+  // Returns how long to wait before the name is spoken, the same as the
+  // generated sounds do. The file's own length once the browser has read it,
+  // the measured length from the config until then.
+  function failureBell(){
+    // While the browser is still refusing to make a noise there is no bell to
+    // wait for, and six seconds of silence would only hold up the name.
+    if(!audioReady()) return 0;
+    var a=bellAudio();
+    if(!a) return 0;
+    try{
+      a.loop=false;
+      a.volume=C.sounds.volume;
+      a.currentTime=0;
+      var p=a.play();
+      if(p&&p['catch']) p['catch'](function(){});
+      var d=(isFinite(a.duration)&&a.duration>0)?a.duration:C.sounds.sec;
+      return d+C.sounds.gapSec;
+    }catch(e){ return 0; }
+  }
   function playSound(which){
+    if(which==='bell')    return failureBell();
     if(which==='alarm')   return alarmOver(2);
     if(which==='fanfare') return fanfare();
     if(which==='chime')   return chimeWarn();
@@ -15300,8 +15355,10 @@ window.addEventListener('load',function(){
       if(state==='over'){
         if(!fresh && was.state!=='over' && -left<=5*60000)
           // the crossing itself — a laptop that slept through it wakes to a red
-          // row rather than an announcement of something half an hour gone
-          announce({lead:'alarm', text:o.name+', next customer', tail:'chime'});
+          // row rather than an announcement of something half an hour gone.
+          // The bell, then who: once each, and no closing chime, because the
+          // bell is the alert now and a second sound would only repeat it.
+          announce({lead:'bell', text:o.name+', next customer'});
       } else if(state==='warn' && !fresh && was.state==='run'){
         announce({lead:'chime', text:o.name+', fifteen minutes', tail:'chime'});
       }
