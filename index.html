@@ -15696,4 +15696,140 @@ window.addEventListener('load',function(){
 })();
 </script>
 
+<script>
+/* ── WHATSAPP REMINDER BRIDGE ─────────────────────────────────────────────────
+   Hands the diary to the reminder program running on the reception laptop, so
+   nobody has to export a backup by hand any more.
+
+   It reads what is already in this browser, keeps only the bookings the next
+   few days need, and posts them to http://127.0.0.1:8787 — an address that only
+   exists ON THIS LAPTOP. Nothing leaves the machine, and no client detail beyond
+   name and phone is sent.
+
+   The FIRST time this runs on the reception laptop, Chrome asks whether the site
+   may connect to something on the local network. Click Allow once and Chrome
+   remembers it for good. Until it is answered nothing is sent — which is safe,
+   the reminder program simply says the diary is waiting.
+
+   On any other device (the owner's phone, a client's browser) there is nothing
+   listening on that address, the post quietly fails, and this backs off and
+   stops trying. It never shows an error and never blocks anything.
+   ───────────────────────────────────────────────────────────────────────────── */
+(function(){
+  var ENDPOINT   = 'http://127.0.0.1:8787/appointments';
+  var KEY        = 'rdns_main_v1';
+  var EVERY      = 3 * 60 * 1000;        // check in every 3 minutes
+  var MAX_EVERY  = 30 * 60 * 1000;       // ...backing off to 30 when nobody answers
+  var LOOK_BACK  = 2 * 60 * 60 * 1000;   // keep the last 2h (a 2h reminder may still be due)
+  var LOOK_FWD   = 8 * 24 * 60 * 60 * 1000;
+
+  var wait = EVERY, timer = null, saveTimer = null;
+  var last = { at: null, ok: null, sent: 0, error: null };
+
+  // The slice the reminder program needs: confirmed bookings in the window, the
+  // clients they belong to, and the deleted-on-purpose list so a booking that
+  // was thrown away can never be reminded about.
+  function collect(){
+    var raw = localStorage.getItem(KEY);
+    if(!raw) return null;
+    var db = JSON.parse(raw);
+    var appts = db.appointments || [], cls = db.clients || [], tomb = db.apptTomb || {};
+    var now = Date.now(), from = now - LOOK_BACK, to = now + LOOK_FWD;
+
+    var keep = [], need = {};
+    for(var i=0;i<appts.length;i++){
+      var a = appts[i];
+      if(!a || a.status !== 'confirmed') continue;
+      if(tomb[String(a.id)]) continue;
+      if(!a.datetime || String(a.datetime).indexOf('T') === -1) continue;
+      var t = new Date(a.datetime).getTime();   // written in salon time, read in salon time
+      if(!(t >= from && t <= to)) continue;
+      keep.push({ id:a.id, clientId:a.clientId, datetime:a.datetime, duration:a.duration,
+                  service:a.service, staff:a.staff, status:a.status });
+      need[parseInt(String(a.clientId).split('.')[0],10)] = true;
+    }
+
+    // Only the clients those bookings actually reference, and only the two
+    // fields a reminder needs — no notes, no spend, no birthdays.
+    var who = [];
+    for(var j=0;j<cls.length;j++){
+      var c = cls[j];
+      if(!c || !need[parseInt(c.id,10)]) continue;
+      who.push({ id:c.id, name:c.name || '', phone:c.phone || '' });
+    }
+
+    return { sentAt: now, appointments: keep, clients: who, apptTomb: tomb };
+  }
+
+  function push(){
+    var body;
+    try{
+      body = collect();
+      if(!body) return schedule(false);
+    }catch(e){ return schedule(false); }
+
+    // The first time ever, Chrome asks "…wants to connect to a device on your
+    // local network" and holds the request until it is answered — which could be
+    // all morning if nobody clicks. So give up after 20 seconds and try again
+    // later; the click, whenever it comes, is remembered from then on.
+    var giveUp = null;
+    try{
+      var ac = new AbortController();
+      giveUp = setTimeout(function(){ try{ ac.abort(); }catch(e){} }, 20000);
+      var signal = ac.signal;
+    }catch(e){}
+
+    // text/plain keeps this a "simple" cross-origin request; the bridge parses
+    // it as JSON either way.
+    fetch(ENDPOINT, {
+      method:'POST',
+      headers:{ 'Content-Type':'text/plain;charset=UTF-8' },
+      body: JSON.stringify(body),
+      mode:'cors', cache:'no-store', credentials:'omit', signal: signal
+    }).then(function(r){
+      clearTimeout(giveUp);
+      last = { at:new Date().toISOString(), ok:r.ok, sent:body.appointments.length, error:r.ok?null:('HTTP '+r.status) };
+      schedule(r.ok);
+    }).catch(function(err){
+      clearTimeout(giveUp);
+      last = { at:new Date().toISOString(), ok:false, sent:0, error:String(err && err.message || err) };
+      schedule(false);
+    });
+  }
+
+  // Answered → keep the fast rhythm. Ignored → ease off, so a phone or a laptop
+  // with the program closed isn't retrying every three minutes all day.
+  function schedule(ok){
+    wait = ok ? EVERY : Math.min(wait * 2, MAX_EVERY);
+    clearTimeout(timer);
+    timer = setTimeout(push, wait);
+  }
+
+  // A booking made or moved right now shouldn't wait up to three minutes.
+  function onSaved(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ wait = EVERY; push(); }, 3000);
+  }
+  try{
+    if(typeof window.saveAll === 'function'){
+      var _origSaveAll = window.saveAll;
+      window.saveAll = function(){
+        try{ return _origSaveAll.apply(this, arguments); }
+        finally{ try{ onSaved(); }catch(e){} }
+      };
+    }
+  }catch(e){}
+
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && wait > EVERY){ wait = EVERY; clearTimeout(timer); timer = setTimeout(push, 1000); }
+  });
+
+  // For a quick check from the console: rdBridgeStatus() / rdBridgePush()
+  window.rdBridgeStatus = function(){ return { endpoint:ENDPOINT, retryInMinutes:Math.round(wait/60000), last:last }; };
+  window.rdBridgePush   = function(){ wait = EVERY; clearTimeout(timer); push(); return 'pushing…'; };
+
+  setTimeout(push, 8000);   // let the app finish loading first
+})();
+</script>
+
 </html>

@@ -1,0 +1,11 @@
+# This folder is published as a public website (royaldiamondnails.com), so
+# anything committed here can be downloaded by anyone who knows the file name.
+
+# The WhatsApp reminder program lives OUTSIDE this folder, at
+# C:\RoyalDiamond\reminders, because it holds client phone numbers, the record of
+# who has been messaged, and the WhatsApp access token. This line is a guard: if a
+# copy ever ends up back in here, git will refuse to publish it.
+/reminders/
+
+# Diary exports — real client names and phone numbers.
+royaldiamond-backup*.json
