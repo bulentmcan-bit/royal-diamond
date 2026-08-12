@@ -1120,7 +1120,7 @@ function primeBell(){
 // read it; the measured length in the config stands in until it has.
 function failureBell(){
   // Nothing is going to be heard while the browser is still refusing to make a
-  // noise, and waiting six seconds for a bell that is not playing would only
+  // noise, and waiting out the length of a bell that is not playing would only
   // delay the name. Say it straight away instead, exactly as the chimes do.
   if (!soundOn || !audioCtx || audioCtx.state !== 'running') return 0;
   const a = bellAudio();

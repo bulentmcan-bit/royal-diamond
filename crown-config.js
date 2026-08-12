@@ -96,7 +96,7 @@ window.CROWN = {
   sounds: {
     failure: 'sounds/failure-bell.mp3',
     volume:  1,      // full, and the television's own volume does the rest
-    sec:     6.0,    // measured: 6.00s, ringing the whole way out
+    sec:     3.4,    // measured: 3.40s — the opening ding-dong-ding-dong, fading out
     gapSec:  0.15    // a breath between the last of the bell and the name
   },
 
