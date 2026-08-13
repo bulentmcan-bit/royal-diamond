@@ -97,7 +97,17 @@ window.CROWN = {
     failure: 'sounds/failure-bell.mp3',
     volume:  1,      // full, and the television's own volume does the rest
     sec:     3.4,    // measured: 3.40s — the opening ding-dong-ding-dong, fading out
-    gapSec:  0.15    // a breath between the last of the bell and the name
+    gapSec:  0.15,   // a breath between the last of the bell and the name
+
+    /* The notification tone — the sound the office screen makes when a
+       reminder pops up: an appointment crossing into its last day, and the
+       twenty-minute warning. A different job from the failure bell above, so a
+       different sound: this one only has to turn a head towards the screen.
+
+       Like the bell it is a recording, played through an <audio> element at
+       full volume and never looped, so it stays out of the limiter the
+       generated chimes need. */
+    notify:  'sounds/royal_notify_scifi.mp3'
   },
 
   /* Music, and how it gets out of the way.

@@ -9132,54 +9132,34 @@ function send24hReminder(key, phone){
   }, 1000);
 }
 
-/* Bell sound (procedurally generated — no audio file needed)
+/* The notification sound — the recording named in crown-config.js.
 
-   Driven to the same level as the Crown Board's alerts. It used to go straight
-   to the speakers at a peak of 0.32 of full scale — about ten decibels quieter
-   than every other alert in the building, which is why it went unheard with a
-   dryer running. The notes now go through the same limiter the boards use:
-   three of them overlap, and simply turning them up without it would sum past
-   full scale and tear rather than get louder.
+   It used to be three sine notes this page synthesised, driven through a
+   limiter to get them loud enough to survive a dryer running. It is a file
+   now, and an <audio> element plays it: the recording arrives already
+   mastered, so full volume is simply volume = 1 and nothing in front of it.
+   That also keeps it clear of the limiter and makeup gain the Crown Board's
+   generated chimes need, which would only break a mastered file up.
 
-   Measured, not guessed: rendering this offline through this chain puts it at
-   0.976 of full scale with no clipped samples at all, at both 44.1kHz and
-   48kHz. The next step up clips, so this is where it stops. */
-let _bellAudioCtx = null, _bellBus = null;
+   One element, reused: rewinding and replaying the same one costs nothing, and
+   it means two reminders landing together cannot stack two copies on top of
+   each other. Chrome refuses to make a noise until the page has been touched —
+   that refusal is caught and dropped, the same as the wall boards do, because
+   a notification that arrives silently is better than one that throws. */
+let _notifyAudio = null;
 function playBellSound(){
   try{
-    if(!_bellAudioCtx){
-      _bellAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
-      _bellBus = null;
+    if(!_notifyAudio){
+      const src = (window.CROWN && window.CROWN.sounds && window.CROWN.sounds.notify)
+                || 'sounds/royal_notify_scifi.mp3';
+      _notifyAudio = new Audio(src);
+      _notifyAudio.preload = 'auto';
+      _notifyAudio.loop = false;
     }
-    const ctx = _bellAudioCtx;
-    if(ctx.state === 'suspended') ctx.resume();
-    if(!_bellBus){
-      _bellBus = ctx.createGain();
-      _bellBus.gain.value = 1;
-      const lim = ctx.createDynamicsCompressor(), t = ctx.currentTime;
-      lim.threshold.setValueAtTime(-8, t);
-      lim.knee.setValueAtTime(6, t);
-      lim.ratio.setValueAtTime(12, t);
-      lim.attack.setValueAtTime(0.003, t);
-      lim.release.setValueAtTime(0.25, t);
-      const makeup = ctx.createGain();
-      makeup.gain.value = 1.05;
-      _bellBus.connect(lim).connect(makeup).connect(ctx.destination);
-    }
-    const now = ctx.currentTime;
-    [880, 1318.5, 1760].forEach((freq, i)=>{
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const start = now + i*0.09;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(i===0?1.8:0.9, start+0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start+1.4);
-      osc.connect(gain).connect(_bellBus);
-      osc.start(start);
-      osc.stop(start+1.5);
-    });
+    _notifyAudio.volume = 1.0;                       // maximum
+    try{ _notifyAudio.currentTime = 0; }catch(e){}   // nothing to rewind yet on the first play
+    const p = _notifyAudio.play();
+    if(p && p.catch) p.catch(()=>{});
   }catch(e){ console.warn('playBellSound error:', e); }
 }
 
