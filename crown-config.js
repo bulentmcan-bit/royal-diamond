@@ -94,9 +94,9 @@ window.CROWN = {
      file arrives already mastered — it peaks at 0 dB — and putting 5% of makeup
      gain on top of that is exactly how it would start to break up. */
   sounds: {
-    failure: 'sounds/failure-bell.mp3',
+    failure: 'sounds/royal_failure_scifi.mp3',
     volume:  1,      // full, and the television's own volume does the rest
-    sec:     3.4,    // measured: 3.40s — the opening ding-dong-ding-dong, fading out
+    sec:     0.7,    // measured: 0.62s in the browser — rounded up, see above
     gapSec:  0.15,   // a breath between the last of the bell and the name
 
     /* The notification tone — the sound the office screen makes when a
