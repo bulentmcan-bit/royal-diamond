@@ -102,9 +102,16 @@ window.CROWN = {
 
      Reception's laptop feeds the Bluetooth speaker, so it is the machine that
      plays the salon's music and the machine that has to stop the music burying
-     an alarm. Every sound the panel makes ducks it: the music slides down, the
-     sound plays in full over the top, and the music comes back up. Down fast so
-     nothing is lost under it, up slowly so the room does not notice the seam.
+     an alarm. Every sound the panel makes cuts it: the music stops dead, three
+     seconds of silence pass, the announcement plays into a quiet room, and three
+     seconds after the last note the music fades back up. Nothing plays underneath
+     it — the announcement is not mixed over the song, it replaces it — and the
+     way back is slow so the room does not notice the seam.
+
+     The two three-second gaps are the point of it. The one in front is what
+     makes the room look up: the music stopping is itself the signal, and by the
+     time the chime sounds there is nothing left to talk over. The one behind
+     stops the song walking back in over the tail of a sentence.
 
      The music itself comes off a USB stick: reception points the panel at a
      folder once and the laptop remembers which one, so it comes back on its own
@@ -113,11 +120,12 @@ window.CROWN = {
   music: {
     shuffle:   true,
     loop:      true,
-    volume:    35,      // 0-100, what it plays at normally
-    duckTo:     5,      // 0-100, what it drops to while a sound is playing
-    fadeDownMs: 220,    // quick, so the first note is never buried
+    volume:    21,      // 0-100, what it plays at normally — under the room, not in it
+    duckTo:     0,      // silent, not merely quiet: nothing plays under an announcement
+    fadeDownMs: 0,      // a cut, not a fade — the silence starts the instant it is asked for
     fadeUpMs:   900,    // slow, so the room does not hear it come back
-    holdMs:     350,    // a breath after the sound before the music returns
+    leadGapMs: 3000,    // silence BEFORE the first note, so the room looks up into quiet
+    holdMs:    3000,    // silence AFTER the last note before the music is allowed back
     // What counts as music on the stick. Anything else in the folder — cover
     // art, a stray document, the player software that came with it — is ignored.
     types:     ['mp3','m4a','aac','wav','ogg','oga','opus','flac','weba','webm','mp4'],

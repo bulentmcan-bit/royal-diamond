@@ -15180,8 +15180,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       // an alarm being left silent, and just as invisible. If something has held
       // it down for longer than any announcement can last, take it back.
       unduckAll:function(){ ducks=0; fadeTo(vol(), C.music.fadeUpMs); },
+      // The last net of all, and deliberately the slowest: the announcement's own
+      // failsafe and the stuck-talker guard both get their chance first. It only
+      // catches a duck that nothing else ever accounted for.
       watchdog:function(){
-        if(ducks>0 && Date.now()-duckedAt>30000) this.unduckAll();
+        if(ducks>0 && Date.now()-duckedAt>45000) this.unduckAll();
       }
     };
   })();
@@ -15190,6 +15193,24 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   // cbmMusic.play(), .setVolume(50), .level() — handy when the salon rings up
   // to say the music is behaving oddly.
   window.cbmMusic=Music;
+
+  // The baseline came down to sit further under the room. Changing the number in
+  // crown-config.js is only half of it: a laptop where somebody has touched the
+  // volume slider keeps its OWN number and would have carried on exactly as loud
+  // as before — which on reception's laptop, the one machine this is actually
+  // for, is the likely case. So a saved setting is brought down by the same
+  // proportion, once, and stamped so it can never be brought down twice. The
+  // slider still wins afterwards: this moves where she is starting from, not
+  // what she is allowed to choose.
+  try{
+    if(!localStorage.getItem('rdns_cbm_musicvol_q60')){
+      var _sv=parseInt(localStorage.getItem('rdns_cbm_musicvol'),10);
+      if(!isNaN(_sv)) localStorage.setItem('rdns_cbm_musicvol',
+        String(Math.max(0,Math.min(100,Math.round(_sv*0.6)))));
+      localStorage.setItem('rdns_cbm_musicvol_q60','1');
+    }
+  }catch(e){}
+
   // Last night's folder, picked up again before anybody asks for it.
   try{ Music.restore(); }catch(e){}
 
@@ -15255,7 +15276,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // alarms down with it. Anything still "speaking" after longer than an
     // announcement can possibly last has the floor taken back off it — silence
     // that nobody can see is the worst way for this to fail.
-    if(_talking && Date.now()-_talkingSince>20000){ _talking=false; Music.unduckAll(); }
+    // Longer than it was, because an announcement is now longer than it was:
+    // three seconds of silence in front and three behind sit either side of it.
+    // This has to outlast the failsafe in pump(), or it would take the floor off
+    // an announcement that is still perfectly well running.
+    if(_talking && Date.now()-_talkingSince>30000){ _talking=false; Music.unduckAll(); }
     if(_queue.length>=6) return;   // a backlog nobody could follow anyway
     _queue.push(spec);
     pump();
@@ -15263,31 +15288,48 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   function pump(){
     if(_talking || !_queue.length) return;
     _talking=true; _talkingSince=Date.now();
-    var it=_queue.shift(), released=false;
+    var it=_queue.shift(), released=false, failsafe=null;
     // Every step is guarded, and the music comes back up in the same breath the
     // queue is released: if a sound or the speech engine throws, the salon must
     // not be left both silent and quiet.
     function release(){
       if(released) return;
       released=true;
+      clearTimeout(failsafe);
       Music.unduck();
       _talking=false;
       pump();
     }
     Music.duck();
-    var lead=0;
-    try{ lead=playSound(it.lead); }catch(e){}
+    // The music is out from here until release(), whatever happens in between.
+    // Every path below reaches release() on its own; this is the one that does
+    // not depend on any of them — a sound that throws, a speech engine that
+    // never calls back, a chain of timers a throttled tab runs late. The music
+    // being left off for the rest of the afternoon is exactly as bad as an
+    // alarm never sounding, and just as invisible from the floor.
+    //   3s in front + longest lead + say()'s own 7s ceiling + tail + 3s behind,
+    //   with room to spare, so it never fires on an announcement still running.
+    failsafe=setTimeout(release, C.music.leadGapMs + 20000 + C.music.holdMs);
+    // Three seconds of silence before the first note. The music stopping is
+    // itself the signal — the room looks up, and the chime lands in a quiet
+    // room rather than over the top of a chorus.
     setTimeout(function(){
-      try{
-        if(!it.text){ finishTail(); return; }
-        say(it.text, finishTail);
-      }catch(e){ release(); }
-      function finishTail(){
-        var tail=0;
-        try{ if(it.tail) tail=playSound(it.tail); }catch(e){}
-        setTimeout(release, Math.round(tail*1000)+C.music.holdMs);
-      }
-    }, Math.round(lead*1000));
+      var lead=0;
+      try{ lead=playSound(it.lead); }catch(e){}
+      setTimeout(function(){
+        try{
+          if(!it.text){ finishTail(); return; }
+          say(it.text, finishTail);
+        }catch(e){ release(); }
+        function finishTail(){
+          var tail=0;
+          try{ if(it.tail) tail=playSound(it.tail); }catch(e){}
+          // ...and three seconds after the last note before the song is let
+          // back, so it never walks in over the tail of a sentence.
+          setTimeout(release, Math.round(tail*1000)+C.music.holdMs);
+        }
+      }, Math.round(lead*1000));
+    }, C.music.leadGapMs);
   }
 
   // Every technician, every kind of job, once a second. A job seen for the
