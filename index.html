@@ -3233,7 +3233,11 @@ p, span, div, label, h1, h2, h3, h4 {
             <span style="font-size:0.72rem;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">Müşteri sonra ödeyecek — vadesi gelince otomatik hatırlatılır</span>
           </div>
           <div class="form-row fr2">
-            <div class="fg"><label class="flabel">Müşteri Adı *</label><input class="fctrl" id="dp-name" type="text" placeholder="İsim…" autocomplete="off"></div>
+            <!-- The customer list, but still a plain box underneath: she picks an
+                 existing name off the dropdown, or types a new one straight over
+                 it for somebody not on the books yet. Either way what is saved is
+                 the text in the field, exactly as it always was. -->
+            <div class="fg"><label class="flabel">Müşteri Adı *</label><input class="fctrl" id="dp-name" type="text" list="dp-name-list" placeholder="İsim seçin veya yazın…" autocomplete="off"><datalist id="dp-name-list"></datalist></div>
             <div class="fg"><label class="flabel">Tutar *</label>
               <div style="display:flex;gap:6px;">
                 <select class="fctrl" id="dp-cur" style="width:auto;padding:6px 9px;">
@@ -3247,7 +3251,12 @@ p, span, div, label, h1, h2, h3, h4 {
             </div>
           </div>
           <div class="form-row fr2">
-            <div class="fg"><label class="flabel">Ödeme Tarihi (vade) *</label><input class="fctrl" id="dp-due" type="date"></div>
+            <div class="fg"><label class="flabel">Ödeme Tarihi &amp; Saati (vade) *</label>
+              <div style="display:flex;gap:6px;">
+                <input class="fctrl" id="dp-due" type="date">
+                <input class="fctrl" id="dp-time" type="time" style="width:auto;" title="Saat">
+              </div>
+            </div>
             <div class="fg"><label class="flabel">Telefon (opsiyonel)</label><input class="fctrl" id="dp-phone" type="text" placeholder="905XXXXXXXXX"></div>
           </div>
           <div class="fg" style="margin-bottom:13px;"><label class="flabel">Not (opsiyonel)</label><input class="fctrl" id="dp-note" type="text" placeholder="Açıklama, hizmet vb…"></div>
@@ -3955,9 +3964,13 @@ p, span, div, label, h1, h2, h3, h4 {
   <div class="modal" style="max-width:520px;">
     <div class="mhdr"><div class="mtitle">📆 Vadeli Ödeme Ekle</div><button class="mclose" onclick="closeModal('mDpFromAppt')">✕</button></div>
     <div id="dpfa-info" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin-bottom:14px;font-size:0.83rem;line-height:1.5;"></div>
-    <input type="hidden" id="dpfa-name">
     <input type="hidden" id="dpfa-phone">
     <input type="hidden" id="dpfa-apptid">
+    <!-- Filled in from the appointment, so it is already right the moment the
+         modal opens. It is a box rather than a caption now for the times it is
+         not: the payment is being left by somebody else, or the booking is under
+         a name the money will not come in under. Same list as the page form. -->
+    <div class="fg" style="margin-bottom:13px;"><label class="flabel">Müşteri Adı *</label><input class="fctrl" id="dpfa-name" type="text" list="dpfa-name-list" placeholder="İsim seçin veya yazın…" autocomplete="off"><datalist id="dpfa-name-list"></datalist></div>
     <div class="form-row fr2">
       <div class="fg"><label class="flabel">Tutar *</label>
         <div style="display:flex;gap:6px;">
@@ -3967,7 +3980,12 @@ p, span, div, label, h1, h2, h3, h4 {
           <input class="fctrl" id="dpfa-amount" type="number" min="0" step="any">
         </div>
       </div>
-      <div class="fg"><label class="flabel">Ödeme Tarihi (vade) *</label><input class="fctrl" id="dpfa-due" type="date"></div>
+      <div class="fg"><label class="flabel">Ödeme Tarihi &amp; Saati (vade) *</label>
+        <div style="display:flex;gap:6px;">
+          <input class="fctrl" id="dpfa-due" type="date">
+          <input class="fctrl" id="dpfa-time" type="time" style="width:auto;" title="Saat">
+        </div>
+      </div>
     </div>
     <div class="fg" style="margin-bottom:13px;"><label class="flabel">Not</label><input class="fctrl" id="dpfa-note" type="text" placeholder="Açıklama…"></div>
     <div class="mfoot">
@@ -10053,11 +10071,32 @@ const DP_SNOOZE_KEY='rdns_dp_snooze_until';
 function dpList(){ if(!Array.isArray(deferredPayments)) deferredPayments=[]; return deferredPayments; }
 function dpToday(){ return (typeof dtDateKey==='function')?dtDateKey():new Date().toISOString().slice(0,10); }
 
+/* A due date now carries a time of day as well. It is kept in its OWN field —
+   `due` stays the plain 'YYYY-MM-DD' it has always been and `dueTime` holds
+   'HH:MM' beside it — for two reasons:
+
+     · every record already written stays valid, and simply has no time;
+     · the reminder rule below is deliberately a DAY rule, set by the owner, and
+       folding a clock into `due` would quietly turn it into an hour rule.
+
+   The time says when in the day the customer said she would come, which is what
+   reception wants to read off the row. It does not decide when the reminder
+   starts — a payment due at two o'clock is not "late" at three. */
+function dpDueDate(due){ return String(due||'').slice(0,10); }
+function dpTimeOf(p){
+  const t=String((p&&p.dueTime)||'').trim();
+  return /^\d{1,2}:\d{2}$/.test(t) ? (t.length===4?'0'+t:t) : '';
+}
+
 // days = due - today  (positive = future, 0 = today, negative = overdue)
+// Unchanged rule, and unchanged granularity: whole days, so a payment due today
+// is not overdue whatever the clock says. `dpDueDate` is only there so a value
+// that ever arrives with a time stuck on it cannot produce an Invalid Date.
 function dpDaysDiff(due){
   try{
     const t=new Date(dpToday()+'T00:00:00');
-    const d=new Date(due+'T00:00:00');
+    const d=new Date(dpDueDate(due)+'T00:00:00');
+    if(isNaN(d)) return 0;
     return Math.round((d-t)/86400000);
   }catch(e){ return 0; }
 }
@@ -10066,19 +10105,42 @@ function dpFmt(cur,amount){
   return (cur||'₺')+n.toLocaleString('tr-TR',{maximumFractionDigits:2});
 }
 function dpEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-function dpDateLabel(due){
-  try{ return new Date(due+'T00:00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'}); }
-  catch(e){ return due; }
+// "17 Ağustos 2026" as before, with "· 14:30" after it once a time was given.
+// A record saved before there were times reads exactly as it always did.
+function dpDateLabel(due, time){
+  let out;
+  try{
+    const d=new Date(dpDueDate(due)+'T00:00:00');
+    out=isNaN(d)?String(due||''):d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'});
+  }catch(e){ out=String(due||''); }
+  const t=dpTimeOf({dueTime:time});
+  return t ? out+' · '+t : out;
 }
 function dpOpen(){ return dpList().filter(p=>p&&!p.paid); }
 // active reminders: unpaid AND strictly past the due date (the day after onward)
 function dpOverdue(){ return dpList().filter(p=>p&&!p.paid&&dpDaysDiff(p.due)<0); }
+
+// Every customer already on the books, offered under both name boxes. It is a
+// datalist, so it suggests rather than restricts: a name that is not on it can
+// still be typed straight in, which is how a new customer gets her first record.
+const DP_DEFAULT_TIME='18:00';   // closing — when somebody coming back to pay usually comes
+function dpFillNameList(){
+  try{
+    const names=(clients||[]).map(c=>c&&c.name).filter(Boolean)
+      .sort(typeof trSort==='function'?trSort:undefined);
+    const html=names.map(n=>'<option value="'+dpEsc(n)+'"></option>').join('');
+    ['dp-name-list','dpfa-name-list'].forEach(id=>{
+      const dl=document.getElementById(id); if(dl) dl.innerHTML=html;
+    });
+  }catch(e){}
+}
 
 function dpAdd(){
   const name=(document.getElementById('dp-name').value||'').trim();
   const cur=document.getElementById('dp-cur').value||'₺';
   const amount=parseFloat(document.getElementById('dp-amount').value);
   const due=document.getElementById('dp-due').value||'';
+  const dueTime=dpTimeOf({dueTime:(document.getElementById('dp-time')||{}).value});
   const phone=(document.getElementById('dp-phone').value||'').trim();
   const note=(document.getElementById('dp-note').value||'').trim();
   if(!name){ toast('⚠️','Eksik Bilgi','Lütfen müşteri adını girin.','r'); return; }
@@ -10087,13 +10149,16 @@ function dpAdd(){
   const cleanPhone=(phone&&typeof normalizeWaPhone==='function')?normalizeWaPhone(phone):phone;
   dpList().push({
     id:'dp'+Date.now()+Math.floor(Math.random()*1000),
-    name:name, cur:cur, amount:amount, due:due, phone:cleanPhone, note:note,
+    name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:cleanPhone, note:note,
     paid:false, created:dpToday()
   });
   saveAll();
   ['dp-name','dp-amount','dp-due','dp-phone','dp-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  // The clock goes back to closing time rather than blank, so the next payment
+  // starts from the answer that is nearly always right.
+  const tEl=document.getElementById('dp-time'); if(tEl) tEl.value=DP_DEFAULT_TIME;
   dpRender();
-  toast('✅','Kaydedildi',name+' için '+dpFmt(cur,amount)+' vadeli ödeme eklendi. Vade: '+dpDateLabel(due),'g');
+  toast('✅','Kaydedildi',name+' için '+dpFmt(cur,amount)+' vadeli ödeme eklendi. Vade: '+dpDateLabel(due,dueTime),'g');
 }
 
 function dpStatusPill(p){
@@ -10130,7 +10195,7 @@ function dpDelete(id){
 }
 function dpWa(id){
   const p=dpList().find(x=>x.id===id); if(!p||!p.phone) return;
-  const msg=encodeURIComponent('Merhaba '+p.name+', '+dpFmt(p.cur,p.amount)+' tutarındaki ödemenizin vadesi ('+dpDateLabel(p.due)+') geçmiştir. Uygun olduğunuzda ödemenizi bekliyoruz. Teşekkürler 💅 Royal Diamond Nail Studio');
+  const msg=encodeURIComponent('Merhaba '+p.name+', '+dpFmt(p.cur,p.amount)+' tutarındaki ödemenizin vadesi ('+dpDateLabel(p.due,p.dueTime)+') geçmiştir. Uygun olduğunuzda ödemenizi bekliyoruz. Teşekkürler 💅 Royal Diamond Nail Studio');
   window.open('https://wa.me/'+p.phone+'?text='+msg,'_blank');
 }
 
@@ -10170,7 +10235,7 @@ function dpRender(){
     html+='<tr style="'+paidStyle+'">'
       +'<td style="font-weight:700;">'+dpEsc(p.name)+(p.phone?'<br><span style="font-size:0.72rem;color:var(--muted);">📞 '+dpEsc(p.phone)+'</span>':'')+'</td>'
       +'<td style="font-weight:800;color:var(--goldLight);white-space:nowrap;">'+dpFmt(p.cur,p.amount)+'</td>'
-      +'<td style="font-size:0.8rem;white-space:nowrap;">'+dpDateLabel(p.due)+'</td>'
+      +'<td style="font-size:0.8rem;white-space:nowrap;">'+dpDateLabel(p.due,p.dueTime)+'</td>'
       +'<td>'+dpStatusPill(p)+'</td>'
       +'<td style="font-size:0.78rem;color:var(--muted);">'+(dpEsc(p.note)||'—')+'</td>'
       +'<td style="text-align:right;white-space:nowrap;">';
@@ -10193,6 +10258,10 @@ function ccSwitchTab(which,el){
   if(which==='deferred'){
     if(fis) fis.style.display='none';
     if(def) def.style.display='';
+    // The customer list is rebuilt each time the tab is opened rather than once
+    // at load: a customer added this morning is on it this afternoon.
+    dpFillNameList();
+    const t=document.getElementById('dp-time'); if(t&&!t.value) t.value=DP_DEFAULT_TIME;
     dpRender();
   } else {
     if(def) def.style.display='none';
@@ -10213,8 +10282,10 @@ function dpFromAppt(apptId){
   const name=(c&&c.name)||'Müşteri';
   const phone=(c&&c.phone)?((typeof normalizeWaPhone==='function')?normalizeWaPhone(c.phone):c.phone):'';
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  dpFillNameList();
   set('dpfa-name',name); set('dpfa-phone',phone); set('dpfa-cur','₺'); set('dpfa-apptid',a.id);
   set('dpfa-amount',(a.price!=null?a.price:'')); set('dpfa-note',a.service||''); set('dpfa-due','');
+  set('dpfa-time',DP_DEFAULT_TIME);
   const info=document.getElementById('dpfa-info');
   if(info) info.innerHTML='<strong>'+dpEsc(name)+'</strong>'+(a.service?' · '+dpEsc(a.service):'')+(a.datetime?' · '+((typeof fDT==='function')?fDT(a.datetime):dpEsc(a.datetime)):'')+(phone?'<br><span style="color:var(--muted);font-size:0.76rem;">📞 '+dpEsc(phone)+'</span>':'');
   openModal('mDpFromAppt');
@@ -10225,19 +10296,20 @@ function dpSaveFromAppt(){
   const cur=document.getElementById('dpfa-cur').value||'₺';
   const amount=parseFloat(document.getElementById('dpfa-amount').value);
   const due=document.getElementById('dpfa-due').value||'';
+  const dueTime=dpTimeOf({dueTime:(document.getElementById('dpfa-time')||{}).value});
   const phone=(document.getElementById('dpfa-phone').value||'').trim();
   const note=(document.getElementById('dpfa-note').value||'').trim();
   if(!(amount>0)){ toast('⚠️','Eksik Bilgi','Lütfen geçerli bir tutar girin.','r'); return; }
   if(!due){ toast('⚠️','Eksik Bilgi','Lütfen ödeme (vade) tarihini seçin.','r'); return; }
   const apptId=document.getElementById('dpfa-apptid').value||'';
-  dpList().push({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, phone:phone, note:note, paid:false, created:dpToday(), apptId:apptId||null });
+  dpList().push({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:phone, note:note, paid:false, created:dpToday(), apptId:apptId||null });
   // Flag the source appointment as "deferred" so the Kasa Kontrol day breakdown references it.
   if(apptId){ const a=appointments.find(x=>String(x.id)===String(apptId)); if(a){ a.collect='deferred'; } }
   saveAll();
   closeModal('mDpFromAppt');
   dpRender();
   try{ if(document.getElementById('page-cashcheck')&&document.getElementById('page-cashcheck').classList.contains('active')) renderCashCheck(); }catch(e){}
-  toast('✅','Kaydedildi',name+' için '+dpFmt(cur,amount)+' vadeli ödeme eklendi. Vade: '+dpDateLabel(due),'g');
+  toast('✅','Kaydedildi',name+' için '+dpFmt(cur,amount)+' vadeli ödeme eklendi. Vade: '+dpDateLabel(due,dueTime),'g');
 }
 
 // ── Reminder engine ──
@@ -10260,7 +10332,7 @@ function dpCheckReminders(){
       html+='<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(232,122,122,0.25);background:rgba(232,122,122,0.06);border-radius:10px;margin-bottom:9px;">'
         +'<div style="flex:1;min-width:0;">'
           +'<div style="font-weight:800;font-size:0.9rem;">'+dpEsc(p.name)+' <span style="color:var(--goldLight);">'+dpFmt(p.cur,p.amount)+'</span></div>'
-          +'<div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">Vade: '+dpDateLabel(p.due)+' · <span style="color:#e87a7a;font-weight:700;">'+diff+' gün gecikti</span>'+(p.note?' · '+dpEsc(p.note):'')+'</div>'
+          +'<div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">Vade: '+dpDateLabel(p.due,p.dueTime)+' · <span style="color:#e87a7a;font-weight:700;">'+diff+' gün gecikti</span>'+(p.note?' · '+dpEsc(p.note):'')+'</div>'
         +'</div>'
         +'<button class="btn btn-green btn-sm" onclick="dpMarkPaid(\''+p.id+'\')">✓ Ödendi</button>'
         +(p.phone?' <button class="btn btn-wa btn-sm" onclick="dpWa(\''+p.id+'\')">💬</button>':'')
