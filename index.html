@@ -1292,95 +1292,96 @@
     const v=m[s]||m.local;el.textContent=v.t;el.style.color=v.c;
   }
 
-  // ═══════ ONLINE BOOKING ENGINE (rande.vu style · per-technician grids) ═══════
-  // Each technician keeps her own rhythm. Helen takes a booking on the hour;
-  // Lissa and Hannah in 90-minute blocks, which is what the work they do
-  // actually takes, so the online page stops offering them starts they would
-  // have to turn down.
-  // These are START times only — they say when a NEW online booking may begin.
-  // They are not working hours and they say nothing about existing bookings: a
-  // 90-minute job that begins at 09:30 still runs to 11:00, and the
-  // availability map below still knows she is busy in between.
+  // ═══════ ONLINE BOOKING ENGINE (rande.vu style · per-technician spacing) ════
+  // The customer is offered a start every half hour, right across the opening
+  // hours, and the same ladder for everybody. What differs between technicians
+  // is how much of the day one appointment takes: 60 minutes or 90, whichever
+  // management has set for her on the Aylık page. That one number spaces her
+  // bookings and sets her Crown Board countdown, so the chair and the diary can
+  // no longer disagree about how long she has.
+  //
+  // So a start is offered when at least ONE technician is free for her whole
+  // length from it. Helen on 60 who starts at 09:00 is next free at 10:00;
+  // Hannah on 90 who starts at 09:00 is next free at 10:30. Both are reachable
+  // from the same half-hour ladder — it is the length that moves, not the grid.
+  //
+  // These are START times only. They are not working hours, and they say
+  // nothing about existing bookings: a job already in the diary runs for the
+  // length it was written with, and the maps below know she is busy throughout.
   const _obGrid=(firstMin,lastMin,stepMin)=>{
     const a=[];
     for(let m=firstMin;m<=lastMin;m+=stepMin) a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
     return a;
   };
-  const RD_OB_HOURLY=_obGrid(8*60, 18*60, 60);   // 08:00 … 18:00, on the hour
-  // 08:00 09:30 11:00 12:30 14:00 15:30 17:00 — and 18:00 on the end, so the
-  // 90-minute technicians can take a last booking as late as Helen can. It runs
-  // to 19:30, past the 18:30 the ladder would otherwise stop at, which is the
-  // point of it. Note it is only 60 minutes after 17:00, not the usual 90: the
-  // two OVERLAP, so they are one choice rather than two — see RD_OB_LATE_PAIR.
-  const RD_OB_90=[..._obGrid(8*60, 17*60, 90), '18:00'];
-  const RD_OB_TECH_SLOTS={'Helen':RD_OB_HOURLY,'Hannah':RD_OB_90,'Lissa':RD_OB_90};
-  const RD_OB_UNION=[...new Set(Object.values(RD_OB_TECH_SLOTS).flat())].sort();
-  // The clashing pair. A 17:00 start runs to 18:30 and so eats the 18:00 start;
-  // an 18:00 start is still running at 19:30 and so cannot be reached from
-  // 17:00. Whichever of the two a technician's day already holds, the other
-  // stops being offered for her — that is what keeps the late hour from being
-  // double-booked. It applies only to the 90-minute grid; Helen works in hours
-  // and 17:00 + 18:00 sit side by side for her, exactly as they always have.
-  const RD_OB_LATE_PAIR=['17:00','18:00'];
-  const RD_OB_LATE_DUR=90;
-  function _obLatePairTech(tech){ return RD_OB_TECH_SLOTS[tech]===RD_OB_90; }
-  // Is this time one of her start times at all? (Fixed grid, no day involved.)
-  function _obTechHasSlot(tech,slot){
-    const g=RD_OB_TECH_SLOTS[tech];
-    return !!g && g.indexOf(slot)!==-1;
+  // 08:00 … 18:00 every half hour. The last start stays 18:00, exactly where it
+  // was before: a 90-minute booking taken then still runs past closing, which is
+  // the salon's long-standing habit and not something this change touches.
+  const RD_OB_STEP=30;
+  const RD_OB_UNION=_obGrid(8*60, 18*60, RD_OB_STEP);
+  // The roster comes from crown-config.js, which loads further down this file —
+  // so it is read when called, never at parse time. The fallback is the three
+  // names the booking page has always known, for the moment before it is there.
+  const RD_OB_FALLBACK_TECHS=['Helen','Hannah','Lissa'];
+  function _obTechs(){
+    try{
+      const ops=window.CROWN&&window.CROWN.operators;
+      if(ops&&ops.length) return ops.map(o=>o.name);
+    }catch(e){}
+    return RD_OB_FALLBACK_TECHS;
   }
-  // May this technician START a booking at this time ON THIS DAY? Same as the
-  // grid, except that the overlapping late pair closes itself once either half
-  // of it is taken. `maps` is an _obDayMaps() result; without one this falls
-  // back to the plain grid.
+  // How long one appointment takes for her — her spacing and her crown limit,
+  // the same number. Unset, or CROWN not loaded yet, and it is the 60 the
+  // config defaults to.
+  function _obSpacing(tech){
+    try{ if(window.CROWN) return window.CROWN.slotFor(tech); }catch(e){}
+    return 60;
+  }
+  const _obMins=slot=>{const p=String(slot).split(':');return (+p[0])*60+(+p[1]);};
+  // May this technician START a booking at this time on this day? She may if
+  // nothing already in her diary overlaps the run this booking would make —
+  // her full length from this start. `maps` is an _obDayMaps() result.
+  //
+  // This is checked against her REAL booked runs, not against the published
+  // half hours, so a job that finishes after the last published slot still
+  // blocks properly instead of being invisible and bookable straight over.
   function _obTechCanStart(tech,slot,maps){
-    if(!_obTechHasSlot(tech,slot)) return false;
-    if(!maps || !_obLatePairTech(tech) || RD_OB_LATE_PAIR.indexOf(slot)===-1) return true;
-    const starts=(maps.starts&&maps.starts[tech])||{};
-    if(RD_OB_LATE_PAIR.some(s=>starts[s])) return false;
-    // Both of these runs finish after 18:30, where the published half hours stop
-    // and the customer page can no longer see a clash for itself. So they are
-    // checked here against the real appointments — otherwise a job the salon
-    // entered by hand at, say, 18:30 would be invisible and bookable straight
-    // over.
-    const p=slot.split(':'), st=(+p[0])*60+(+p[1]), en=st+RD_OB_LATE_DUR;
-    return !((maps.spans&&maps.spans[tech])||[]).some(b=>st<b[1]&&b[0]<en);
+    const st=_obMins(slot), en=st+_obSpacing(tech);
+    return !((maps&&maps.spans&&maps.spans[tech])||[]).some(b=>st<b[1]&&b[0]<en);
   }
   const RD_OB_DAYS=14;
   let _obAvailTimer=null, _obListenerOn=false;
   const _obPad=n=>String(n).padStart(2,'0');
   function _obDateKey(d){return d.getFullYear()+'-'+_obPad(d.getMonth()+1)+'-'+_obPad(d.getDate());}
-  function _obCap(slot){return Object.values(RD_OB_TECH_SLOTS).filter(l=>l.includes(slot)).length;}
-  function _obTechOf(staff){if(!staff)return null;const s=String(staff).toLowerCase().trim();return Object.keys(RD_OB_TECH_SLOTS).find(t=>t.toLowerCase()===s)||null;}
+  // Every technician can be offered every half hour now, so capacity is simply
+  // how many of them there are — the same at 08:00 as at 18:00.
+  function _obCap(slot){return _obTechs().length;}
+  function _obTechOf(staff){if(!staff)return null;const s=String(staff).toLowerCase().trim();return _obTechs().find(t=>t.toLowerCase()===s)||null;}
   function _obNearest(grid,mins,tol){let nearest=null,minDiff=Infinity;grid.forEach(s=>{const[h,m]=s.split(':').map(Number);const d=Math.abs(mins-(h*60+m));if(d<minDiff){minDiff=d;nearest=s;}});return minDiff<=tol?nearest:null;}
   function _obDurOf(a){var d=parseInt(a.duration);if(d)return d;try{var s2=staffSvcDur(a.staff,a.service);if(s2)return s2;}catch(e){}return 60;}
   function _obDayMaps(dateKey){
-    const total={},byTech={},starts={},spans={};RD_OB_UNION.forEach(s=>total[s]=0);
-    Object.keys(RD_OB_TECH_SLOTS).forEach(t=>{byTech[t]={};starts[t]={};spans[t]=[];});
+    const total={},byTech={},spans={};RD_OB_UNION.forEach(s=>total[s]=0);
+    _obTechs().forEach(t=>{byTech[t]={};spans[t]=[];});
     (appointments||[]).forEach(a=>{
       if(!a||a.status==='cancelled')return;
       const dt=new Date(a.datetime);if(isNaN(dt))return;
       if(_obDateKey(dt)!==dateKey)return;
-      const tech=_obTechOf(a.staff);if(!tech)return;
+      const tech=_obTechOf(a.staff);if(!tech||!spans[tech])return;
+      // Her real booked run, on the length the appointment was written with.
+      // Existing bookings are read exactly as they stand — the 60/90 setting
+      // says how long a NEW booking takes, and never rewrites an old one.
       const st=dt.getHours()*60+dt.getMinutes(), en=st+_obDurOf(a);
-      // The times she is already starting something — the late pair is settled
-      // on starts, not on overlap, so a job that merely runs through 17:00 does
-      // not close the pair.
-      starts[tech][_obPad(Math.floor(st/60))+':'+_obPad(st%60)]=true;
-      spans[tech].push([st,en]);   // the real booked run, half hours or not
+      spans[tech].push([st,en]);
       RD_OB_UNION.forEach(slot=>{
-        const p=slot.split(':');const sm=(+p[0])*60+(+p[1]);
-        // Busy is tracked at EVERY slot she overlaps, in or out of her own
-        // grid — that is how a clash is spotted. The headline count only
-        // counts technicians who could have started here, so it stays
-        // comparable with the capacity below (_obCap counts the same way).
-        if(sm<en && sm+30>st && !byTech[tech][slot]){
+        const sm=_obMins(slot);
+        // Busy is tracked at every half hour she overlaps, which is what the
+        // customer page reads to grey a time out.
+        if(sm<en && sm+RD_OB_STEP>st && !byTech[tech][slot]){
           byTech[tech][slot]=true;
-          if(_obTechHasSlot(tech,slot)) total[slot]=(total[slot]||0)+1;
+          total[slot]=(total[slot]||0)+1;
         }
       });
     });
-    return {total:total,byTech:byTech,starts:starts,spans:spans};
+    return {total:total,byTech:byTech,spans:spans};
   }
   function _obProcessedIds(){try{return JSON.parse(localStorage.getItem('rd_ob_processed')||'[]');}catch(e){return[];}}
   function _obMarkProcessed(id){try{const a=_obProcessedIds();if(!a.includes(id)){a.push(id);localStorage.setItem('rd_ob_processed',JSON.stringify(a.slice(-200)));}}catch(e){}}
@@ -1397,9 +1398,9 @@
           const slots={};
           RD_OB_UNION.forEach(s=>{
             const t={}, a={};
-            Object.keys(RD_OB_TECH_SLOTS).forEach(k=>{
-              t[k]=maps.byTech[k][s]?1:0;              // busy at this half hour
-              a[k]=_obTechCanStart(k,s,maps)?1:0;      // may START at this time
+            _obTechs().forEach(k=>{
+              t[k]=(maps.byTech[k]&&maps.byTech[k][s])?1:0;  // busy at this half hour
+              a[k]=_obTechCanStart(k,s,maps)?1:0;            // free for her WHOLE length from here
             });
             slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t,a:a};
           });
@@ -1430,19 +1431,13 @@
       const maps=_obDayMaps(req.date);
       const cap=_obCap(req.time);
       const booked=maps.total[req.time]||0;
-      const _reqDur=(function(){try{var s3=rdSvcDur(req.service);if(s3)return s3;}catch(e){}return 60;})();
-      let staffPick='';
-      (function(){
-        const rp=req.time.split(':');const rs=(+rp[0])*60+(+rp[1]), re2=rs+_reqDur;
-        outer: for(const t of Object.keys(RD_OB_TECH_SLOTS)){
-          // Not one of her start times today — she is not offered this booking
-          // at all. (Day-aware: the 17:00/18:00 pair shuts once either is hers.)
-          if(!_obTechCanStart(t, req.time, maps)) continue;
-          for(const slot of RD_OB_UNION){const sp=slot.split(':');const smm=(+sp[0])*60+(+sp[1]);
-            if(smm<re2 && smm+30>rs && maps.byTech[t][slot]) continue outer;}
-          staffPick=t; break;
-        }
-      })();
+      // The first technician who is free for her own whole length from this
+      // start. Each is measured on her own 60 or 90 — Helen may be able to take
+      // a time that Hannah, needing half an hour more, cannot.
+      const staffPick=_obTechs().find(t=>_obTechCanStart(t, req.time, maps))||'';
+      // And the booking is written for exactly that long, which is what keeps
+      // her next offered start the right distance away.
+      const _reqDur=staffPick?_obSpacing(staffPick):60;
       if(!RD_OB_UNION.includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
@@ -3646,6 +3641,26 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
       </div>
 
+      <!-- Per-technician appointment length · 60 or 90 minutes ─────────────────
+           One number per technician, and it does two jobs: it is her Crown Board
+           countdown for every kind of work, and it is how much of her day one
+           online booking takes. This page is already behind the owner PIN, so
+           the toggles are management's and nobody else's. -->
+      <div class="m-section">
+        <div class="m-section-title open">
+          ⏱ &nbsp;Teknisyen Randevu Süresi
+        </div>
+        <div class="m-section-body open">
+          <div style="font-size:0.75rem;color:var(--muted);line-height:1.6;margin-bottom:12px;">
+            Her teknisyen için 60 veya 90 dakika seçin. Seçtiğiniz süre hem
+            <b>Crown Board sayacını</b> (tüm hizmetler için) hem de
+            <b>online randevu aralığını</b> belirler — bir randevu o kadar dakika yer tutar.
+            Değişiklik anında tüm ekranlara gider; <b>süren mevcut randevular olduğu gibi kalır.</b>
+          </div>
+          <div id="m-tech-slot-rows"></div>
+        </div>
+      </div>
+
       <!-- Total Outgoings Panel -->
       <div class="m-section" id="m-outgoings-panel">
         <div class="m-section-title" style="margin-bottom:0;cursor:default;">
@@ -3800,12 +3815,12 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
       <div class="fg"><label class="flabel" id="flabel-a-service">Hizmet *</label>
         <select class="fctrl" id="a-service">
-          <optgroup label="💅 MANİKÜR"><option value="Klasik Manikür">Klasik Manikür · 60 dk</option><option value="Jel Başlangıç (Full Set)">Jel Başlangıç (Full Set) · 90 dk</option><option value="Dolgu (Infill)">Dolgu (Infill) · 90 dk</option><option value="Nail Art">Nail Art · 60 dk</option><option value="Tırnak Onarımı">Tırnak Onarımı · 15 dk</option><option value="Tırnak Çıkarma">Tırnak Çıkarma · 30 dk</option></optgroup>
-          <optgroup label="🦶 PEDİKÜR"><option value="Klasik Pedikür (Ojesiz)">Klasik Pedikür (Ojesiz) · 45 dk</option><option value="Jel Pedikür">Jel Pedikür · 60 dk</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür · 90 dk</option><option value="Medikal Pedikür">Medikal Pedikür · 90 dk</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür) · 30 dk</option></optgroup>
-          <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması · 60 dk</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği · 75 dk</option><option value="Kirpik Dolgu">Kirpik Dolgu · 60 dk</option><option value="Kirpik Çıkarma">Kirpik Çıkarma · 30 dk</option></optgroup>
-          <optgroup label="🤨 KAŞ"><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı · 30 dk</option><option value="Microblading">Microblading · 120 dk</option></optgroup>
-          <optgroup label="🪒 AĞDA"><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda · 30 dk</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda · 45 dk</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda · 30 dk</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda · 60 dk</option><option value="Tam Bacak Ağda">Tam Bacak Ağda · 90 dk</option><option value="Bikini Ağda">Bikini Ağda · 30 dk</option><option value="Özel Bölge Ağda">Özel Bölge Ağda · 60 dk</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda · 180 dk</option><option value="Tam Kol Ağda">Tam Kol Ağda · 60 dk</option></optgroup>
-          <optgroup label="✨ GÜZELLİK"><option value="Güzellik Uygulaması">Güzellik Uygulaması · 60 dk</option></optgroup>
+          <optgroup label="💅 MANİKÜR"><option value="Klasik Manikür">Klasik Manikür</option><option value="Jel Başlangıç (Full Set)">Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">Dolgu (Infill)</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option><option value="Tırnak Çıkarma">Tırnak Çıkarma</option></optgroup>
+          <optgroup label="🦶 PEDİKÜR"><option value="Klasik Pedikür (Ojesiz)">Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Medikal Pedikür">Medikal Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
+          <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
+          <optgroup label="🤨 KAŞ"><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı</option><option value="Microblading">Microblading</option></optgroup>
+          <optgroup label="🪒 AĞDA"><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda</option><option value="Tam Bacak Ağda">Tam Bacak Ağda</option><option value="Bikini Ağda">Bikini Ağda</option><option value="Özel Bölge Ağda">Özel Bölge Ağda</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda</option><option value="Tam Kol Ağda">Tam Kol Ağda</option></optgroup>
+          <optgroup label="✨ GÜZELLİK"><option value="Güzellik Uygulaması">Güzellik Uygulaması</option></optgroup>
         </select></div>
     </div>
     <div class="form-row fr2">
@@ -4509,7 +4524,7 @@ function _gotoActual(page,el){
   if(page==="takings"){if(typeof dtInit==="function")dtInit();}
   if(page==="cashcheck"){renderCashCheck();try{dpUpdateBadges();}catch(e){}}
   if(page==="calendar")renderCalendar();
-  if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();}
+  if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
   if(page==="deductions"){ renderDeductionsPage(); }
   if(page==="advance"){ renderAdvancePage(); }
@@ -14455,6 +14470,13 @@ window.addEventListener('load',function(){
      The roster comes from crown-config.js: add a name there, not here.
      ═══════════════════════════════════════════════════════════════════════ -->
 <script src="crown-config.js"></script>
+<script>
+// Last known 60/90 setting, so the board, the monitor and the first availability
+// push are all right from the opening frame rather than after Firebase answers.
+// The cloud is still the authority — this is only what to believe until it speaks.
+try{ window.CROWN.setSlots(JSON.parse(localStorage.getItem('rdns_tech_slots')||'{}')); }
+catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
+</script>
 <style>
 #cbm-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9990;cursor:pointer;
   background:#14120d;border:1.5px solid #d4a96a;border-right:none;border-radius:12px 0 0 12px;
@@ -15363,7 +15385,7 @@ window.addEventListener('load',function(){
       return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — hangi iş?</div>'+
         Object.keys(C.types).map(function(ty){
           return '<button onclick="cbmDoStart(\''+o.key+'\',\''+ty+'\')">'+C.types[ty].icon+' '+
-            C.types[ty].label+' — '+(o[ty]||60)+' dk</button>';
+            C.types[ty].label+' — '+C.slotFor(o.key)+' dk</button>';
         }).join('')+
         '<button class="lim" onclick="cbmCustom(\''+o.key+'\')">⏱ Süre ayarla (Yönetici)</button>'+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
@@ -15388,7 +15410,7 @@ window.addEventListener('load',function(){
       return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — özel süre · hangi iş?</div>'+
         Object.keys(C.types).map(function(ty){
           return '<button onclick="cbmCustomLimit(\''+o.key+'\',\''+ty+'\')">'+C.types[ty].icon+' '+
-            C.types[ty].label+' <span style="color:#8d8574;font-weight:600">— normalde '+(o[ty]||60)+' dk</span></button>';
+            C.types[ty].label+' <span style="color:#8d8574;font-weight:600">— normalde '+C.slotFor(o.key)+' dk</span></button>';
         }).join('')+
         '<button class="q" onclick="cbmBack()">Vazgeç</button></div>';
     };
@@ -15465,7 +15487,7 @@ window.addEventListener('load',function(){
     var upd={}, cur=(_ops[o.key]||{}).current;
     if(cur) file(upd,o,cur);
     var ovr=C.customLimit(customMin);
-    var job={ type:type, startAt:now(), limitMin:(ovr||o[type]||60) };
+    var job={ type:type, startAt:now(), limitMin:(ovr||C.slotFor(o.key)) };
     // Marked so the finished session says why it ran to an unusual length,
     // rather than looking like a limit somebody mistyped months later.
     if(ovr) job.limitOvr=true;
@@ -15554,6 +15576,63 @@ window.addEventListener('load',function(){
   // The edge tab still toggles, so nothing that called cbmToggle before breaks.
   window.cbmToggle   =function(){ _state=(_state==='open')?'closed':'open'; apply(); };
 
+  // ── management: how long each technician gets ────────────────────────────
+  // 60 or 90 minutes, one choice per technician, on the Aylık page — which is
+  // already behind the owner PIN, so these toggles are management's alone. The
+  // number sets her Crown Board countdown for every kind of work AND how much
+  // of her day one online booking takes, which is the whole point of it: the
+  // chair and the diary can no longer be told different things.
+  //
+  // It is stored in Firebase so the wall boards and the customer's booking page
+  // see the change straight away. What it never does is reach backwards: a job
+  // already counting down keeps its limit, and an appointment already in the
+  // diary keeps the length it was written with.
+  window.mRenderTechSlots=function(){
+    var host=document.getElementById('m-tech-slot-rows');
+    if(!host||!C) return;
+    host.innerHTML=C.operators.map(function(o){
+      var cur=C.slotFor(o.key);
+      var btns=C.slotChoices.map(function(m){
+        var on=(m===cur);
+        return '<button type="button" onclick="mSetTechSlot(\''+o.key+'\','+m+')" '+
+          'style="min-width:74px;padding:9px 14px;border-radius:22px;cursor:pointer;'+
+          'font-family:Nunito,sans-serif;font-weight:800;font-size:0.84rem;'+
+          (on ? 'background:var(--gold,#c9a05a);border:2px solid var(--goldD,#8a6420);color:#fff;'
+              : 'background:transparent;border:2px solid var(--border,#d8d2c6);color:var(--muted,#777);')+
+          '">'+m+' dk</button>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;'+
+        'padding:10px 2px;border-bottom:1px solid var(--border,#e6e2d9);">'+
+        (o.photo ? '<img src="'+esc(o.photo)+'" alt="" onerror="this.style.display=\'none\'" '+
+          'style="width:34px;height:34px;border-radius:50%;object-fit:cover;">' : '')+
+        '<div style="font-weight:800;font-size:0.95rem;min-width:90px;">'+esc(o.name)+'</div>'+
+        '<div style="display:flex;gap:8px;margin-left:auto;">'+btns+'</div>'+
+        '</div>';
+    }).join('');
+  };
+  window.mSetTechSlot=function(key,mins){
+    var o=C&&C.find(key), m=C&&C.normSlot(mins);
+    if(!o||!m) return;
+    if(C.slotFor(o.key)===m) return;
+    // Applied here first so the button answers the tap even on a bad line; the
+    // cloud is written next and its echo simply confirms what is already shown.
+    C.slotMins[o.key]=m;
+    try{ localStorage.setItem('rdns_tech_slots',JSON.stringify(C.slotMins)); }catch(e){}
+    mRenderTechSlots();
+    render();
+    try{ publishAvailability(); }catch(e){}
+    if(typeof _fbDb==='undefined'||!_fbDb){
+      try{ toast('⚠️','ÇEVRİMDIŞI KAYDEDİLDİ',o.name+' → '+m+' dk. Bağlantı yokken sadece bu cihazda geçerli — çevrimiçi olunca tekrar seçin.','r'); }catch(e){}
+      return;
+    }
+    _fbDb.ref('timers/limits/'+o.key).set(m).then(function(){
+      try{ toast('⏱','SÜRE GÜNCELLENDİ',o.name+' → '+m+' dk · Crown Board sayacı ve randevu aralığı.','g'); }catch(e){}
+    }).catch(function(e){
+      console.warn('[CBM] limit save failed:',e);
+      try{ toast('⚠️','KAYDEDİLEMEDİ',o.name+' için süre buluta yazılamadı — diğer ekranlar eski değerde kalabilir.','r'); }catch(_){}
+    });
+  };
+
   // The boards write to 'timers' without signing in, so this only waits for the
   // database handle — not for the login the rest of the sync needs.
   function start(){
@@ -15565,6 +15644,16 @@ window.addEventListener('load',function(){
       _fbDb.ref('.info/serverTimeOffset').on('value',function(s){ _off=s.val()||0; });
       _fbDb.ref('timers/ops').on('value',function(s){ _ops=s.val()||{}; render(); },
         function(e){ console.warn('[CBM] read denied:',e); });
+      // How long each technician gets — the same value the wall boards read and
+      // the booking page spaces her day on. Set on the Aylık page; this is the
+      // copy every other screen listens to, so a change lands everywhere at once.
+      _fbDb.ref('timers/limits').on('value',function(s){
+        C.setSlots(s.val()||{});
+        try{ localStorage.setItem('rdns_tech_slots',JSON.stringify(C.slotMins)); }catch(e){}
+        render();
+        try{ mRenderTechSlots(); }catch(e){}
+        try{ publishAvailability(); }catch(e){}
+      },function(e){ console.warn('[CBM] limits read denied:',e); });
     }catch(e){ console.warn('[CBM] start error:',e); }
   }
   _startTimer=setInterval(start,3000); start();

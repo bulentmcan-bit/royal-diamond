@@ -280,16 +280,23 @@ const firebaseConfig = {
    tile keeps a crown; finish late — or never press start at all — and it keeps
    a sad face. Every finished job is filed for the commission step to read.
 
-   The roster and the limits live in crown-config.js. Add a technician there.
+   The roster lives in crown-config.js. Add a technician there. How long she
+   gets is set on the Aylık page behind the owner password, not in the file.
 
    Firebase layout, all under the 'timers' path the screens share:
      timers/ops/<key>/name            who she is
      timers/ops/<key>/current         the job running right now (one at a time)
      timers/ops/<key>/last/<type>     her last finished manicure / pedicure
      timers/sessions/<pushId>         one permanent record per finished job
+     timers/limits/<key>              her limit in minutes: 60 or 90
    ========================================================================== */
 
 const C = window.CROWN;
+// Last known 60/90 setting, so a board that opens before Firebase answers — or
+// on a morning the wifi is slow — still counts down on the right limit rather
+// than falling back to the default and taking a crown off somebody unfairly.
+try{ C.setSlots(JSON.parse(localStorage.getItem('rdns_tech_slots')||'{}')); }
+catch(e){ C.setSlots({}); }
 const $ = id => document.getElementById(id);
 const qs = new URLSearchParams(location.search);
 const areaKey = (qs.get('area')||'').toLowerCase();
@@ -310,6 +317,18 @@ if (configured) {
   // Clocks differ from screen to screen; the server's is the one they agree on.
   db.ref('.info/serverTimeOffset').on('value', s => { srvOffset = s.val() || 0; });
   db.ref('timers/ops').on('value', s => { ops = s.val() || {}; paint(); });
+  // How long each technician gets, set on the Aylık page behind the owner
+  // password. A job already counting down keeps the limit it started on — the
+  // new number is for the next one, so a countdown never jumps under a
+  // technician mid-manicure.
+  db.ref('timers/limits').on('value',
+    s => {
+      C.setSlots(s.val() || {});
+      try{ localStorage.setItem('rdns_tech_slots', JSON.stringify(C.slotMins)); }catch(e){}
+      paint();
+    },
+    () => {}
+  );
   db.ref('rdns_owner_pin_v1').on('value',
     s => { const v = s.val(); try {
             const o = typeof v === 'string' ? JSON.parse(v) : v;
@@ -536,7 +555,7 @@ function customType(key){
       <h2>${o.name}</h2>
       <p class="sub">Custom limit — which job is she starting?</p>
       ${[mine, other].map((ty, i) => `<button class="btn ${i ? 'gold' : 'primary'}" onclick="customLimitSheet('${o.key}','${ty}')">
-        ${C.types[ty].icon} ${C.types[ty].label}<small>Normally ${o[ty] || 60} min</small></button>`).join('')}
+        ${C.types[ty].icon} ${C.types[ty].label}<small>Normally ${C.slotFor(o.key)} min</small></button>`).join('')}
       <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
   });
 }
@@ -694,7 +713,7 @@ function startJob(who, type, customMin){
   const cur = (ops[o.key] || {}).current;
   if (cur) fileJob(upd, o, cur);
   const ovr = C.customLimit(customMin);
-  const job = { type, startAt: now(), limitMin: ovr || o[type] || 60 };
+  const job = { type, startAt: now(), limitMin: ovr || C.slotFor(o.key) };
   // Marked so the finished session says why it ran to an unusual length, rather
   // than looking like a limit somebody mistyped months later.
   if (ovr) job.limitOvr = true;
@@ -736,12 +755,12 @@ function noPress(who, type){
     ['ops/' + o.key + '/name']: o.name,
     ['ops/' + o.key + '/last/' + type]: {
       type, startAt: at, endAt: at, elapsed: 0,
-      limitMin: o[type] || 60, crown:false, noPress:true, sessionId: id
+      limitMin: C.slotFor(o.key), crown:false, noPress:true, sessionId: id
     },
     ['sessions/' + id]: {
       id, operator: o.name, operatorKey: o.key, type, area: type,
       startAt: at, endAt: at, elapsedMs: 0, elapsedMin: 0,
-      limitMin: o[type] || 60, crown:false, noPress:true, day: today(at), v: 2
+      limitMin: C.slotFor(o.key), crown:false, noPress:true, day: today(at), v: 2
     }
   }).catch(dbErr);
   sadTone();

@@ -7,17 +7,20 @@
    refresh: both TV boards (timers.html) and reception's monitor inside the main
    app. Nothing else needs editing.
 
-       { key:'sara', name:'Sara', manicure:90, pedicure:60, photo:'op-sara.png' }
+       { key:'sara', name:'Sara', photo:'op-sara.png' }
 
    `key`   is what her jobs are filed under in Firebase. Lower case, no spaces,
            and it must never change once she has worked a day — the records
            already written are keyed by it.
    `name`  is what the boards show.
-   The two numbers are her crown limits in minutes: how long she has for a
-   manicure and for a pedicure before the crown is lost.
    `photo` is her picture, shown under her name on the boards and in reception's
            monitor. Drop the file next to this one and name it here. Leave it
            out and her tile simply shows no picture — nothing else changes.
+
+   HOW LONG SHE GETS is no longer written here. Each technician runs on 60 or 90
+   minutes, and management sets which on the Aylık page, behind the owner
+   password — see `slotChoices` below. A new name added here starts on 60 until
+   somebody chooses otherwise.
 
    A technician who has left: take her line out and her tiles stop appearing.
    The sessions she already earned stay in Firebase for the commission.
@@ -25,10 +28,30 @@
 window.CROWN = {
 
   operators: [
-    { key:'helen',  name:'Helen',  manicure:60, pedicure:60, photo:'op-helen.png'  },
-    { key:'hannah', name:'Hannah', manicure:90, pedicure:60, photo:'op-hannah.png' },
-    { key:'lissa',  name:'Lissa',  manicure:90, pedicure:60, photo:'op-lissa.png'  }
+    { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
+    { key:'hannah', name:'Hannah', photo:'op-hannah.png' },
+    { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
   ],
+
+  /* ── How long each technician gets ──────────────────────────────────────────
+     One number per technician, and it does two jobs at once:
+
+       · the Crown Board countdown — her limit for EVERY kind of work, manicure
+         and pedicure alike, so a tile is read the same way whatever she is on;
+       · the online booking page — how much of her day one appointment takes,
+         so the next start she is offered is this long after the last one.
+
+     The two used to be set apart, which is how a technician could be given 90
+     minutes at the chair and still be offered a booking an hour later. They are
+     the same number now, chosen on the Aylık page behind the owner password.
+
+     It is stored in Firebase at `timers/limits/<key>` so every screen agrees —
+     the wall boards, reception's monitor and the customer's booking page all
+     read the one value. `setSlots` below is what puts it into this object when
+     it arrives; nothing writes to `slotMins` by hand. */
+  slotChoices: [60, 90],
+  slotDefault: 60,
+  slotMins: {},        // key -> 60 | 90, filled from Firebase at runtime
 
   // The two kinds of job. A board is one of these; so is a tile's colour.
   types: {
@@ -136,9 +159,36 @@ window.CROWN = {
       return o.key === k || o.name.toLowerCase() === k;
     })[0] || null;
   },
-  limitFor: function(who, type){
+  // Anything that is not one of the two offered lengths is not a choice — a
+  // stray value out of Firebase, an old record, a typo in the console — and
+  // comes back null so the caller falls through to the default.
+  normSlot: function(v){
+    var n = Number(v);
+    return this.slotChoices.indexOf(n) !== -1 ? n : null;
+  },
+  // Her chosen length, by key or by name. Never returns nothing: a technician
+  // nobody has set yet runs on the default, which is how a newly added name
+  // works from her first minute without anybody visiting the settings page.
+  slotFor: function(who){
     var o = this.find(who);
-    return o ? (o[type] || 60) : 60;
+    if (!o) return this.slotDefault;
+    return this.normSlot(this.slotMins[o.key]) || this.slotDefault;
+  },
+  // The whole map, replaced at once, from whatever Firebase last sent. Every
+  // technician on the roster comes out with a real number whether she was in
+  // the incoming data or not, so no caller has to think about a missing key.
+  setSlots: function(map){
+    var out = {}, self = this;
+    this.operators.forEach(function(o){
+      out[o.key] = self.normSlot(map && map[o.key]) || self.slotDefault;
+    });
+    this.slotMins = out;
+    return out;
+  },
+  // Kept for callers that ask per kind of work. There is one limit now and it
+  // covers both, so `type` is accepted and ignored rather than made a lie of.
+  limitFor: function(who, type){
+    return this.slotFor(who);
   },
   // Every custom limit — quick button or typed into the Other box — comes
   // through here, and it is the only thing that decides what counts as one.
