@@ -14074,19 +14074,28 @@ window.addEventListener('load',function(){
 
   // Each technician's open slots step by the length she actually works in, so
   // the column offers her the next start she could really take rather than a
-  // half hour that would strand her. Anyone not listed keeps the old half hour.
-  const SLOT_STEP = {helen:60, hannah:90, lissa:90};
-  function _stepFor(tech){ return SLOT_STEP[String(tech||'').toLowerCase().trim()] || 30; }
+  // half hour that would strand her.
+  //
+  // That length is the ONE number set on the Aylık page — the same 60 or 90
+  // that drives her Crown Board countdown and her online booking spacing. It
+  // used to be a third hardcoded copy of the rhythm here, which is how a
+  // technician switched to 60 carried on being shown 90-minute gaps on this
+  // grid. Read it live: crown-config.js loads further down the file, so this
+  // asks at call time and falls back to the same 60 the config defaults to.
+  function _stepFor(tech){
+    try{ if(window.CROWN) return window.CROWN.slotFor(tech); }catch(e){}
+    return 60;
+  }
 
-  // The 90-minute technicians get one extra late start, 18:00, so their last
-  // booking can begin as late as Helen's. The ladder from 08:00 lands on 17:00
-  // and then steps clean over it, and 18:00 + 90 runs to 19:30, past the 18:30
-  // the windows close at — so it is added by hand rather than by the step.
-  // 17:00 and 18:00 overlap, so they are mutually exclusive: whichever one the
-  // day already holds takes the other off the column, and no 18:00 is offered
-  // over the top of anything already booked.
-  const LATE = 18*60, EARLY = 17*60, LATE_DUR = 90, LATE_END = LATE + LATE_DUR;
-  function _hasLateSlot(tech){ return _stepFor(tech) === 90; }
+  // A late 18:00 start, so her last booking can begin as late as anyone's.
+  // Whether it needs adding by hand depends on her step: a 60-minute ladder
+  // from 08:00 lands on 18:00 by itself, a 90-minute one steps 17:00 → 18:30
+  // and misses it. So it is added only when her own rhythm cannot reach it.
+  // On 90 the pair overlaps — 17:00 runs to 18:30, over the top of 18:00 — so
+  // the two are mutually exclusive and whichever the day already holds takes
+  // the other off the column. On 60 they sit side by side and this is skipped.
+  const LATE = 18*60, EARLY = 17*60;
+  function _hasLateSlot(tech){ return (LATE - OPEN) % _stepFor(tech) !== 0; }
 
   function _ap(){ try{ return appointments || []; }catch(e){ return []; } }
   function _k(d){ const p=n=>String(n).padStart(2,'0');
@@ -14145,13 +14154,15 @@ window.addEventListener('load',function(){
 
       // The late pair, settled on what she is already starting.
       if(_hasLateSlot(tech)){
+        // Her own length, not a fixed 90 — the run an 18:00 start would make.
+        const LATE_END = LATE + step;
         const startsAt = m => busy.some(function(b){ return b[0] === m; });
         if(startsAt(LATE)){
-          // 18:00 taken → a 17:00 start would run to 18:30, straight into it.
+          // 18:00 taken → a 17:00 start would run into it.
           out = out.filter(function(s){ return s.mins !== EARLY; });
         }else if(!startsAt(EARLY) && LATE >= from
                  && !busy.some(function(b){ return LATE < b[1] && b[0] < LATE_END; })){
-          // Free from 18:00 to 19:30. The ladder sometimes lands on 18:00 by
+          // Free from 18:00 for her whole length. The ladder sometimes lands on 18:00 by
           // itself (a window opening at 16:30); that entry is the same slot, so
           // it is corrected rather than duplicated — its span was cut off at
           // the 18:30 close, and this start is allowed to run past it.
