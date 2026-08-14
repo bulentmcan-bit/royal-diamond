@@ -15335,13 +15335,18 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   /* An announcement is a sound, optionally a sentence, optionally a sound after
      it. The three the salon uses:
 
-       crown  fanfare                                    — she made it
-       warn   chime  → "Helen, fifteen minutes" → chime
-       over   alarm  → "Helen, next customer"   → chime
+       crown  fanfare                                                        — she made it
+       warn   chime  → "Helen, fifteen minutes" → "Helen, fifteen minutes" → chime
+       over   alarm  → "Helen, next customer"   → "Helen, next customer"   → chime
+
+     The sentence is said twice, back to back with nothing between the two: the
+     first time is what makes the room look up, the second is the one it
+     actually hears. Both are inside the one announcement, so a technician's
+     name never arrives split across two of them.
 
      Only one at a time, and the music is held down for the whole of it — from
-     the first note to the last, speech included — so nothing is ever half
-     buried under a song. */
+     the first note to the last, both sentences included — so nothing is ever
+     half buried under a song. */
   var _queue=[], _talking=false, _talkingSince=0;
   function announce(spec){
     // One announcement that gets stuck must never take the rest of the day's
@@ -15349,10 +15354,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // announcement can possibly last has the floor taken back off it — silence
     // that nobody can see is the worst way for this to fail.
     // Longer than it was, because an announcement is now longer than it was:
-    // three seconds of silence in front and three behind sit either side of it.
+    // three seconds of silence in front and three behind sit either side of it,
+    // and the sentence itself is said twice.
     // This has to outlast the failsafe in pump(), or it would take the floor off
     // an announcement that is still perfectly well running.
-    if(_talking && Date.now()-_talkingSince>30000){ _talking=false; Music.unduckAll(); }
+    if(_talking && Date.now()-_talkingSince>40000){ _talking=false; Music.unduckAll(); }
     if(_queue.length>=6) return;   // a backlog nobody could follow anyway
     _queue.push(spec);
     pump();
@@ -15379,9 +15385,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // never calls back, a chain of timers a throttled tab runs late. The music
     // being left off for the rest of the afternoon is exactly as bad as an
     // alarm never sounding, and just as invisible from the floor.
-    //   3s in front + longest lead + say()'s own 7s ceiling + tail + 3s behind,
-    //   with room to spare, so it never fires on an announcement still running.
-    failsafe=setTimeout(release, C.music.leadGapMs + 20000 + C.music.holdMs);
+    //   3s in front + longest lead + say()'s own 7s ceiling TWICE, the sentence
+    //   being said twice + tail + 3s behind, with room to spare, so it never
+    //   fires on an announcement still running.
+    failsafe=setTimeout(release, C.music.leadGapMs + 27000 + C.music.holdMs);
     // Three seconds of silence before the first note. The music stopping is
     // itself the signal — the room looks up, and the chime lands in a quiet
     // room rather than over the top of a chorus.
@@ -15391,7 +15398,12 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       setTimeout(function(){
         try{
           if(!it.text){ finishTail(); return; }
-          say(it.text, finishTail);
+          // Twice, straight through, with no note between them — the closing
+          // sound comes only after the second one has finished. The second is
+          // asked for a tick later rather than inside the first one's own end
+          // handler: Chrome quietly drops a speak() made from there, which
+          // would lose the repeat.
+          say(it.text, function(){ setTimeout(function(){ say(it.text, finishTail); }, 0); });
         }catch(e){ release(); }
         function finishTail(){
           var tail=0;

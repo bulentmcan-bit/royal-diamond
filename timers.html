@@ -1095,8 +1095,10 @@ function alarmOver(passes){
 /* ── saying it out loud ─────────────────────────────────────────────────────
    A sound says something happened; it does not say who. This board carries
    three technicians, so it now says the name as well: the sound to make the
-   room look up, then the name and the news, then the sound again for anyone
-   who missed the first.
+   room look up, then the name and the news TWICE over, back to back with
+   nothing between them, then the sound again for anyone who missed the first.
+   A salon is a loud room and a name said once is easily lost in it; the second
+   time is usually the one that is actually heard.
 
    Which voice and how she sounds are in crown-config.js, the same settings
    reception reads, so both screens are the same person rather than two.
@@ -1151,7 +1153,9 @@ function announce(spec){
   // alarms down with it. Anything still "speaking" after longer than an
   // announcement can possibly last has the floor taken back off it — a board
   // that has gone quiet without saying so is the worst way for this to fail.
-  if (talking && Date.now() - talkingSince > 20000) talking = false;
+  // Longer than it was, because the sentence is now said twice and say()'s own
+  // seven-second ceiling can therefore be waited out twice over.
+  if (talking && Date.now() - talkingSince > 30000) talking = false;
   if (queue.length >= 6) return;
   queue.push(spec);
   pump();
@@ -1174,7 +1178,11 @@ function pump(){
     };
     try {
       if (!it.text) return finishTail();
-      say(it.text, finishTail);
+      // Twice, straight through, with no note between them — the closing sound
+      // comes only after the second one has finished. The second is asked for a
+      // tick later rather than inside the first one's own end handler: Chrome
+      // quietly drops a speak() made from there, which would lose the repeat.
+      say(it.text, () => setTimeout(() => say(it.text, finishTail), 0));
     } catch(e){ release(); }
   }, Math.round(lead*1000));
 }
