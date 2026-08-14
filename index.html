@@ -14601,6 +14601,15 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   font-family:inherit;font-weight:800;font-size:.86rem;line-height:1.35}
 #cbm-sound.on{display:block}
 #cbm-sound span{display:block;margin-top:2px;font-size:.66rem;font-weight:700;opacity:.72}
+/* The test button, and it is on THIS laptop only — see the note by cbmTest().
+   Deliberately quiet next to the gold bar above it: dashed, small and grey,
+   because it is a tool for whoever looks after the sound, not something the
+   floor is ever meant to reach for. */
+#cbm-test{display:none;margin:8px 10px 0;padding:6px 9px;border-radius:8px;cursor:pointer;
+  border:1px dashed rgba(212,169,106,.45);background:transparent;color:#8d8574;
+  font-family:inherit;font-weight:800;font-size:.66rem;text-align:center;letter-spacing:.02em}
+#cbm-test.on{display:block}
+#cbm-test:hover{color:#d4a96a;border-color:rgba(212,169,106,.75)}
 /* The music strip. Small, because it is not the job — but always reachable,
    because the one thing reception will want to change during a shift is what
    is playing and how loud. The player itself is a bare <audio> tag: it is only
@@ -14684,6 +14693,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   <div id="cbm-sound" onclick="cbmEnableSound()">🔔 Sesi aç
     <span>Tap once, then turn the volume up — the chimes and the spoken alerts
       for every station play here, on this laptop</span></div>
+  <div id="cbm-test" onclick="cbmTest()">🔊 Test</div>
   <div id="cbm-music">
     <div class="mus-top">
       <button id="mus-play" onclick="musToggle()" title="Çal / duraklat">▶</button>
@@ -15416,6 +15426,58 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     }, C.music.leadGapMs);
   }
 
+  /* ── hearing it without waiting for a real crossing ───────────────────────
+     Checking the sound otherwise means waiting for a technician to actually
+     reach her last fifteen minutes: a wait of unknown length during a shift,
+     and flatly impossible in the evening when there is nobody running. So one
+     tap plays both announcements, straight through, exactly as the room gets
+     them — the same voice and tones, each line said twice, the music out from
+     three seconds before to three seconds after.
+
+     It is unlocked one machine at a time, not for everybody. Opening the app
+     once as index.html?sestest=1 turns it on for that browser and it stays on;
+     ?sestest=0 takes it away again. The flag lives in this laptop's own
+     localStorage, the same place the music folder and volume already live, so
+     it travels with the machine and not with the site: reception's laptop, the
+     two wall televisions and every phone never had it set, never show the
+     button, and nobody on the floor has to wonder what it is or what pressing
+     it would do to the room. */
+  try{
+    var _ts=String(location.search||'');
+    if(/[?&]sestest=1(&|$)/.test(_ts))      localStorage.setItem('rdns_cbm_sestest','1');
+    else if(/[?&]sestest=0(&|$)/.test(_ts)) localStorage.removeItem('rdns_cbm_sestest');
+  }catch(e){}
+  function syncTest(){
+    var el=document.getElementById('cbm-test');
+    if(!el) return;
+    var on=false;
+    try{ on=localStorage.getItem('rdns_cbm_sestest')==='1'; }catch(e){}
+    el.classList.toggle('on', on);
+  }
+  window.cbmTest=function(){
+    // Never on top of a real one. A genuine alarm is the entire point of the
+    // machinery underneath this, and a test that pushed in front of one would
+    // be the single moment this button could cost the salon anything.
+    if(_talking || _queue.length) return;
+    unlockAudio();
+    // A real name, because a name is the part being tested — a placeholder
+    // would not catch a voice that mangles the ones the salon actually uses.
+    var who=(C.operators[0]||{}).name||'Helen';
+    announce({lead:'chime', text:who+', fifteen minutes', tail:'chime'});
+    announce({lead:'alarm', text:who+', next customer',   tail:'chime'});
+    // Roughly half a minute of mostly silence and speech: without something on
+    // the button saying so, a tap that has plainly done nothing yet invites a
+    // second one, and then a third.
+    var el=document.getElementById('cbm-test');
+    if(!el) return;
+    el.textContent='🔊 Çalıyor…';
+    var t=setInterval(function(){
+      if(_talking || _queue.length) return;
+      clearInterval(t);
+      el.textContent='🔊 Test';
+    },400);
+  };
+
   // Every technician, every kind of job, once a second. A job seen for the
   // first time only has its colour written down — a panel opened halfway
   // through the afternoon does not shout about crossings that already
@@ -15474,6 +15536,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // are running, and whether any of them has gone past her limit.
     watch();
     syncSound();
+    syncTest();
     try{ Music.watchdog(); paintMusic(); }catch(e){}
     var c=counts();
     // Sound still asleep is worth saying wherever the panel is put away, or
