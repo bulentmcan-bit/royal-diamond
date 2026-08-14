@@ -75,41 +75,6 @@ window.CROWN = {
     volume: 1
   },
 
-  /* The failure alert — the sound a job makes when it goes past its limit.
-
-     This one is a recording rather than notes the page plays itself, so it is
-     named here, in the one file both screens read. It rings once, at full
-     volume, and the spoken name follows it: the bell turns the room's head, the
-     voice says whose job it is. It is never looped — an alarm that will not stop
-     is an alarm somebody switches off.
-
-     `sec` is how long the file runs, and it is only a fallback. The player asks
-     the file itself and uses that; this is what it waits instead when a board has
-     just started and the browser has not read the length yet. Too short and the
-     voice talks over the tail, so it is rounded up rather than down. Replace the
-     file and this is the one number to check.
-
-     It does NOT go through the limiter and makeup gain the generated chimes use.
-     That chain exists to stop notes this page synthesises from clipping; this
-     file arrives already mastered — it peaks at 0 dB — and putting 5% of makeup
-     gain on top of that is exactly how it would start to break up. */
-  sounds: {
-    failure: 'sounds/royal_failure_scifi.mp3',
-    volume:  1,      // full, and the television's own volume does the rest
-    sec:     0.7,    // measured: 0.62s in the browser — rounded up, see above
-    gapSec:  0.15,   // a breath between the last of the bell and the name
-
-    /* The notification tone — the sound the office screen makes when a
-       reminder pops up: an appointment crossing into its last day, and the
-       twenty-minute warning. A different job from the failure bell above, so a
-       different sound: this one only has to turn a head towards the screen.
-
-       Like the bell it is a recording, played through an <audio> element at
-       full volume and never looped, so it stays out of the limiter the
-       generated chimes need. */
-    notify:  'sounds/royal_notify_scifi.mp3'
-  },
-
   /* Music, and how it gets out of the way.
 
      Reception's laptop feeds the Bluetooth speaker, so it is the machine that

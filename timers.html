@@ -414,12 +414,9 @@ function paint(){
       // being noise, and a room learns to ignore noise.
       if (phase[o.key] === 'run' && state === 'warn')
         announce({ lead:'chime', text:o.name + ', fifteen minutes', tail:'chime' });
-      // Over the limit: the bell, then who. Once each, and nothing after it —
-      // the bell is the alert now, so the closing chime the alarm used to end on
-      // would only be a second sound saying the same thing.
       else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
                && -leftMs <= 5*60000)
-        announce({ lead:'bell', text:o.name + ', next customer' });
+        announce({ lead:'alarm', text:o.name + ', next customer', tail:'chime' });
       phase[o.key] = state;
       return;
     }
@@ -973,7 +970,6 @@ function unlockSpeech(){
 }
 function unlockAudio(){
   unlockSpeech();
-  primeBell();
   if (!audioCtx){
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
@@ -1077,65 +1073,6 @@ function alarmOver(passes){
     [830.6, 698.5, 554.4].forEach((f,i) => tone(f, t0 + p*.9 + i*.26, .8, 1.0, 'triangle'));
   return (n-1)*.9 + .52 + .8 + .1;
 }
-/* The failure bell — the sound a job now makes when it goes past its limit.
-
-   A recording, not notes this page plays, so it is an <audio> element and not
-   part of the Web Audio graph: the file is already mastered to 0 dB and the
-   limiter with its 5% makeup gain would only break it up. Full volume, once,
-   never looped, and the spoken name follows it.
-
-   The element is made once and kept: a television runs for months, and asking
-   for the file again on every crossing would put an alarm at the mercy of the
-   network. Priming it on the same press that unlocks the rest of the audio also
-   means the first real crossing plays instantly rather than fetching then. */
-var bellEl = null;
-function bellAudio(){
-  if (!bellEl){
-    try{
-      bellEl = new Audio(C.sounds.failure);
-      bellEl.preload = 'auto';
-      bellEl.loop = false;
-      bellEl.volume = C.sounds.volume;
-    }catch(e){ return null; }
-  }
-  return bellEl;
-}
-// Fetch it, and ask the browser for permission to play it, on the press that
-// turns the sound on — a refused play() here is silent and costs nothing, and
-// the element is allowed to speak for the rest of the day once it is granted.
-function primeBell(){
-  const a = bellAudio();
-  if (!a) return;
-  try{
-    a.load();
-    const was = a.muted;
-    a.muted = true;
-    const p = a.play();
-    const stop = () => { try{ a.pause(); a.currentTime = 0; a.muted = was; }catch(e){} };
-    if (p && p.then) p.then(stop, stop); else stop();
-  }catch(e){}
-}
-// Returns how long to wait before the name is spoken, in seconds, the same as
-// the generated sounds do. The file's own length is used when the browser has
-// read it; the measured length in the config stands in until it has.
-function failureBell(){
-  // Nothing is going to be heard while the browser is still refusing to make a
-  // noise, and waiting out the length of a bell that is not playing would only
-  // delay the name. Say it straight away instead, exactly as the chimes do.
-  if (!soundOn || !audioCtx || audioCtx.state !== 'running') return 0;
-  const a = bellAudio();
-  if (!a) return 0;
-  try{
-    a.loop = false;          // once. An alarm that will not stop gets switched off.
-    a.volume = C.sounds.volume;
-    a.currentTime = 0;
-    const p = a.play();
-    if (p && p.catch) p.catch(() => {});
-    const d = (isFinite(a.duration) && a.duration > 0) ? a.duration : C.sounds.sec;
-    return d + C.sounds.gapSec;
-  }catch(e){ return 0; }
-}
-
 /* ── saying it out loud ─────────────────────────────────────────────────────
    A sound says something happened; it does not say who. This board carries
    three technicians, so it now says the name as well: the sound to make the
@@ -1184,7 +1121,6 @@ var queue = [];
 var talking = false;
 var talkingSince = 0;
 function playSound(which){
-  if (which === 'bell')    return failureBell();
   if (which === 'alarm')   return alarmOver(2);
   if (which === 'fanfare') return fanfare();
   if (which === 'chime')   return chimeWarn();
