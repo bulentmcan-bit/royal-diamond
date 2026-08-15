@@ -1,0 +1,7 @@
+# The relay between the wall buttons and Firebase. See README.md — deploying it
+# is `wrangler deploy` from this folder, and the two secrets are set once with
+# `wrangler secret put` and never written down here.
+name = "rd-buttons"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
