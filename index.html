@@ -15008,22 +15008,45 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     }
   }catch(e){}
 
-  function say(text, after){
+  function say(text, after, audioKey){
     var done=false;
     function fin(){ if(done) return; done=true; if(after) after(); }
-    try{
-      var S=window.speechSynthesis;
-      if(!S || typeof SpeechSynthesisUtterance!=='function'){ fin(); return; }
-      S.cancel();   // clear anything stuck, so a jammed utterance cannot mute the rest of the day
-      var u=new SpeechSynthesisUtterance(text);
-      u.lang=C.voice.lang; u.volume=C.voice.volume; u.rate=C.voice.rate; u.pitch=C.voice.pitch;
-      var v=pickVoice(); if(v) u.voice=v;
-      u.onend=fin; u.onerror=fin;
-      // Chrome does not always fire onend. Without this the closing chime would
-      // never arrive and the queue behind it would stop for good.
-      setTimeout(fin, 7000);
-      S.speak(u);
-    }catch(e){ fin(); }
+    // The salon's voice is pre-recorded — a Turkish woman's voice (Emel) in
+    // voice/<key>-warn.mp3 and voice/<key>-over.mp3, so it never depends on what
+    // this laptop happens to have installed. speechSynthesis stays underneath as
+    // the safety net: a technician whose files are not recorded yet is spoken by
+    // the engine rather than not at all.
+    var wentTTS=false;
+    function tts(){
+      if(wentTTS) return; wentTTS=true;
+      try{
+        var S=window.speechSynthesis;
+        if(!S || typeof SpeechSynthesisUtterance!=='function'){ fin(); return; }
+        S.cancel();   // clear anything stuck, so a jammed utterance cannot mute the rest of the day
+        var u=new SpeechSynthesisUtterance(text);
+        u.lang=C.voice.lang; u.volume=C.voice.volume; u.rate=C.voice.rate; u.pitch=C.voice.pitch;
+        var v=pickVoice(); if(v) u.voice=v;
+        u.onend=fin; u.onerror=fin;
+        setTimeout(fin, 7000);   // Chrome does not always fire onend
+        S.speak(u);
+      }catch(e){ fin(); }
+    }
+    if(audioKey && typeof Audio==='function'){
+      var a=null;
+      try{ a=new Audio('voice/'+audioKey+'.mp3'); }catch(e){ a=null; }
+      if(a){
+        a.volume=C.voice.volume;
+        a.onended=fin;
+        a.onerror=tts;                          // missing or unreadable → speak it
+        // Only for a load that hangs without ever firing an event, so a stuck
+        // file can never jam the queue behind it. A file that plays is ~3s.
+        setTimeout(function(){ if(!done && !wentTTS) fin(); }, 8000);
+        var p=a.play();
+        if(p && p.catch) p.catch(tts);          // autoplay refusal / decode error
+        return;
+      }
+    }
+    tts();
   }
 
   // One at a time. Two stations crossing in the same minute is ordinary here,
@@ -15459,7 +15482,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
           // asked for a tick later rather than inside the first one's own end
           // handler: Chrome quietly drops a speak() made from there, which
           // would lose the repeat.
-          say(it.text, function(){ setTimeout(function(){ say(it.text, finishTail); }, 0); });
+          say(it.text, function(){ setTimeout(function(){ say(it.text, finishTail, it.audio); }, 0); }, it.audio);
         }catch(e){ release(); }
         function finishTail(){
           var tail=0;
@@ -15508,9 +15531,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     unlockAudio();
     // A real name, because a name is the part being tested — a placeholder
     // would not catch a voice that mangles the ones the salon actually uses.
-    var who=(C.operators[0]||{}).name||'Helen';
-    announce({lead:'chime', text:'Canım '+who+', on beş dakikan var', tail:'chime'});
-    announce({lead:'alarm', text:'Canım '+who+', sıradaki müşteri',   tail:'chime'});
+    var op=C.operators[0]||{}, who=op.name||'Helen', whoKey=op.key||'helen';
+    announce({lead:'chime', text:'Canım '+who+', on beş dakikan var', audio:whoKey+'-warn', tail:'chime'});
+    announce({lead:'alarm', text:'Canım '+who+', sıradaki müşteri',   audio:whoKey+'-over', tail:'chime'});
     // Roughly half a minute of mostly silence and speech: without something on
     // the button saying so, a tap that has plainly done nothing yet invites a
     // second one, and then a third.
@@ -15568,9 +15591,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         if(!fresh && was.state!=='over' && -left<=5*60000)
           // the crossing itself — a laptop that slept through it wakes to a red
           // row rather than an announcement of something half an hour gone
-          announce({lead:'alarm', text:'Canım '+o.name+', sıradaki müşteri', tail:'chime'});
+          announce({lead:'alarm', text:'Canım '+o.name+', sıradaki müşteri', audio:o.key+'-over', tail:'chime'});
       } else if(state==='warn' && !fresh && was.state==='run'){
-        announce({lead:'chime', text:'Canım '+o.name+', on beş dakikan var', tail:'chime'});
+        announce({lead:'chime', text:'Canım '+o.name+', on beş dakikan var', audio:o.key+'-warn', tail:'chime'});
       }
 
       _phase[o.key]={id:id, state:state};

@@ -432,10 +432,10 @@ function paint(){
       // comes round every couple of minutes stops being information and starts
       // being noise, and a room learns to ignore noise.
       if (phase[o.key] === 'run' && state === 'warn')
-        announce({ lead:'chime', text:'Canım ' + o.name + ', on beş dakikan var', tail:'chime' });
+        announce({ lead:'chime', text:'Canım ' + o.name + ', on beş dakikan var', audio:o.key+'-warn', tail:'chime' });
       else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
                && -leftMs <= 5*60000)
-        announce({ lead:'alarm', text:'Canım ' + o.name + ', sıradaki müşteri', tail:'chime' });
+        announce({ lead:'alarm', text:'Canım ' + o.name + ', sıradaki müşteri', audio:o.key+'-over', tail:'chime' });
       phase[o.key] = state;
       return;
     }
@@ -1117,23 +1117,46 @@ function pickVoice(){
 if (window.speechSynthesis)
   window.speechSynthesis.addEventListener('voiceschanged', () => { voice = null; pickVoice(); });
 
-function say(text, after){
+function say(text, after, audioKey){
   let done = false;
   const fin = () => { if (done) return; done = true; if (after) after(); };
-  try{
-    const S = window.speechSynthesis;
-    if (!S || typeof SpeechSynthesisUtterance !== 'function') return fin();
-    S.cancel();   // clear anything stuck, so one jammed utterance cannot mute the day
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = C.voice.lang; u.volume = C.voice.volume;
-    u.rate = C.voice.rate; u.pitch = C.voice.pitch;
-    const v = pickVoice(); if (v) u.voice = v;
-    u.onend = fin; u.onerror = fin;
-    // Chrome does not always fire onend. Without this the closing chime would
-    // never arrive and everything queued behind it would stop for good.
-    setTimeout(fin, 7000);
-    S.speak(u);
-  }catch(e){ fin(); }
+  // The salon's voice is pre-recorded — a Turkish woman's voice (Emel) in
+  // voice/<key>-warn.mp3 and voice/<key>-over.mp3, so it never depends on what
+  // this laptop happens to have installed. speechSynthesis stays underneath as
+  // the safety net: a technician whose files are not recorded yet is spoken by
+  // the engine rather than not at all.
+  let wentTTS = false;
+  const tts = () => {
+    if (wentTTS) return; wentTTS = true;
+    try{
+      const S = window.speechSynthesis;
+      if (!S || typeof SpeechSynthesisUtterance !== 'function') return fin();
+      S.cancel();   // clear anything stuck, so one jammed utterance cannot mute the day
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = C.voice.lang; u.volume = C.voice.volume;
+      u.rate = C.voice.rate; u.pitch = C.voice.pitch;
+      const v = pickVoice(); if (v) u.voice = v;
+      u.onend = fin; u.onerror = fin;
+      setTimeout(fin, 7000);   // Chrome does not always fire onend
+      S.speak(u);
+    }catch(e){ fin(); }
+  };
+  if (audioKey && typeof Audio === 'function'){
+    let a = null;
+    try { a = new Audio('voice/' + audioKey + '.mp3'); } catch(e){ a = null; }
+    if (a){
+      a.volume = C.voice.volume;
+      a.onended = fin;
+      a.onerror = tts;                        // missing or unreadable → speak it
+      // Only for a load that hangs without ever firing an event, so a stuck
+      // file can never jam the queue behind it. A file that plays is ~3s.
+      setTimeout(() => { if (!done && !wentTTS) fin(); }, 8000);
+      const p = a.play();
+      if (p && p.catch) p.catch(tts);         // autoplay refusal / decode error
+      return;
+    }
+  }
+  tts();
 }
 
 // One at a time. Two technicians crossing in the same minute is ordinary, and
@@ -1182,7 +1205,7 @@ function pump(){
       // comes only after the second one has finished. The second is asked for a
       // tick later rather than inside the first one's own end handler: Chrome
       // quietly drops a speak() made from there, which would lose the repeat.
-      say(it.text, () => setTimeout(() => say(it.text, finishTail), 0));
+      say(it.text, () => setTimeout(() => say(it.text, finishTail, it.audio), 0), it.audio);
     } catch(e){ release(); }
   }, Math.round(lead*1000));
 }
