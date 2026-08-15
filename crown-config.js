@@ -79,28 +79,38 @@ window.CROWN = {
   /* The voice the screens announce in — one place, so reception and the wall
      boards always sound like the same person.
 
-     Female and English by preference. The list is tried in order and the first
-     one the device actually has wins, matched loosely on the name because the
-     full names differ from machine to machine ("Microsoft Hazel - English
-     (United Kingdom)" on this one). Hazel and Susan are installed with Windows
-     and speak without a network; the Google voices are served over one, so they
-     come after — an alarm must not need the wifi to be up. Nothing female
-     installed at all and it falls back to any English voice rather than going
-     silent.
+     Turkish, and a woman's voice for preference. The catch worth knowing: the
+     only Turkish voice Windows ships with — Tolga — is male, so a female
+     Turkish voice has to be installed on the machine (a Windows voice pack) or
+     come from Google Türkçe, which is female but served over the network. The
+     prefer list names the usual female Turkish voices first (Yelda, Emel,
+     Filiz, Google Türkçe), matched loosely because the full name differs from
+     machine to machine.
 
-     Level and unhurried rather than bright. It used to be pitched well up and
-     run a little quick, on the reasoning that it would cut through a room with
-     dryers running. What it actually did was arrive at the speaker before the
-     speaker was ready for it: every announcement opens with the speech engine
-     fading up from silence and the Bluetooth speaker waking, and a high, fast
-     voice loses its first syllable to both. "Helen" survived it. "Lissa" and
-     "Hannah" came out as "issa" and "annah". The announcements now lead with a
-     word of their own — see the announce() calls — so the name is never what
-     gets clipped, and the voice sits low and slow enough to be understood
-     without shouting. */
+     After the named list, ANY Turkish voice is taken before a non-Turkish one:
+     a correct Turkish reading in the wrong voice still beats an English voice
+     mangling the words. So on a laptop with only Tolga and no network, the
+     announcement is spoken by Tolga — right language, wrong gender, never
+     silent. To guarantee a woman's voice offline, install a female Turkish
+     voice on the salon laptops.
+
+     And if the machine has no Turkish voice at all, it STILL speaks — in
+     whatever default voice it does have — and logs that it fell back, so we
+     can tell. A silent board is far worse than an accented one: the
+     announcement is how the room is told, and it must always be said. See
+     pickVoice().
+
+     The throwaway word in front of each announcement (see the announce()
+     calls) is still there for a real reason. Every announcement opens with the
+     speech engine fading up from silence and the Bluetooth speaker waking, and
+     both eat the first syllable. A name must never go first, or "Lissa" arrives
+     as "issa" — so the name always follows a word that can be sacrificed.
+
+     pitch and rate are left where the English voice had them. A Turkish voice
+     may want retuning; that is done by ear, not guessed at here. */
   voice: {
-    prefer: ['Hazel', 'Susan', 'Zira', 'UK English Female', 'US English'],
-    lang:   'en-GB',
+    prefer: ['Yelda', 'Emel', 'Filiz', 'Google Türkçe', 'Türkçe', 'Turkish'],
+    lang:   'tr-TR',
     pitch:  1.1,
     rate:   0.95,
     volume: 1
@@ -155,17 +165,27 @@ window.CROWN = {
   pickVoice: function(){
     try{
       var vs = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+      // Engine not ready yet — say() then leaves u.voice unset and the browser
+      // speaks in its own default. Still not silence.
       if (!vs.length) return null;
       var pref = this.voice.prefer, i, hit;
+      // 1. a named voice from the prefer list — female Turkish voices first
       for (i = 0; i < pref.length; i++){
         hit = vs.filter(function(v){
           return (v.name||'').toLowerCase().indexOf(pref[i].toLowerCase()) !== -1;
         })[0];
         if (hit) return hit;
       }
-      var en = vs.filter(function(v){ return /^en\b|^en[-_]/i.test(v.lang||''); });
-      // anything that calls itself female, then any English voice at all
-      return en.filter(function(v){ return /female/i.test(v.name||''); })[0] || en[0] || null;
+      // 2. failing a name match, any voice whose language is Turkish
+      var tr = vs.filter(function(v){ return /^tr\b|^tr[-_]/i.test(v.lang||''); })[0];
+      if (tr) return tr;
+      // 3. no Turkish voice on this machine. Speak anyway, in whatever it has,
+      //    and say so in the console — silence is the one outcome worse than an
+      //    accent, so this never returns nothing when a voice exists.
+      var fb = vs.filter(function(v){ return v.default; })[0] || vs[0] || null;
+      try{ console.warn('[voice] no Turkish voice installed — falling back to',
+                        fb && fb.name, '(' + (fb && fb.lang) + ')'); }catch(e){}
+      return fb;
     }catch(e){ return null; }
   },
   find: function(who){
