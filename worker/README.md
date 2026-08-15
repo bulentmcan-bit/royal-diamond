@@ -29,14 +29,22 @@ From this folder:
 
 ```
 npm install -g wrangler      # once
-wrangler login               # once
+wrangler login               # once, opens a browser — click Allow within 2 min
+wrangler deploy              # creates the worker; prints the address
 wrangler secret put BTN_KEY  # paste the shared key
-wrangler secret put FB_SECRET
-wrangler deploy
 ```
 
-`wrangler deploy` prints the address it is live on. That address, plus
-`/p?who=…&g=…&k=…`, is what goes into the buttons.
+Deploy first, key second, and nothing is exposed in between: with no `BTN_KEY`
+set the worker refuses every request with a 403, including one carrying the
+right key. There is no window where it is open.
+
+`FB_SECRET` is deliberately **not** set — see below.
+
+Already deployed, at `https://rd-buttons.royaldiamond.workers.dev`. That
+address, plus `/p?who=…&g=…&k=…`, is what goes into the buttons.
+
+If the account has never published a worker, the first deploy stops to say it
+needs a workers.dev subdomain. It is registered: `royaldiamond`.
 
 ### The two secrets
 
@@ -47,7 +55,7 @@ file name, which is why they are wrangler secrets and not lines in a file.
 | Secret | What it is |
 |---|---|
 | `BTN_KEY` | The shared key on the end of every button's URL. Any request without it is refused before the database is touched. Make it long and random. |
-| `FB_SECRET` | What lets the worker write to Firebase — see below. |
+| `FB_SECRET` | Would let the worker sign its write to Firebase. **Optional, and currently unset on purpose** — see below. |
 
 ### FB_SECRET: optional, and why
 
@@ -85,17 +93,6 @@ Tightening those rules is a two-part job and this is the second part: the boards
 need a real sign-in **first**, or they lose the database the moment the rule
 lands. See the warning below.
 
-**The long-term answer — a service account JWT.** The worker signs a JWT with a
-service-account key, swaps it for an access token, caches it for its ~50 minutes
-and sends it as `Authorization: Bearer`. About forty more lines in
-`src/index.js`; nothing else changes, including the button URLs. Worth doing
-when convenient, not urgent.
-
-**What was considered and rejected: opening `timers/press` to the world.** A
-`".write": true` rule on that one path would remove the need for `FB_SECRET`
-entirely, and the two-minute staleness rule limits the damage — but anyone who
-guesses the path can start jobs on the board all day. Do not ship it on its own.
-
 ### Database rules: nothing to change, and one change never to make
 
 The worker writes to `timers/press/<id>`, and every board reads, claims and
@@ -130,9 +127,9 @@ first-generation, so the events are named:
 
 | Shelly event | URL to set |
 |---|---|
-| `double_shortpush` | `https://rd-buttons.<subdomain>.workers.dev/p?who=lissa&g=double&k=<BTN_KEY>` |
-| `triple_shortpush` | `https://rd-buttons.<subdomain>.workers.dev/p?who=lissa&g=triple&k=<BTN_KEY>` |
-| `longpush` | `https://rd-buttons.<subdomain>.workers.dev/p?who=lissa&g=long&k=<BTN_KEY>` |
+| `double_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=double&k=<BTN_KEY>` |
+| `triple_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=triple&k=<BTN_KEY>` |
+| `longpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=long&k=<BTN_KEY>` |
 | `shortpush` | **leave empty** |
 
 Only `who=` changes from button to button. Also set **long push duration to

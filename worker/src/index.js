@@ -25,7 +25,7 @@
    Everything after the write is code that already existed.
 
    THE ADDRESS EACH BUTTON CALLS:
-       https://rd-buttons.<subdomain>.workers.dev/p?who=lissa&g=double&k=<key>
+       https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=double&k=<key>
 
    Only `who=` differs between buttons. Six technicians, six buttons, one
    address. Adding a technician is: her line in crown-config.js, her key in
