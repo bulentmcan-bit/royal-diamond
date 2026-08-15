@@ -9,3 +9,10 @@
 
 # Diary exports — real client names and phone numbers.
 royaldiamond-backup*.json
+
+# Wrangler's working folder, written next to the Worker every time it deploys.
+# It caches the Cloudflare account id and name, which have no business on a
+# public website. The Worker's own secrets are never here — they are held by
+# Cloudflare and cannot be read back out — but this folder still stays private.
+/worker/.wrangler/
+node_modules/

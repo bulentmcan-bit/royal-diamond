@@ -1281,9 +1281,9 @@ document.addEventListener('visibilitychange', () => {
 });
 if ($('soundBtn')) $('soundBtn').classList.add('on');
 
-/* ── the entry point the Wi-Fi buttons will use ───────────────────────────────
-   One button per technician, on the wall by her station. The connector that
-   receives the press calls straight into these:
+/* ── the entry point the Wi-Fi buttons use ────────────────────────────────────
+   One button per technician, on the wall by her station. The listener below
+   turns a press into one of these calls, and nothing else does:
 
        CrownBoard.start('Helen','manicure')   double press
        CrownBoard.start('Helen','pedicure')   triple press
@@ -1309,6 +1309,55 @@ window.CrownBoard = {
     if (gesture === 'long')   return finishJob(who);
   }
 };
+
+/* ── presses arriving from the wall buttons ───────────────────────────────────
+   A Shelly button can only call a fixed web address, so it calls a small relay
+   (worker/ in this repo) which drops the press at timers/press. This turns it
+   back into exactly the CrownBoard call the on-screen buttons make, so a press
+   on the wall and a press on the glass are the same job start, filed the same
+   way.
+
+   Every open screen sees every press, so one of them has to claim it or one
+   press starts two jobs and the commission is paid twice. The claim is a
+   transaction on the press itself: the first board to write `by` owns it, acts,
+   and deletes it. Everybody else finds `by` already set — or the press already
+   gone — and leaves it alone.
+
+   The picker screen listens too. A press must not be lost because the screen in
+   the corner is sitting on the "which board is this?" page.
+   ------------------------------------------------------------------------- */
+const PRESS_MAX_AGE_MS = 120000;   // older than this and it is wrong, not late
+const BOARD_ID = Math.random().toString(36).slice(2) + '-' + (AREA || 'picker');
+
+// A press that could not be acted on is dropped rather than kept: it is two
+// minutes old at most, and a wall board is no place for an error box about it.
+const dropPress = ref => ref.remove().catch(e => console.warn('press cleanup:', e));
+
+if (db) db.ref('timers/press').on('child_added', snap => {
+  const p = snap.val();
+  if (!p || !p.who || !p.g) { dropPress(snap.ref); return; }
+
+  // Measured on the server's clock at both ends — `ts` is written by Firebase
+  // and now() is this screen corrected onto the same clock. The tablets here
+  // are minutes apart from each other, so a raw Date.now() would call a fresh
+  // press stale, or wake at nine and start a job pressed at eight.
+  if (!p.ts || (now() - p.ts) > PRESS_MAX_AGE_MS) { dropPress(snap.ref); return; }
+
+  snap.ref.transaction(
+    cur => {
+      if (cur === null) return;      // the winner has already acted and deleted it
+      if (cur.by) return;            // another board claimed it a moment ago
+      cur.by = BOARD_ID;
+      return cur;
+    },
+    (err, committed) => {
+      if (err || !committed) return; // somebody else owns this press
+      try { CrownBoard.onButton(p.who, p.g); }
+      catch (e) { console.warn('button press failed:', e); }
+      dropPress(snap.ref);
+    }
+  );
+});
 </script>
 </body>
 </html>
