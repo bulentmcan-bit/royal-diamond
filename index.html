@@ -465,6 +465,23 @@
     if(id==null) return;
     if(priceOverrides[String(id)]!==undefined){ delete priceOverrides[String(id)]; priceOvrPersist(); }
   }
+  // Called the moment a booking is cancelled. deleteAppt writes a tombstone and
+  // undoComplete writes a flagged reset; cancelling used to write neither, so
+  // the override map went on insisting the job was completed. This seals the
+  // cancellation into the map too, stamped past anything the map already held.
+  function priceOvrSealCancel(a){
+    try{
+      if(!a||a.id==null) return;
+      const k=String(a.id), prev=priceOverrides[k];
+      if(!prev) return;
+      const ts=Math.max((prev.ts||0)+1, (a._pts||0)+1, Date.now());
+      prev.st='cancelled';
+      prev.ts=ts;
+      priceOverrides[k]=prev;
+      priceOvrPersist();
+      if((a._pts||0) < ts) a._pts=ts;
+    }catch(e){ console.warn('priceOvrSealCancel error:', e); }
+  }
   // A remote record only outranks a saved override when it is BOTH stamped
   // later AND actually carries money. A 0 never beats a saved price.
   function _ovrBeaten(ovr,r){
@@ -479,6 +496,22 @@
         if(!r||r.id==null) return;
         const ovr=priceOverrides[String(r.id)];
         if(!ovr) return;
+        // ═══ A CANCELLATION IS THE LAST WORD ═══
+        // The override map remembers that this job was once completed and
+        // priced. A cancellation only ever changed the record, never the map,
+        // so the map kept re-asserting 'completed' on every save, every render
+        // and every snapshot — and the booking came back, on every device.
+        // Nothing in here may un-cancel a booking. The map is corrected to
+        // agree with the record instead, so it stops fighting it.
+        if(r.status==='cancelled'){
+          if(ovr.st!=='cancelled'){
+            ovr.st='cancelled';
+            ovr.ts=Math.max((ovr.ts||0)+1, (r._pts||0)+1, Date.now());
+            if((r._pts||0) < ovr.ts) r._pts=ovr.ts;
+            adopted=true;
+          }
+          return;
+        }
         if(_ovrBeaten(ovr,r)){
           // Genuinely re-priced later somewhere else — adopt it so the two
           // copies stop fighting over the record.
@@ -691,7 +724,10 @@
           r.price=loc.price;
           if(loc._takingsAmount!==undefined) r._takingsAmount=loc._takingsAmount;
           r._pts=loc._pts;
-          if(loc.status==='completed') r.status='completed';
+          // Carrying the money over may not carry a stale 'completed' onto a
+          // booking another device has since cancelled — that is a second,
+          // independent way a cancelled job used to reappear.
+          if(loc.status==='completed' && r.status!=='cancelled') r.status='completed';
           _apptMoneyKept=true;
         } else if(!(loc._pts||r._pts) && (parseFloat(loc.price)||0)>0 && !(parseFloat(r.price)||0)){
           // Neither side is stamped (data written before _pts existed).
@@ -5304,7 +5340,17 @@ function dashCancelAppt(id){
   if(!confirm('Cancel this appointment?')) return;
   const a = appointments.find(function(x){ return x.id===id; });
   if(!a) return;
+  // The password prompt blocks the page, so a snapshot can land while it is
+  // open and turn this booking into a completed one behind the dialog. Money
+  // already taken has to be given back through ↩ Undo first — otherwise the
+  // cancellation silently loses to the completion and the booking comes back.
+  if(a.status==='completed'){
+    toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');
+    renderDash();
+    return;
+  }
   a.status = 'cancelled';
+  priceOvrSealCancel(a);
   cancelLogAdd(a, auth.role);
   saveAll(); renderDash(); renderAppts(); updateApptBadge();
   toast('❌','Cancelled','Appointment cancelled. ('+auth.role+')','r');
@@ -7366,7 +7412,7 @@ function skipRebook(){
   closeModal("mRebook");rebookPending=null;
 }
 
-function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;a.status="cancelled";cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
+function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
 function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
