@@ -15509,8 +15509,8 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // A real name, because a name is the part being tested — a placeholder
     // would not catch a voice that mangles the ones the salon actually uses.
     var who=(C.operators[0]||{}).name||'Helen';
-    announce({lead:'chime', text:who+', fifteen minutes', tail:'chime'});
-    announce({lead:'alarm', text:who+', next customer',   tail:'chime'});
+    announce({lead:'chime', text:'Okay. '+who+', fifteen minutes', tail:'chime'});
+    announce({lead:'alarm', text:'Okay. '+who+', next customer',   tail:'chime'});
     // Roughly half a minute of mostly silence and speech: without something on
     // the button saying so, a tap that has plainly done nothing yet invites a
     // second one, and then a third.
@@ -15568,9 +15568,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         if(!fresh && was.state!=='over' && -left<=5*60000)
           // the crossing itself — a laptop that slept through it wakes to a red
           // row rather than an announcement of something half an hour gone
-          announce({lead:'alarm', text:o.name+', next customer', tail:'chime'});
+          announce({lead:'alarm', text:'Okay. '+o.name+', next customer', tail:'chime'});
       } else if(state==='warn' && !fresh && was.state==='run'){
-        announce({lead:'chime', text:o.name+', fifteen minutes', tail:'chime'});
+        announce({lead:'chime', text:'Okay. '+o.name+', fifteen minutes', tail:'chime'});
       }
 
       _phase[o.key]={id:id, state:state};

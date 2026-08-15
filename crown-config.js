@@ -88,13 +88,21 @@ window.CROWN = {
      installed at all and it falls back to any English voice rather than going
      silent.
 
-     Bright and lively rather than a newsreader: pitched up and a little quick,
-     which also helps it cut through a room with dryers running. */
+     Level and unhurried rather than bright. It used to be pitched well up and
+     run a little quick, on the reasoning that it would cut through a room with
+     dryers running. What it actually did was arrive at the speaker before the
+     speaker was ready for it: every announcement opens with the speech engine
+     fading up from silence and the Bluetooth speaker waking, and a high, fast
+     voice loses its first syllable to both. "Helen" survived it. "Lissa" and
+     "Hannah" came out as "issa" and "annah". The announcements now lead with a
+     word of their own — see the announce() calls — so the name is never what
+     gets clipped, and the voice sits low and slow enough to be understood
+     without shouting. */
   voice: {
     prefer: ['Hazel', 'Susan', 'Zira', 'UK English Female', 'US English'],
     lang:   'en-GB',
-    pitch:  2.0,
-    rate:   1.1,
+    pitch:  1.1,
+    rate:   0.95,
     volume: 1
   },
 
@@ -120,7 +128,7 @@ window.CROWN = {
   music: {
     shuffle:   true,
     loop:      true,
-    volume:    21,      // 0-100, what it plays at normally — under the room, not in it
+    volume:    14,      // 0-100, what it plays at normally — under the room, not in it
     duckTo:     0,      // silent, not merely quiet: nothing plays under an announcement
     fadeDownMs: 0,      // a cut, not a fade — the silence starts the instant it is asked for
     fadeUpMs:   900,    // slow, so the room does not hear it come back

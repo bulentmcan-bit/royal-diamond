@@ -432,10 +432,10 @@ function paint(){
       // comes round every couple of minutes stops being information and starts
       // being noise, and a room learns to ignore noise.
       if (phase[o.key] === 'run' && state === 'warn')
-        announce({ lead:'chime', text:o.name + ', fifteen minutes', tail:'chime' });
+        announce({ lead:'chime', text:'Okay. ' + o.name + ', fifteen minutes', tail:'chime' });
       else if (phase[o.key] && phase[o.key] !== 'over' && state === 'over'
                && -leftMs <= 5*60000)
-        announce({ lead:'alarm', text:o.name + ', next customer', tail:'chime' });
+        announce({ lead:'alarm', text:'Okay. ' + o.name + ', next customer', tail:'chime' });
       phase[o.key] = state;
       return;
     }
