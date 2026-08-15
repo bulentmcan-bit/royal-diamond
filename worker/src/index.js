@@ -88,8 +88,16 @@ export default {
       src: 'shelly'
     });
 
+    // The auth token is sent only if there is one. The salon's rules currently
+    // let anyone write under timers/ — which is how the boards themselves write,
+    // since they never sign in — so the press lands either way. Sending an empty
+    // `auth=` would not be treated as "no token" but as a broken one, and the
+    // database would refuse the write. If the timers rules are ever tightened,
+    // set FB_SECRET and this starts signing the write with nothing else to change.
+    const auth = env.FB_SECRET ? '&auth=' + encodeURIComponent(env.FB_SECRET) : '';
+
     const r = await fetch(
-      `${DB}/timers/press/${id}.json?print=silent&auth=${encodeURIComponent(env.FB_SECRET || '')}`,
+      `${DB}/timers/press/${id}.json?print=silent${auth}`,
       { method: 'PUT', body, headers: { 'content-type': 'application/json' } }
     );
 

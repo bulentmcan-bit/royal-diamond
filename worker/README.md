@@ -49,15 +49,41 @@ file name, which is why they are wrangler secrets and not lines in a file.
 | `BTN_KEY` | The shared key on the end of every button's URL. Any request without it is refused before the database is touched. Make it long and random. |
 | `FB_SECRET` | What lets the worker write to Firebase — see below. |
 
-### FB_SECRET: which kind
+### FB_SECRET: optional, and why
 
-The board writes to Firebase as a signed-in user. The worker cannot sign in, so
-it needs its own way in.
+**It is not needed today, and setting it wrong is worse than leaving it out.**
 
-**What is set up now — the legacy database secret.** Firebase console → Project
-settings → Service accounts → Database secrets → show/create, and paste that
-into `wrangler secret put FB_SECRET`. The worker appends it to the write as
-`?auth=`. Google marks it legacy but has not removed it, and it is one line.
+The starting assumption was that the board writes to Firebase as a signed-in
+user and the worker would need its own way in. That turned out to be wrong in
+both halves. `timers.html` loads no authentication library at all — it never
+signs in — and the database rules let anyone read and write under `timers/`.
+That is how the boards have always filed jobs. Checked against the live
+database: an unauthenticated `PUT` to `timers/press` succeeds, while the same
+write at the database root is refused, so the opening is real but scoped to that
+one subtree.
+
+So the worker sends no token, the write lands, and the boards can claim it.
+`BTN_KEY` is what actually guards the worker; `FB_SECRET` would add nothing,
+because anyone who can reach the worker's database path can already reach the
+database path directly.
+
+Leave `FB_SECRET` unset. The worker omits `auth=` entirely when it is missing —
+deliberately, because an empty `auth=` reads to Firebase as a malformed token
+and the write is refused, which would look exactly like a broken button.
+
+**When it does become needed.** If the `timers/` rules are ever tightened, set
+it and nothing else changes:
+
+- *Legacy database secret* — Firebase console → Project settings → Service
+  accounts → Database secrets. One line, still works, marked legacy by Google
+  and absent from some newer projects.
+- *Service account JWT* — the worker signs a JWT, swaps it for an access token,
+  caches it for its ~50 minutes. About forty more lines, and the correct
+  long-term answer.
+
+Tightening those rules is a two-part job and this is the second part: the boards
+need a real sign-in **first**, or they lose the database the moment the rule
+lands. See the warning below.
 
 **The long-term answer — a service account JWT.** The worker signs a JWT with a
 service-account key, swaps it for an access token, caches it for its ~50 minutes
@@ -70,14 +96,30 @@ when convenient, not urgent.
 entirely, and the two-minute staleness rule limits the damage — but anyone who
 guesses the path can start jobs on the board all day. Do not ship it on its own.
 
-### Check the database rules
+### Database rules: nothing to change, and one change never to make
 
-The worker writes to `timers/press/<id>`, and every board reads and deletes
-there. If the rules cover `timers` as a whole this already works. If they are
-written child by child, `press` needs its own line: readable and writable by a
-signed-in user. The legacy database secret bypasses rules, so a rules problem
-shows up as the **boards** failing to claim a press, not as the worker failing
-to write it.
+The worker writes to `timers/press/<id>`, and every board reads, claims and
+deletes there. The rules are written at the `timers` level, not child by child,
+so `press` is already covered and **no rules change is needed** to make the
+buttons work.
+
+**Do not add this rule, or anything like it:**
+
+```json
+"press": { ".read": "auth != null", ".write": "auth != null" }
+```
+
+It reads as the safe, obvious thing to do and it would take the boards offline.
+`auth != null` means "only signed-in users", and the boards are not signed in —
+`timers.html` does not even load `firebase-auth`. Presses would keep arriving
+and no board would ever act on one. Nothing on screen would look broken, which
+makes it an expensive afternoon: the fault looks like it is in the buttons, the
+batteries or the wifi, and all of those are fine.
+
+Securing the `timers/` subtree is worth doing, but in this order: give the
+boards a sign-in (load `firebase-auth-compat`, `signInAnonymously` at startup),
+confirm every screen still files jobs, and only then tighten the rules — and set
+`FB_SECRET` in the same change, or the worker stops writing at that moment too.
 
 ---
 
