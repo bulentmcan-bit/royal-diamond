@@ -133,6 +133,12 @@ window.CROWN = {
     volume: 0.6
   },
 
+  /* The boss ↔ reception message presets — the three one-tap buttons above
+     the message box in index.html. Words only, changed here without touching
+     code. This is data for reception's screen and Bülent's; the wall boards
+     never read it and never show a message. */
+  msgPresets: ['Beni ara', 'Geliyorum', 'Tamam'],
+
   /* Music, and how it gets out of the way.
 
      Reception's laptop feeds the Bluetooth speaker, so it is the machine that

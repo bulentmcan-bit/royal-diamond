@@ -2747,6 +2747,10 @@ p, span, div, label, h1, h2, h3, h4 {
     <hr class="sb-divider">
     <div class="sb-section" data-i18n="sec_comms">İletişim</div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
+    <!-- Boss ↔ reception messages. Hidden until this device has been given a
+         role (?role=owner / ?role=reception, once) — a machine with no role
+         has no reason to show a door to a room it cannot enter. -->
+    <div class="nav-item" id="msg-nav" style="display:none" ontouchstart="event.stopPropagation();msgOpen()" onclick="msgOpen()"><span class="nav-icon">💬</span><span>Mesaj</span><span class="nav-badge nav-badge-rose" id="msg-badge" style="display:none">0</span></div>
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
@@ -16091,6 +16095,429 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   window.rdBridgePush   = function(){ wait = EVERY; clearTimeout(timer); push(); return 'pushing…'; };
 
   setTimeout(push, 8000);   // let the app finish loading first
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     BOSS ↔ RECEPTION MESSAGES
+     ---------------------------------------------------------------------
+     Two people, two machines: Bülent's laptop or phone and reception's
+     laptop. Nothing else. The wall boards face the salon floor and customers
+     read them, so this lives ONLY in this file — timers.html knows nothing
+     about it and never will.
+
+     A device is told which of the two people it is ONCE, the same way the
+     sound-test button is unlocked (?sestest=1):
+
+         ?role=owner       this is Bülent's machine
+         ?role=reception   this is reception's laptop
+         ?role=0           forget the role again
+
+     The role lives in this machine's own localStorage, so it travels with
+     the machine, not the site. A device that has never been told a role
+     shows no button, sends nothing and listens to nothing.
+
+     Messages live in Firebase under rdns_msg_v1 — NEVER anywhere under
+     timers/, which is world-readable so the boards can run without signing
+     in. rdns_msg_v1 sits behind the login like the rest of the salon's
+     data, which is also why this module only starts once auth has a user.
+
+     Every timestamp in a message — when it was sent, when it was read — is
+     the SERVER's clock ({'.sv':'timestamp'}), never this device's. The
+     machines here disagree about the time and that has already cost us one
+     real bug; the server is the one clock they all share.
+     ═══════════════════════════════════════════════════════════════════ -->
+<style>
+/* The full-screen message. Dark, above everything, and deliberately hard to
+   miss and impossible to lose by accident: the ONLY way out is the button.
+   No click-outside, no Escape — a message glanced at and gone is a message
+   not delivered. */
+#msg-ovl{position:fixed;inset:0;z-index:100001;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:26px;padding:24px;text-align:center;
+  background:rgba(8,9,8,.97);font-family:Nunito,'Segoe UI',sans-serif}
+#msg-ovl.on{display:flex}
+#msg-ovl .who{color:#d4a96a;font-size:clamp(1.4rem,4vw,2.2rem);font-weight:800;
+  letter-spacing:.14em;text-transform:uppercase}
+#msg-ovl .txt{color:#f3e3c8;font-size:clamp(2rem,7vw,3.4rem);font-weight:800;
+  line-height:1.25;max-width:22ch;overflow-wrap:break-word}
+#msg-ovl .tm{color:#8d8574;font-size:clamp(.95rem,2.5vw,1.2rem);font-weight:700;
+  font-variant-numeric:tabular-nums}
+#msg-ovl button{margin-top:10px;padding:20px 64px;border:none;border-radius:16px;cursor:pointer;
+  background:#d4a96a;color:#14120d;font-family:inherit;font-weight:800;
+  font-size:clamp(1.2rem,3.5vw,1.6rem);letter-spacing:.08em;
+  box-shadow:0 10px 30px rgba(0,0,0,.5)}
+#msg-ovl button:hover{background:#e3bc82}
+/* The panel messages are written from. A slide-over on the right, styled like
+   the Crown Board panel next to it; unlike the overlay above, this one is
+   freely closable — it is a tool, not a delivery. */
+#msg-panel{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:9995;display:none;
+  width:340px;max-width:calc(100vw - 24px);max-height:min(84vh,700px);overflow-y:auto;
+  background:#14120d;border:1.5px solid #d4a96a;border-radius:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.45);font-family:Nunito,'Segoe UI',sans-serif}
+#msg-panel.on{display:block}
+#msg-head{position:sticky;top:0;z-index:1;background:#14120d;color:#d4a96a;padding:10px 12px;
+  font-weight:800;font-size:.86rem;display:flex;align-items:center;gap:6px;
+  border-bottom:1px solid rgba(212,169,106,.25)}
+#msg-head .ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#msg-head .dev{color:#8d8574;font-size:.64rem;font-weight:700;white-space:nowrap}
+#msg-head .x{cursor:pointer;font-size:1.05rem;opacity:.7;line-height:1;padding:2px 7px;
+  border-radius:6px;user-select:none}
+#msg-head .x:hover{opacity:1;background:rgba(212,169,106,.14)}
+#msg-compose{padding:10px 10px 4px}
+#msg-presets{display:flex;gap:6px;margin-bottom:8px}
+#msg-presets button{flex:1;min-width:0;padding:9px 4px;border-radius:9px;cursor:pointer;
+  border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.74rem;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#msg-presets button:hover{background:rgba(212,169,106,.24)}
+#msg-text{display:block;width:100%;box-sizing:border-box;min-height:64px;resize:vertical;
+  border-radius:9px;border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
+  padding:9px 11px;font-family:inherit;font-size:.86rem;font-weight:700}
+#msg-text::placeholder{color:#8d8574;font-weight:600}
+#msg-send{display:block;width:100%;margin-top:7px;padding:11px;border:none;border-radius:9px;
+  cursor:pointer;background:#d4a96a;color:#14120d;font-family:inherit;font-weight:800;
+  font-size:.9rem}
+#msg-send:hover{background:#e3bc82}
+#msg-status{min-height:1.1em;padding:6px 2px 2px;color:#8d8574;font-size:.72rem;font-weight:700}
+#msg-status.ok{color:#5fcb8c}
+#msg-hist{padding:4px 10px 10px}
+#msg-hist .h-ttl{color:#d4a96a;font-size:.7rem;font-weight:800;letter-spacing:.04em;
+  padding:6px 2px 4px;border-top:1px solid rgba(212,169,106,.18)}
+.msg-item{border:1px solid #2a2a22;background:#1c1a14;border-radius:10px;
+  padding:7px 9px;margin-bottom:6px}
+.msg-item.mine{border-color:rgba(212,169,106,.35)}
+.msg-item.unread{border-color:rgba(242,112,139,.6);background:rgba(242,112,139,.08)}
+.msg-item .top{display:flex;align-items:baseline;gap:8px;font-size:.64rem;font-weight:800}
+.msg-item .top .w{color:#d4a96a}
+.msg-item.mine .top .w{color:#8d8574}
+.msg-item .top .t{margin-left:auto;color:#6d6559;font-weight:700;font-variant-numeric:tabular-nums}
+.msg-item .body{color:#f3e3c8;font-size:.82rem;font-weight:700;margin:3px 0 2px;
+  overflow-wrap:break-word;white-space:pre-wrap}
+.msg-item .st{color:#6d6559;font-size:.62rem;font-weight:700}
+.msg-item .st.seen{color:#5fcb8c}
+.msg-item .st.unread{color:#f2708b}
+.msg-item .ok-mini{margin-top:5px;padding:6px 12px;border-radius:8px;cursor:pointer;
+  border:1px solid rgba(212,169,106,.55);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.68rem}
+.msg-item .ok-mini:hover{background:rgba(212,169,106,.24)}
+@media(max-width:560px){
+  #msg-panel{right:0;top:auto;bottom:0;transform:none;width:100vw;max-width:100vw;
+    max-height:88vh;border-radius:14px 14px 0 0;border-left:none;border-right:none}
+}
+</style>
+<div id="msg-ovl">
+  <div class="who" id="msg-ovl-who"></div>
+  <div class="txt" id="msg-ovl-txt"></div>
+  <div class="tm" id="msg-ovl-tm"></div>
+  <button id="msg-ovl-ok" onclick="msgOkundu()">OKUNDU</button>
+</div>
+<div id="msg-panel">
+  <div id="msg-head"><span class="ttl">💬 Mesaj</span>
+    <span class="dev" id="msg-dev"></span>
+    <span class="x" onclick="msgClose()" title="Kapat">✕</span></div>
+  <div id="msg-compose">
+    <div id="msg-presets"></div>
+    <textarea id="msg-text" maxlength="500" placeholder="Mesaj yazın…"></textarea>
+    <button id="msg-send" onclick="msgSend()">Gönder</button>
+    <div id="msg-status"></div>
+  </div>
+  <div id="msg-hist"><div class="h-ttl">SON MESAJLAR</div><div id="msg-list"></div></div>
+</div>
+<script>
+(function(){
+  var C = window.CROWN || {};
+  var PATH   = 'rdns_msg_v1';   // never anywhere under timers/ — that path is world-readable
+  var KEEP   = 50;              // messages kept in Firebase; older are pruned after each send
+  var SHOW   = 20;              // messages the history list shows
+  var FRESH_MS = 8*3600000;     // older than this never pops up — it goes to history unread,
+                                // so a laptop opened the next morning is not ambushed
+  var NAMES  = { owner:'Bülent', reception:'Resepsiyon' };
+
+  /* ── which of the two people this device is ── */
+  try{
+    var q = String(location.search||'');
+    if      (/[?&]role=owner(&|$)/.test(q))     localStorage.setItem('rdns_msg_role','owner');
+    else if (/[?&]role=reception(&|$)/.test(q)) localStorage.setItem('rdns_msg_role','reception');
+    else if (/[?&]role=0(&|$)/.test(q))         localStorage.removeItem('rdns_msg_role');
+  }catch(e){}
+  var ROLE = null;
+  try{
+    var r = localStorage.getItem('rdns_msg_role');
+    if (r==='owner' || r==='reception') ROLE = r;
+  }catch(e){}
+  // The panel and overlay are reachable from onclick= attributes, so the three
+  // entry points must exist even on a machine with no role — where they do
+  // nothing, because there is nothing for them to do.
+  window.msgOpen = window.msgClose = window.msgSend = window.msgOkundu = function(){};
+  if (!ROLE) return;   // no role: no button, no sending, no listening
+  var OTHER = ROLE==='owner' ? 'reception' : 'owner';
+
+  var db=null, started=false;
+  var offset=0;        // server clock minus this device's, from Firebase itself —
+                       // the freshness check must not trust the device clock either
+  var msgs=[];         // the last KEEP messages, oldest first
+  var known={};        // keys already considered for the pop-up, so a snapshot
+                       // re-firing can never show the same message twice
+  var queue=[];        // keys waiting for the full-screen overlay, oldest first
+  var showingKey=null;
+  var lastSentKey=null;
+
+  function fmtT(ts){
+    if(!ts) return '—';
+    var d=new Date(Number(ts));
+    if(isNaN(d.getTime())) return '—';
+    var hm=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+    if(d.toDateString()===new Date().toDateString()) return hm;
+    return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+' '+hm;
+  }
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g,function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  /* ── the arrival tone ──────────────────────────────────────────────────
+     Short and rising — three quick notes, nothing like the fifteen-minute
+     chime's two long ones, so reception's ear tells them apart without
+     looking. Its own little chain on purpose: it must NOT go through
+     announce(), because announcements silence the music and a message is
+     not an announcement — it plays over whatever is playing. Level from
+     tones.volume like every other generated sound, guarded the same way. */
+  var _ac=null,_gain=null;
+  function ensureAudio(){
+    if(_ac) return;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC) return;
+      _ac=new AC();
+      _gain=_ac.createGain();
+      _gain.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1;
+      _gain.connect(_ac.destination);
+    }catch(e){}
+  }
+  ['pointerdown','keydown','touchend'].forEach(function(ev){
+    document.addEventListener(ev,function(){
+      ensureAudio();
+      try{ if(_ac && _ac.state==='suspended') _ac.resume(); }catch(e){}
+    },{passive:true});
+  });
+  function ding(){
+    try{
+      ensureAudio();
+      if(!_ac) return;
+      if(_ac.state==='suspended'){ try{_ac.resume();}catch(e){} }
+      var t0=_ac.currentTime;
+      [[1318.5,0],[1760,.13],[2217.5,.26]].forEach(function(n){
+        var o=_ac.createOscillator(), g=_ac.createGain();
+        o.type='sine'; o.frequency.setValueAtTime(n[0],t0+n[1]);
+        g.gain.setValueAtTime(0.0001,t0+n[1]);
+        g.gain.exponentialRampToValueAtTime(.8,t0+n[1]+.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t0+n[1]+.28);
+        o.connect(g).connect(_gain);
+        o.start(t0+n[1]); o.stop(t0+n[1]+.33);
+      });
+    }catch(e){}
+  }
+
+  /* ── the full-screen overlay ── */
+  function showNext(){
+    if(showingKey || !queue.length) return;
+    var key=queue[0];
+    var m=null;
+    for(var i=0;i<msgs.length;i++) if(msgs[i].key===key){ m=msgs[i]; break; }
+    if(!m){ queue.shift(); return showNext(); }
+    showingKey=key;
+    document.getElementById('msg-ovl-who').textContent=NAMES[m.from]||m.from;
+    document.getElementById('msg-ovl-txt').textContent=m.text||'';
+    document.getElementById('msg-ovl-tm').textContent=fmtT(m.ts);
+    document.getElementById('msg-ovl').classList.add('on');
+  }
+  function markSeen(key){
+    try{
+      db.ref(PATH+'/'+key).update({ seen: firebase.database.ServerValue.TIMESTAMP })
+        .catch(function(e){ console.warn('[msg] seen write failed:',e); });
+    }catch(e){ console.warn('[msg] seen write failed:',e); }
+  }
+  // The button is the ONLY way out — nothing else closes the overlay.
+  window.msgOkundu = function(){
+    if(!showingKey) return;
+    markSeen(showingKey);
+    queue.shift();
+    showingKey=null;
+    document.getElementById('msg-ovl').classList.remove('on');
+    showNext();   // a second message that arrived meanwhile takes the screen next
+  };
+
+  /* ── the panel ── */
+  function buildPresets(){
+    var box=document.getElementById('msg-presets');
+    if(!box) return;
+    var list=(C.msgPresets&&C.msgPresets.length)?C.msgPresets:['Beni ara','Geliyorum','Tamam'];
+    box.innerHTML='';
+    list.slice(0,3).forEach(function(p){
+      var b=document.createElement('button');
+      b.textContent=p;
+      // One tap sends it — that is the whole point of a preset at a busy desk.
+      b.onclick=function(){ send(p); };
+      box.appendChild(b);
+    });
+  }
+  window.msgOpen=function(){
+    var p=document.getElementById('msg-panel');
+    if(!p) return;
+    p.classList.add('on');
+    render();
+    try{ document.getElementById('msg-text').focus(); }catch(e){}
+  };
+  window.msgClose=function(){
+    var p=document.getElementById('msg-panel');
+    if(p) p.classList.remove('on');
+  };
+
+  function setStatus(text, ok){
+    var el=document.getElementById('msg-status');
+    if(!el) return;
+    el.textContent=text||'';
+    el.classList.toggle('ok', !!ok);
+  }
+  function send(text){
+    text=String(text||'').trim();
+    if(!text) return;
+    if(!db){ setStatus('Giriş yapılmadan gönderilemez'); return; }
+    var ref;
+    try{ ref=db.ref(PATH).push(); }catch(e){ setStatus('Gönderilemedi'); return; }
+    lastSentKey=ref.key;
+    setStatus('Gönderiliyor…');
+    ref.set({
+      from: ROLE,
+      text: text.slice(0,500),
+      ts:   firebase.database.ServerValue.TIMESTAMP,   // the server's clock, never this device's
+      seen: 0
+    }).then(function(){
+      setStatus('Gönderildi', true);
+      prune();
+    }).catch(function(e){
+      console.warn('[msg] send failed:',e);
+      setStatus('Gönderilemedi — bağlantıyı kontrol edin');
+    });
+    var ta=document.getElementById('msg-text');
+    if(ta) ta.value='';
+  }
+  window.msgSend=function(){
+    var ta=document.getElementById('msg-text');
+    send(ta?ta.value:'');
+  };
+  // Keep the last KEEP and no more. The sender tidies after itself: one read
+  // straight after a successful send, and anything past the newest fifty goes.
+  // Push keys sort chronologically, so "oldest" is simply "first".
+  function prune(){
+    db.ref(PATH).once('value').then(function(s){
+      var keys=Object.keys(s.val()||{}).sort();
+      if(keys.length<=KEEP) return;
+      var upd={};
+      keys.slice(0,keys.length-KEEP).forEach(function(k){ upd[k]=null; });
+      db.ref(PATH).update(upd).catch(function(e){ console.warn('[msg] prune failed:',e); });
+    }).catch(function(e){ console.warn('[msg] prune read failed:',e); });
+  }
+
+  /* ── history + badge + sent-status ── */
+  function render(){
+    // The sidebar badge: messages from the other side not yet read here —
+    // including the stale ones that went straight to history without a pop-up.
+    var unread=msgs.filter(function(m){ return m.from===OTHER && !m.seen; }).length;
+    var b=document.getElementById('msg-badge');
+    if(b){ b.textContent=String(unread); b.style.display=unread?'':'none'; }
+
+    var st=document.getElementById('msg-status');
+    if(st && lastSentKey){
+      var mine=null;
+      for(var i=0;i<msgs.length;i++) if(msgs[i].key===lastSentKey){ mine=msgs[i]; break; }
+      if(mine) setStatus(mine.seen ? 'Okundu '+fmtT(mine.seen) : 'Gönderildi', !!mine.seen);
+    }
+
+    var list=document.getElementById('msg-list');
+    if(!list) return;
+    var recent=msgs.slice(-SHOW).reverse();
+    if(!recent.length){ list.innerHTML='<div class="msg-item"><div class="body" style="color:#8d8574">Henüz mesaj yok</div></div>'; return; }
+    list.innerHTML=recent.map(function(m){
+      var mine=m.from===ROLE;
+      var isUnread=!mine && !m.seen;
+      var state;
+      if(m.seen)       state='<div class="st seen">Okundu '+esc(fmtT(m.seen))+'</div>';
+      else if(mine)    state='<div class="st">Henüz okunmadı</div>';
+      else             state='<div class="st unread">Okunmadı</div>'+
+                             '<button class="ok-mini" data-k="'+esc(m.key)+'">OKUNDU</button>';
+      return '<div class="msg-item'+(mine?' mine':'')+(isUnread?' unread':'')+'">'+
+        '<div class="top"><span class="w">'+esc(NAMES[m.from]||m.from)+'</span>'+
+        '<span class="t">'+esc(fmtT(m.ts))+'</span></div>'+
+        '<div class="body">'+esc(m.text)+'</div>'+state+'</div>';
+    }).join('');
+    // The stale ones the overlay never showed still need a way to be read.
+    Array.prototype.forEach.call(list.querySelectorAll('.ok-mini'),function(btn){
+      btn.onclick=function(){ markSeen(btn.getAttribute('data-k')); };
+    });
+  }
+
+  /* ── listening ─────────────────────────────────────────────────────────
+     One value listener over the last KEEP messages. Every snapshot re-renders
+     the history; keys never seen before are considered for the pop-up, and
+     only a fresh, unread message from the OTHER person gets it. Freshness is
+     judged on the server's clock (its offset from this device comes from
+     Firebase itself), because the whole reason the timestamps are server-side
+     is that these machines disagree about the time. */
+  function start(){
+    if(started) return;
+    started=true;
+    db=firebase.database();
+    try{ db.ref('.info/serverTimeOffset').on('value',function(s){ offset=Number(s.val())||0; }); }catch(e){}
+    db.ref(PATH).limitToLast(KEEP).on('value',function(snap){
+      var v=snap.val()||{};
+      msgs=Object.keys(v).sort().map(function(k){
+        var m=v[k]||{}; return { key:k, from:m.from, text:m.text, ts:m.ts, seen:m.seen };
+      });
+      var arrived=false;
+      msgs.forEach(function(m){
+        if(known[m.key]) return;
+        known[m.key]=1;
+        if(m.from!==OTHER || m.seen) return;
+        var age=(Date.now()+offset)-(Number(m.ts)||0);
+        if(age<FRESH_MS){ queue.push(m.key); arrived=true; }
+        // else: history only, unread — the morning laptop is not ambushed
+      });
+      if(arrived){ ding(); showNext(); }
+      render();
+    },function(e){ console.warn('[msg] listener failed (rules?):',e); });
+  }
+
+  /* ── wiring ────────────────────────────────────────────────────────────
+     The button appears as soon as the machine knows who it is; the listening
+     and sending wait for the login, because rdns_msg_v1 is behind it. The
+     module attaches its own auth observer rather than reaching into the sync
+     code — Firebase happily carries more than one. */
+  function boot(){
+    var nb=document.getElementById('msg-nav');
+    if(nb) nb.style.display='';
+    var dv=document.getElementById('msg-dev');
+    if(dv) dv.textContent='Bu cihaz: '+NAMES[ROLE];
+    buildPresets();
+    var ta=document.getElementById('msg-text');
+    if(ta) ta.addEventListener('keydown',function(e){
+      if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); window.msgSend(); }
+    });
+    (function waitFb(){
+      try{
+        if(window.firebase && firebase.apps && firebase.apps.length){
+          firebase.auth().onAuthStateChanged(function(u){
+            if(u && !u.isAnonymous) start();
+          });
+          return;
+        }
+      }catch(e){}
+      setTimeout(waitFb,500);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+  else boot();
 })();
 </script>
 
