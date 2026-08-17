@@ -15,3 +15,11 @@ workers_dev = true
 # clock-change Sundays included, so a reminder can never go out twice.
 [triggers]
 crons = ["0 3 * * *", "0 4 * * *"]
+
+# The reminders' master switch. "off" means the six-o'clock firing only writes
+# a log line; nothing is read as a batch, nothing is sent. Turning it on is a
+# one-word edit here plus a deploy — deliberate and visible in git, never an
+# accident. The gateway credentials and the database secret are wrangler
+# secrets (SMSGATE_LOGIN, SMSGATE_PASSWORD, FB_SECRET), never in this file.
+[vars]
+SMS_REMINDERS = "off"
