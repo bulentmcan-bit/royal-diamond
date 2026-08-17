@@ -155,7 +155,7 @@ window.CROWN = {
   music: {
     shuffle:   true,
     loop:      true,
-    volume:    14,      // 0-100, what it plays at normally — under the room, not in it
+    volume:    21,      // 0-100, what it plays at normally — under the room, not in it
     duckTo:     0,      // silent, not merely quiet: nothing plays under an announcement
     fadeDownMs: 0,      // a cut, not a fade — the silence starts the instant it is asked for
     fadeUpMs:   900,    // slow, so the room does not hear it come back
