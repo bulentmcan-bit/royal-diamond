@@ -951,13 +951,14 @@ function toggleSound(){
   if (soundOn) { unlockAudio(); chimeWhenReady(); }
   else syncSoundPrompt();
 }
-/* The board lives on a TV across the room, so the sounds are driven hard —
+/* The board lives on a TV across the room, so the sounds are synthesised hard —
    close to full scale rather than the quiet levels that suited a phone held in
    the hand. Every note goes through a limiter before the speakers: the crown
    sparkle stacks six notes on top of each other, and without the limiter those
    overlapping peaks would sum past full scale and tear. The limiter holds them
    just under it, and the makeup gain after it is what actually carries the
-   sound across the room. */
+   sound across the room. How loud the whole set then leaves for the room is
+   tones.volume in crown-config.js, applied to the bus they all share. */
 function buildAudioChain(){
   audioBus = audioCtx.createGain();
   audioBus.gain.value = 1;
@@ -973,7 +974,15 @@ function buildAudioChain(){
   // step up starts clipping the sparkle at 44.1kHz, so this is where it stops.
   const makeup = audioCtx.createGain();
   makeup.gain.value = 1.05;
-  audioBus.connect(lim).connect(makeup).connect(audioCtx.destination);
+  // One knob for every generated sound: tones.volume in crown-config.js. It
+  // sits AFTER the limiter on purpose — set on the bus in front of it, the
+  // compression hands most of the reduction straight back (measured: 0.6 in
+  // came out barely 1 dB quieter). Here, 0.6 really is 0.6. Guarded: a stale
+  // cached config without a tones section must fall back to full volume,
+  // never to a broken chain and no sound at all.
+  const master = audioCtx.createGain();
+  master.gain.value = (C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1;
+  audioBus.connect(lim).connect(makeup).connect(master).connect(audioCtx.destination);
 }
 // Speech has its own gate, separate from Web Audio's: a television can be happy
 // to play the chimes and still refuse to talk until it has been touched, and it

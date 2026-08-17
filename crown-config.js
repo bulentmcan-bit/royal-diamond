@@ -120,6 +120,19 @@ window.CROWN = {
     volume: 0.6
   },
 
+  /* The generated tones — the fifteen-minute chime, the over-the-limit alarm
+     and the crown fanfare. They are synthesised at full scale so the limiter
+     they pass through can do its work; this one number is then the last gain
+     in the chain they all share — after the limiter, where a level set in
+     front of it would mostly be compressed straight back — on reception's
+     laptop and the wall boards alike, so the whole set is turned up or down
+     together. Tune it here, by ear in
+     the salon, not in the pages — and quieter is fine, silent is not: an
+     alarm nobody hears is far worse than one that is too loud. */
+  tones: {
+    volume: 0.6
+  },
+
   /* Music, and how it gets out of the way.
 
      Reception's laptop feeds the Bluetooth speaker, so it is the machine that

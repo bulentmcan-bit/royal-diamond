@@ -14849,10 +14849,12 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
      was started at a station, on a board, or here. It does that whether the
      panel is open, minimised or closed: the sound is the point, not the view.
 
-     Same chain and the same near-full-scale levels as the boards use, for the
-     same reason — this has to carry across a room. Every note goes through a
-     limiter first: the alarm stacks its notes on top of each other and without
-     it the overlapping peaks would sum past full scale and tear. */
+     Same chain and the same levels as the boards use, for the same reason —
+     this has to carry across a room. Every note goes through a limiter first:
+     the alarm stacks its notes on top of each other and without it the
+     overlapping peaks would sum past full scale and tear. How loud the whole
+     set leaves is tones.volume in crown-config.js, applied to the shared bus,
+     so both machines turn up and down together. */
   var _ac=null, _bus=null;
   var _phase={};   // operator key -> {id, state}, so a sound fires on the crossing only
 
@@ -14868,7 +14870,15 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     lim.release.setValueAtTime(0.25,t);
     var makeup=_ac.createGain();
     makeup.gain.value=1.05;
-    _bus.connect(lim).connect(makeup).connect(_ac.destination);
+    // One knob for every generated sound: tones.volume in crown-config.js. It
+    // sits AFTER the limiter on purpose — set on the bus in front of it, the
+    // compression hands most of the reduction straight back (measured: 0.6 in
+    // came out barely 1 dB quieter). Here, 0.6 really is 0.6. Guarded: a stale
+    // cached config without a tones section must fall back to full volume,
+    // never to a broken chain and no sound at all.
+    var master=_ac.createGain();
+    master.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1;
+    _bus.connect(lim).connect(makeup).connect(master).connect(_ac.destination);
   }
   // Try on every gesture, not once: if the first tap is swallowed the next one
   // must still be able to bring the sound up. A laptop that has been shut and
