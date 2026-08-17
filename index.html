@@ -15395,7 +15395,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       // failsafe and the stuck-talker guard both get their chance first. It only
       // catches a duck that nothing else ever accounted for.
       watchdog:function(){
-        if(ducks>0 && Date.now()-duckedAt>45000) this.unduckAll();
+        if(ducks>0 && Date.now()-duckedAt>35000) this.unduckAll();
       }
     };
   })();
@@ -15511,30 +15511,28 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   /* An announcement is a sound, optionally a sentence, optionally a sound after
      it. The three the salon uses:
 
-       crown  fanfare                                                        — she made it
-       warn   chime  → "Canım Helen, on beş dakikan var"  (said twice) → chime
-       over   alarm  → "Canım Helen, sıradaki müşteri"    (said twice) → chime
+       crown  fanfare                                              — she made it
+       warn   chime  → "Helen, on beş dakikan var"  → chime
+       over   alarm  → "Helen, sıradaki müşteri"    → chime
 
-     The sentence is said twice, back to back with nothing between the two: the
-     first time is what makes the room look up, the second is the one it
-     actually hears. Both are inside the one announcement, so a technician's
-     name never arrives split across two of them.
+     The sentence is said ONCE. It used to be said twice to get a mumbling
+     speech engine through a loud room; the recorded voice is clear enough
+     that the repeat only made every alarm drag on.
 
      Only one at a time, and the music is held down for the whole of it — from
-     the first note to the last, both sentences included — so nothing is ever
-     half buried under a song. */
+     the first note to the last — so nothing is ever half buried under a
+     song. */
   var _queue=[], _talking=false, _talkingSince=0;
   function announce(spec){
     // One announcement that gets stuck must never take the rest of the day's
     // alarms down with it. Anything still "speaking" after longer than an
     // announcement can possibly last has the floor taken back off it — silence
     // that nobody can see is the worst way for this to fail.
-    // Longer than it was, because an announcement is now longer than it was:
-    // three seconds of silence in front and three behind sit either side of it,
-    // and the sentence itself is said twice.
+    // Sized for the whole of one: three seconds of silence in front and three
+    // behind sit either side of the chimes and the single spoken line.
     // This has to outlast the failsafe in pump(), or it would take the floor off
     // an announcement that is still perfectly well running.
-    if(_talking && Date.now()-_talkingSince>40000){ _talking=false; Music.unduckAll(); }
+    if(_talking && Date.now()-_talkingSince>33000){ _talking=false; Music.unduckAll(); }
     if(_queue.length>=6) return;   // a backlog nobody could follow anyway
     _queue.push(spec);
     pump();
@@ -15561,10 +15559,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // never calls back, a chain of timers a throttled tab runs late. The music
     // being left off for the rest of the afternoon is exactly as bad as an
     // alarm never sounding, and just as invisible from the floor.
-    //   3s in front + longest lead + say()'s own 7s ceiling TWICE, the sentence
-    //   being said twice + tail + 3s behind, with room to spare, so it never
-    //   fires on an announcement still running.
-    failsafe=setTimeout(release, C.music.leadGapMs + 27000 + C.music.holdMs);
+    //   3s in front + longest lead + say()'s own ceiling once + tail + 3s
+    //   behind, with room to spare, so it never fires on an announcement
+    //   still running — but not a second longer than that spare needs to be:
+    //   this is how long the music stays buried if something hangs.
+    failsafe=setTimeout(release, C.music.leadGapMs + 20000 + C.music.holdMs);
     // Three seconds of silence before the first note. The music stopping is
     // itself the signal — the room looks up, and the chime lands in a quiet
     // room rather than over the top of a chorus.
@@ -15574,12 +15573,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       setTimeout(function(){
         try{
           if(!it.text){ finishTail(); return; }
-          // Twice, straight through, with no note between them — the closing
-          // sound comes only after the second one has finished. The second is
-          // asked for a tick later rather than inside the first one's own end
-          // handler: Chrome quietly drops a speak() made from there, which
-          // would lose the repeat.
-          say(it.text, function(){ setTimeout(function(){ say(it.text, finishTail, it.audio); }, 0); }, it.audio);
+          // Once. The line used to be said twice to get through the old speech
+          // engine's mumble; the recorded voice is clear enough that the
+          // repeat only made announcements drag.
+          say(it.text, finishTail, it.audio);
         }catch(e){ release(); }
         function finishTail(){
           var tail=0;
@@ -15597,7 +15594,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
      reach her last fifteen minutes: a wait of unknown length during a shift,
      and flatly impossible in the evening when there is nobody running. So one
      tap plays both announcements, straight through, exactly as the room gets
-     them — the same voice and tones, each line said twice, the music out from
+     them — the same voice and tones, each line once, the music out from
      three seconds before to three seconds after.
 
      It is unlocked one machine at a time, not for everybody. Opening the app
