@@ -14666,6 +14666,14 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
    ever a sound source, never something to look at. */
 #cbm-music{margin:8px 10px 0;padding:8px 9px;border-radius:10px;
   border:1px solid #2a2a22;background:#1c1a14}
+/* One tap that brings the music back, whatever state it is in — play if it
+   can, reconnect if it must, ask for the folder if all else is lost. Gold and
+   first in the strip, because "the room is silent" is the one music problem
+   reception actually has, and she should not need to know about folders. */
+#cbm-music #mus-start{display:none;width:100%;margin-bottom:7px;border:none;border-radius:9px;
+  padding:10px;cursor:pointer;background:#d4a96a;color:#14120d;
+  font-family:inherit;font-weight:800;font-size:.82rem}
+#cbm-music #mus-start:hover{background:#e3bc82}
 #cbm-music .mus-top{display:flex;align-items:center;gap:7px}
 #cbm-music button{flex:none;cursor:pointer;border-radius:8px;padding:5px 9px;
   border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
@@ -14745,6 +14753,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       for every station play here, on this laptop</span></div>
   <div id="cbm-test" onclick="cbmTest()">🔊 Test</div>
   <div id="cbm-music">
+    <button id="mus-start" onclick="musStart()">▶ Müziği başlat</button>
     <div class="mus-top">
       <button id="mus-play" onclick="musToggle()" title="Çal / duraklat">▶</button>
       <button id="mus-next" onclick="musNext()" title="Sonraki">⏭</button>
@@ -15084,6 +15093,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var el=null, wanted=false, ducks=0, duckedAt=0;
     var fade=null, cur=0;
     var tracks=[], order=[], at=-1, url=null, dirName='', fails=0, scanning=false;
+    var note='', noteT=null;   // a short-lived line in the title slot: what just went wrong
 
     function audio(){
       if(el) return el;
@@ -15315,8 +15325,44 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
           useHandle(h,false);
         });
       },
+      // Answers with the truth: true only if the saved folder came back AND
+      // there is something in it to play. Every other outcome — no saved
+      // handle in IndexedDB, permission refused, a stale handle throwing, a
+      // folder that scans empty — is false, so the caller can fall through to
+      // the picker instead of leaving a dead button. That silent dead button
+      // is exactly what left the salon without music on 17 Aug: the folder
+      // NAME survived in localStorage, the handle itself did not, and
+      // reconnect had nothing to reconnect and nothing to say about it.
       reconnect:function(){
-        savedDir(function(h){ if(h) useHandle(h,true); });
+        return new Promise(function(res){
+          savedDir(function(h){
+            if(!h) return res(false);
+            Promise.resolve(useHandle(h,true))
+              .then(function(ok){ res(!!ok && tracks.length>0); },
+                    function(){ res(false); });
+          });
+        });
+      },
+      // Forget a remembered folder that cannot be brought back, name and
+      // handle both — otherwise needsPermission() keeps steering every tap
+      // into the same failed reconnect forever.
+      forget:function(){
+        tracks=[]; order=[]; at=-1; dirName='';
+        try{ localStorage.removeItem('rdns_cbm_musicdir'); }catch(e){}
+        idb(function(db){
+          if(!db) return;
+          try{ db.transaction('h','readwrite').objectStore('h').delete('dir'); }catch(e){}
+        });
+        paintMusic();
+      },
+      // Read with no argument, set with one. Shows in the title slot for a few
+      // seconds, then the ordinary states take the line back.
+      note:function(t){
+        if(t===undefined) return note;
+        note=t||'';
+        clearTimeout(noteT);
+        if(note) noteT=setTimeout(function(){ note=''; paintMusic(); },8000);
+        paintMusic();
       },
       needsPermission:function(){
         return !tracks.length && !!(localStorage.getItem('rdns_cbm_musicdir')||'');
@@ -15384,7 +15430,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(!b||!t) return;
     var on=Music.wanted();
     b.textContent = on ? '⏸' : '▶';
-    if(Music.scanning()) t.textContent='Klasör taranıyor…';
+    // What just went wrong outranks the ordinary states while it is fresh —
+    // a button that fails silently is how the salon ended up without music.
+    if(Music.note()) t.textContent=Music.note();
+    else if(Music.scanning()) t.textContent='Klasör taranıyor…';
     else if(Music.needsPermission()) t.textContent='Klasöre erişim izni gerekiyor';
     else if(!Music.hasList()) t.textContent='Müzik klasörü seçilmedi';
     else if(!on) t.textContent='Duraklatıldı';
@@ -15402,6 +15451,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var pickBtn=document.querySelector('#cbm-music .mus-set');
     if(pickBtn) pickBtn.textContent = Music.needsPermission()
       ? '🎵 Klasörü yeniden bağla' : '🎵 Müzik klasörü seç';
+    // The big start bar shows whenever the room is quiet, and only then —
+    // while the music is actually playing (or the folder is mid-scan) it is
+    // out of the way.
+    var sb=document.getElementById('mus-start');
+    if(sb) sb.style.display = (Music.playing() || Music.scanning()) ? 'none' : 'block';
   }
   window.musToggle  =function(){ if(Music.wanted()) Music.pause(); else { unlockAudio(); Music.play(); } };
   window.musNext    =function(){ Music.next(); };
@@ -15417,8 +15471,37 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     unlockAudio();
     // The same button does both jobs: a folder already known only needs its
     // permission asked for again, and asking is far less to do than finding it
-    // on the stick a second time.
-    if(Music.needsPermission()) Music.reconnect();
+    // on the stick a second time. But a remembered folder that cannot be
+    // brought back must NEVER leave the button dead: forget it, say so, and
+    // go straight to the picker. If the browser will not open the picker this
+    // late in the tap, the message and the relabelled button carry the next
+    // tap directly there.
+    if(Music.needsPermission()){
+      Music.reconnect().then(function(ok){
+        if(ok) return;
+        Music.forget();
+        Music.note('Kayıtlı klasöre ulaşılamadı — yeniden seçin');
+        Music.pick();
+      });
+    }
+    else Music.pick();
+  };
+  // The one-tap rescue: play if it can, reconnect if it must, ask for the
+  // folder if all else is lost. wanted is set first, so the moment tracks
+  // arrive — from the reconnect or from the picker — the music starts by
+  // itself; reception taps once and never hears the word folder.
+  window.musStart=function(){
+    unlockAudio();
+    Music.play();
+    if(Music.hasList()) return;
+    if(Music.needsPermission()){
+      Music.reconnect().then(function(ok){
+        if(ok) return;
+        Music.forget();
+        Music.note('Kayıtlı klasöre ulaşılamadı — klasörü seçin');
+        Music.pick();
+      });
+    }
     else Music.pick();
   };
   window.musFromInput=function(inp){
