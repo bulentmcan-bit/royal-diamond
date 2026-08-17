@@ -107,13 +107,17 @@ window.CROWN = {
      as "issa" — so the name always follows a word that can be sacrificed.
 
      pitch and rate are left where the English voice had them. A Turkish voice
-     may want retuning; that is done by ear, not guessed at here. */
+     may want retuning; that is done by ear, not guessed at here.
+
+     volume sets the level of the recorded announcements (the voice/*.mp3
+     files) as well as the speech-engine fallback — tune it here, by ear in
+     the salon, not in the pages. */
   voice: {
     prefer: ['Yelda', 'Emel', 'Filiz', 'Google Türkçe', 'Türkçe', 'Turkish'],
     lang:   'tr-TR',
     pitch:  1.1,
     rate:   0.95,
-    volume: 1
+    volume: 0.6
   },
 
   /* Music, and how it gets out of the way.
