@@ -100,11 +100,14 @@ window.CROWN = {
      announcement is how the room is told, and it must always be said. See
      pickVoice().
 
-     The throwaway word in front of each announcement (see the announce()
-     calls) is still there for a real reason. Every announcement opens with the
-     speech engine fading up from silence and the Bluetooth speaker waking, and
-     both eat the first syllable. A name must never go first, or "Lissa" arrives
-     as "issa" — so the name always follows a word that can be sacrificed.
+     The Bluetooth speaker wakes from silence by eating the first ~third of a
+     second of whatever it is handed, so a name must never be the first thing
+     in the stream or "Lissa" arrives as "issa". The recordings answer this
+     with 400ms of real silence baked into the START of every voice/*.mp3 —
+     the wake-up eats the silence, and the line itself is just the name and
+     the message. The speech-engine fallback cannot carry leading silence, so
+     THERE the old protection stands: its announce() texts still open with a
+     throwaway word ("Canım") that can be sacrificed instead of the name.
 
      pitch and rate are left where the English voice had them. A Turkish voice
      may want retuning; that is done by ear, not guessed at here.
