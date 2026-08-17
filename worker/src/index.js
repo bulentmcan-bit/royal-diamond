@@ -60,7 +60,35 @@ function sameKey(a, b) {
 const reply = (body, status) =>
   new Response(body, { status, headers: { 'cache-control': 'no-store' } });
 
+/* ── the 06:00 appointment reminders ─────────────────────────────────────────
+   The cron fires at 03:00 AND 04:00 UTC (see wrangler.toml), because 06:00 in
+   the salon is a different UTC hour summer and winter. The decision of which
+   firing is real belongs to the timezone database, never to a fixed offset —
+   a hard-coded "+3" is exactly the bug that would move the reminders to five
+   in the morning the week the clocks go back. */
+function nicosiaHour(now) {
+  return Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Nicosia', hour: 'numeric', hour12: false
+  }).format(now));
+}
+
+async function sendMorningReminders(env) {
+  // Filled in when the 360dialog channel is live: read today's appointments
+  // out of Firebase and send each customer the approved randevu_hatirlatma
+  // template. Until then, the six-o'clock firing only says it was here — so
+  // the schedule can be watched in the logs across a real clock change before
+  // anything rides on it.
+  console.log('[reminders] 06:00 in the salon — sender not wired up yet');
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    // Two firings a day arrive here; the one for which it is actually six in
+    // the morning at the salon does the work, the other leaves quietly.
+    if (nicosiaHour(new Date(event.scheduledTime)) !== 6) return;
+    await sendMorningReminders(env);
+  },
+
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname !== '/p') return reply('no', 404);

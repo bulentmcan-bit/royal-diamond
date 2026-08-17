@@ -5,3 +5,13 @@ name = "rd-buttons"
 main = "src/index.js"
 compatibility_date = "2026-01-01"
 workers_dev = true
+
+# The morning reminders. Cloudflare cron speaks only UTC, and 06:00 at the
+# salon is not one UTC hour: Northern Cyprus moved back to seasonal clocks in
+# 2017, so six in the morning is 03:00 UTC in summer and 04:00 UTC in winter.
+# Both hours are scheduled, and the worker itself asks what time it is in
+# Asia/Nicosia — the firing that is not 06:00 there leaves without doing
+# anything. Exactly one of the two can be six o'clock on any given day, the
+# clock-change Sundays included, so a reminder can never go out twice.
+[triggers]
+crons = ["0 3 * * *", "0 4 * * *"]
