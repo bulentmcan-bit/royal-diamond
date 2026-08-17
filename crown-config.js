@@ -120,7 +120,7 @@ window.CROWN = {
     lang:   'tr-TR',
     pitch:  1.1,
     rate:   0.95,
-    volume: 0.36
+    volume: 0.396
   },
 
   /* The generated tones — the fifteen-minute chime, the over-the-limit alarm
@@ -133,7 +133,7 @@ window.CROWN = {
      the salon, not in the pages — and quieter is fine, silent is not: an
      alarm nobody hears is far worse than one that is too loud. */
   tones: {
-    volume: 0.36
+    volume: 0.396
   },
 
   /* The boss ↔ reception message presets — the three one-tap buttons above
