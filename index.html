@@ -16147,14 +16147,16 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   font-size:clamp(1.2rem,3.5vw,1.6rem);letter-spacing:.08em;
   box-shadow:0 10px 30px rgba(0,0,0,.5)}
 #msg-ovl button:hover{background:#e3bc82}
-/* The panel messages are written from. A slide-over on the right, styled like
-   the Crown Board panel next to it; unlike the overlay above, this one is
-   freely closable — it is a tool, not a delivery. */
+/* The chat panel. A slide-over on the right, styled like the Crown Board
+   panel next to it, laid out the way every phone has taught both of them a
+   conversation looks: the other person on the left, this machine's own words
+   on the right, newest at the bottom, writing at the bottom. Unlike the
+   overlay above, this one is freely closable — it is a tool, not a delivery. */
 #msg-panel{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:9995;display:none;
-  width:340px;max-width:calc(100vw - 24px);max-height:min(84vh,700px);overflow-y:auto;
-  background:#14120d;border:1.5px solid #d4a96a;border-radius:14px;
+  flex-direction:column;width:340px;max-width:calc(100vw - 24px);height:min(84vh,700px);
+  overflow:hidden;background:#14120d;border:1.5px solid #d4a96a;border-radius:14px;
   box-shadow:0 14px 40px rgba(0,0,0,.45);font-family:Nunito,'Segoe UI',sans-serif}
-#msg-panel.on{display:block}
+#msg-panel.on{display:flex}
 #msg-head{position:sticky;top:0;z-index:1;background:#14120d;color:#d4a96a;padding:10px 12px;
   font-weight:800;font-size:.86rem;display:flex;align-items:center;gap:6px;
   border-bottom:1px solid rgba(212,169,106,.25)}
@@ -16163,46 +16165,49 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 #msg-head .x{cursor:pointer;font-size:1.05rem;opacity:.7;line-height:1;padding:2px 7px;
   border-radius:6px;user-select:none}
 #msg-head .x:hover{opacity:1;background:rgba(212,169,106,.14)}
-#msg-compose{padding:10px 10px 4px}
-#msg-presets{display:flex;gap:6px;margin-bottom:8px}
-#msg-presets button{flex:1;min-width:0;padding:9px 4px;border-radius:9px;cursor:pointer;
-  border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
-  font-family:inherit;font-weight:800;font-size:.74rem;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-#msg-presets button:hover{background:rgba(212,169,106,.24)}
-#msg-text{display:block;width:100%;box-sizing:border-box;min-height:64px;resize:vertical;
-  border-radius:9px;border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
-  padding:9px 11px;font-family:inherit;font-size:.86rem;font-weight:700}
-#msg-text::placeholder{color:#8d8574;font-weight:600}
-#msg-send{display:block;width:100%;margin-top:7px;padding:11px;border:none;border-radius:9px;
-  cursor:pointer;background:#d4a96a;color:#14120d;font-family:inherit;font-weight:800;
-  font-size:.9rem}
-#msg-send:hover{background:#e3bc82}
-#msg-status{min-height:1.1em;padding:6px 2px 2px;color:#8d8574;font-size:.72rem;font-weight:700}
-#msg-status.ok{color:#5fcb8c}
-#msg-hist{padding:4px 10px 10px}
-#msg-hist .h-ttl{color:#d4a96a;font-size:.7rem;font-weight:800;letter-spacing:.04em;
-  padding:6px 2px 4px;border-top:1px solid rgba(212,169,106,.18)}
-.msg-item{border:1px solid #2a2a22;background:#1c1a14;border-radius:10px;
-  padding:7px 9px;margin-bottom:6px}
-.msg-item.mine{border-color:rgba(212,169,106,.35)}
-.msg-item.unread{border-color:rgba(242,112,139,.6);background:rgba(242,112,139,.08)}
-.msg-item .top{display:flex;align-items:baseline;gap:8px;font-size:.64rem;font-weight:800}
-.msg-item .top .w{color:#d4a96a}
-.msg-item.mine .top .w{color:#8d8574}
-.msg-item .top .t{margin-left:auto;color:#6d6559;font-weight:700;font-variant-numeric:tabular-nums}
-.msg-item .body{color:#f3e3c8;font-size:.82rem;font-weight:700;margin:3px 0 2px;
-  overflow-wrap:break-word;white-space:pre-wrap}
-.msg-item .st{color:#6d6559;font-size:.62rem;font-weight:700}
-.msg-item .st.seen{color:#5fcb8c}
-.msg-item .st.unread{color:#f2708b}
-.msg-item .ok-mini{margin-top:5px;padding:6px 12px;border-radius:8px;cursor:pointer;
+/* The conversation itself. */
+#msg-chat{flex:1;min-height:0;overflow-y:auto;padding:10px;display:flex;
+  flex-direction:column;gap:6px}
+#msg-chat .empty{margin:auto;color:#8d8574;font-size:.8rem;font-weight:700}
+.msg-b{max-width:82%;border-radius:12px;padding:7px 10px;font-size:.84rem;font-weight:700;
+  color:#f3e3c8;overflow-wrap:break-word;white-space:pre-wrap}
+.msg-b.their{align-self:flex-start;background:#1c1a14;border:1px solid #2a2a22;
+  border-bottom-left-radius:4px}
+.msg-b.mine{align-self:flex-end;background:rgba(212,169,106,.16);
+  border:1px solid rgba(212,169,106,.4);border-bottom-right-radius:4px}
+.msg-b.their.unread{border-color:rgba(242,112,139,.6);background:rgba(242,112,139,.08)}
+.msg-b .meta{display:flex;gap:7px;justify-content:flex-end;align-items:baseline;
+  margin-top:3px;font-size:.6rem;font-weight:700;color:#6d6559;
+  font-variant-numeric:tabular-nums}
+.msg-b .meta .rd{color:#8d8574}
+.msg-b .meta .rd.seen{color:#5fcb8c}
+.msg-b .meta .rd.unread{color:#f2708b}
+.msg-b .ok-mini{display:block;margin-top:5px;padding:6px 12px;border-radius:8px;cursor:pointer;
   border:1px solid rgba(212,169,106,.55);background:rgba(212,169,106,.12);color:#d4a96a;
   font-family:inherit;font-weight:800;font-size:.68rem}
-.msg-item .ok-mini:hover{background:rgba(212,169,106,.24)}
+.msg-b .ok-mini:hover{background:rgba(212,169,106,.24)}
+/* Writing happens at the bottom, where thumbs already expect it. */
+#msg-foot{border-top:1px solid rgba(212,169,106,.25);padding:8px 10px 10px;background:#14120d}
+#msg-presets{display:flex;gap:6px;margin-bottom:7px}
+#msg-presets button{flex:none;max-width:33%;padding:5px 11px;border-radius:20px;cursor:pointer;
+  border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.68rem;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+#msg-presets button:hover{background:rgba(212,169,106,.24)}
+#msg-row{display:flex;gap:7px;align-items:flex-end}
+#msg-text{flex:1;min-width:0;box-sizing:border-box;min-height:40px;max-height:110px;resize:none;
+  border-radius:9px;border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
+  padding:10px 11px;font-family:inherit;font-size:.86rem;font-weight:700}
+#msg-text::placeholder{color:#8d8574;font-weight:600}
+#msg-send{flex:none;padding:10px 16px;border:none;border-radius:9px;cursor:pointer;
+  background:#d4a96a;color:#14120d;font-family:inherit;font-weight:800;font-size:.86rem}
+#msg-send:hover{background:#e3bc82}
+/* Only bad news lives here — a send that failed. Good news is on the bubble. */
+#msg-status{padding:4px 2px 0;color:#f2708b;font-size:.7rem;font-weight:700}
+#msg-status:empty{display:none}
 @media(max-width:560px){
   #msg-panel{right:0;top:auto;bottom:0;transform:none;width:100vw;max-width:100vw;
-    max-height:88vh;border-radius:14px 14px 0 0;border-left:none;border-right:none}
+    height:88vh;border-radius:14px 14px 0 0;border-left:none;border-right:none}
 }
 </style>
 <div id="msg-ovl">
@@ -16215,20 +16220,22 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   <div id="msg-head"><span class="ttl">💬 Mesaj</span>
     <span class="dev" id="msg-dev"></span>
     <span class="x" onclick="msgClose()" title="Kapat">✕</span></div>
-  <div id="msg-compose">
+  <div id="msg-chat"></div>
+  <div id="msg-foot">
     <div id="msg-presets"></div>
-    <textarea id="msg-text" maxlength="500" placeholder="Mesaj yazın…"></textarea>
-    <button id="msg-send" onclick="msgSend()">Gönder</button>
+    <div id="msg-row">
+      <textarea id="msg-text" maxlength="500" rows="1" placeholder="Mesaj yazın…"></textarea>
+      <button id="msg-send" onclick="msgSend()">Gönder</button>
+    </div>
     <div id="msg-status"></div>
   </div>
-  <div id="msg-hist"><div class="h-ttl">SON MESAJLAR</div><div id="msg-list"></div></div>
 </div>
 <script>
 (function(){
   var C = window.CROWN || {};
   var PATH   = 'rdns_msg_v1';   // never anywhere under timers/ — that path is world-readable
-  var KEEP   = 50;              // messages kept in Firebase; older are pruned after each send
-  var SHOW   = 20;              // messages the history list shows
+  var KEEP   = 50;              // messages kept in Firebase, pruned after each
+                                // send — and all fifty are the conversation
   var FRESH_MS = 8*3600000;     // older than this never pops up — it goes to history unread,
                                 // so a laptop opened the next morning is not ambushed
   var NAMES  = { owner:'Bülent', reception:'Resepsiyon' };
@@ -16260,7 +16267,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
                        // re-firing can never show the same message twice
   var queue=[];        // keys waiting for the full-screen overlay, oldest first
   var showingKey=null;
-  var lastSentKey=null;
+  var stickBottom=false;   // the next render pins the chat to the newest message
 
   function fmtT(ts){
     if(!ts) return '—';
@@ -16366,6 +16373,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var p=document.getElementById('msg-panel');
     if(!p) return;
     p.classList.add('on');
+    stickBottom=true;   // a chat opens at its newest message, always
     render();
     try{ document.getElementById('msg-text').focus(); }catch(e){}
   };
@@ -16374,11 +16382,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(p) p.classList.remove('on');
   };
 
-  function setStatus(text, ok){
+  function setStatus(text){
     var el=document.getElementById('msg-status');
-    if(!el) return;
-    el.textContent=text||'';
-    el.classList.toggle('ok', !!ok);
+    if(el) el.textContent=text||'';
   }
   function send(text){
     text=String(text||'').trim();
@@ -16386,15 +16392,14 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(!db){ setStatus('Giriş yapılmadan gönderilemez'); return; }
     var ref;
     try{ ref=db.ref(PATH).push(); }catch(e){ setStatus('Gönderilemedi'); return; }
-    lastSentKey=ref.key;
-    setStatus('Gönderiliyor…');
+    setStatus('');
+    stickBottom=true;   // your own words always come into view
     ref.set({
       from: ROLE,
       text: text.slice(0,500),
       ts:   firebase.database.ServerValue.TIMESTAMP,   // the server's clock, never this device's
       seen: 0
     }).then(function(){
-      setStatus('Gönderildi', true);
       prune();
     }).catch(function(e){
       console.warn('[msg] send failed:',e);
@@ -16420,42 +16425,43 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     }).catch(function(e){ console.warn('[msg] prune read failed:',e); });
   }
 
-  /* ── history + badge + sent-status ── */
+  /* ── the conversation + the badge ── */
   function render(){
     // The sidebar badge: messages from the other side not yet read here —
-    // including the stale ones that went straight to history without a pop-up.
+    // including the stale ones that went straight to the chat without a pop-up.
     var unread=msgs.filter(function(m){ return m.from===OTHER && !m.seen; }).length;
     var b=document.getElementById('msg-badge');
     if(b){ b.textContent=String(unread); b.style.display=unread?'':'none'; }
 
-    var st=document.getElementById('msg-status');
-    if(st && lastSentKey){
-      var mine=null;
-      for(var i=0;i<msgs.length;i++) if(msgs[i].key===lastSentKey){ mine=msgs[i]; break; }
-      if(mine) setStatus(mine.seen ? 'Okundu '+fmtT(mine.seen) : 'Gönderildi', !!mine.seen);
+    var chat=document.getElementById('msg-chat');
+    if(!chat) return;
+    // Whether the reader was already at the newest message, judged BEFORE the
+    // rebuild moves everything under them.
+    var atBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 90;
+    if(!msgs.length){
+      chat.innerHTML='<div class="empty">Henüz mesaj yok</div>';
+      return;
     }
-
-    var list=document.getElementById('msg-list');
-    if(!list) return;
-    var recent=msgs.slice(-SHOW).reverse();
-    if(!recent.length){ list.innerHTML='<div class="msg-item"><div class="body" style="color:#8d8574">Henüz mesaj yok</div></div>'; return; }
-    list.innerHTML=recent.map(function(m){
+    chat.innerHTML=msgs.map(function(m){
       var mine=m.from===ROLE;
       var isUnread=!mine && !m.seen;
-      var state;
-      if(m.seen)       state='<div class="st seen">Okundu '+esc(fmtT(m.seen))+'</div>';
-      else if(mine)    state='<div class="st">Henüz okunmadı</div>';
-      else             state='<div class="st unread">Okunmadı</div>'+
-                             '<button class="ok-mini" data-k="'+esc(m.key)+'">OKUNDU</button>';
-      return '<div class="msg-item'+(mine?' mine':'')+(isUnread?' unread':'')+'">'+
-        '<div class="top"><span class="w">'+esc(NAMES[m.from]||m.from)+'</span>'+
-        '<span class="t">'+esc(fmtT(m.ts))+'</span></div>'+
-        '<div class="body">'+esc(m.text)+'</div>'+state+'</div>';
+      var rd='';
+      if(mine) rd=m.seen ? '<span class="rd seen">Okundu '+esc(fmtT(m.seen))+'</span>'
+                         : '<span class="rd">Gönderildi</span>';
+      else if(isUnread) rd='<span class="rd unread">Okunmadı</span>';
+      // The stale ones the overlay never showed still need a way to be read.
+      var mini=isUnread ? '<button class="ok-mini" data-k="'+esc(m.key)+'">OKUNDU</button>' : '';
+      return '<div class="msg-b '+(mine?'mine':'their')+(isUnread?' unread':'')+'">'+
+        esc(m.text)+
+        '<div class="meta">'+rd+'<span>'+esc(fmtT(m.ts))+'</span></div>'+mini+
+        '</div>';
     }).join('');
-    // The stale ones the overlay never showed still need a way to be read.
-    Array.prototype.forEach.call(list.querySelectorAll('.ok-mini'),function(btn){
+    Array.prototype.forEach.call(chat.querySelectorAll('.ok-mini'),function(btn){
       btn.onclick=function(){ markSeen(btn.getAttribute('data-k')); };
     });
+    // Pinned to the newest message, the way a chat is read — but never yanked
+    // down while somebody has deliberately scrolled up into the past.
+    if(atBottom || stickBottom){ chat.scrollTop=chat.scrollHeight; stickBottom=false; }
   }
 
   /* ── listening ─────────────────────────────────────────────────────────
