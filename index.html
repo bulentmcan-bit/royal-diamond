@@ -14689,6 +14689,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 #cbm-music .mus-where{margin-top:4px;font-size:.6rem;color:#6d6559;text-align:center;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mus-pick{display:none}
+/* The boss's master levels for the salon speaker. Gold-edged so it reads as
+   management's, and labelled as the ROOM's sound — the one mistake this panel
+   must not invite is thinking it is a local volume knob. */
+#cbm-remote{margin:8px 10px 0;padding:8px 9px;border-radius:10px;
+  border:1px solid rgba(212,169,106,.45);background:#1a150e}
+#cbm-remote .r-ttl{color:#d4a96a;font-size:.68rem;font-weight:800;letter-spacing:.04em}
+#cbm-remote .r-sub{color:#8d8574;font-size:.6rem;font-weight:700;margin-bottom:4px}
+#cbm-remote label{display:block;color:#f3e3c8;font-size:.68rem;font-weight:800;margin-top:5px}
+#cbm-remote input[type=range]{width:100%;accent-color:#d4a96a;height:16px}
+#cbm-remote .r-warn{color:#f2708b;font-size:.66rem;font-weight:800;padding-top:4px}
+#cbm-remote .r-warn:empty{display:none}
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
@@ -14767,6 +14778,19 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
          missing. -->
     <input id="mus-pick" type="file" webkitdirectory directory multiple
            accept="audio/*" onchange="musFromInput(this)">
+  </div>
+  <!-- The three master levels for the SALON — what the room hears from
+       reception's speaker, adjusted from the boss's laptop over Firebase
+       (rdns_audio_v1). Rendered ONLY where the device role says owner (the
+       same ?role= flag the messaging feature uses); reception's laptop and
+       every other machine show nothing here and look exactly as before. -->
+  <div id="cbm-remote" style="display:none">
+    <div class="r-ttl">📢 SALON HOPARLÖRÜ</div>
+    <div class="r-sub">Uzaktan ayar — bu makinenin değil, salondaki sesin seviyesi</div>
+    <label>Müzik <input type="range" min="0" max="100" step="1" id="raud-music"></label>
+    <label>Anons sesi <input type="range" min="0" max="100" step="1" id="raud-voice"></label>
+    <label>Zil sesi <input type="range" min="0" max="100" step="1" id="raud-tones"></label>
+    <div class="r-warn" id="raud-warn"></div>
   </div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
@@ -14868,7 +14892,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
      overlapping peaks would sum past full scale and tear. How loud the whole
      set leaves is tones.volume in crown-config.js, applied to the shared bus,
      so both machines turn up and down together. */
-  var _ac=null, _bus=null;
+  var _ac=null, _bus=null, _toneGain=null;
   var _phase={};   // operator key -> {id, state}, so a sound fires on the crossing only
 
   function audioReady(){ return !!(_ac && _bus && _ac.state==='running'); }
@@ -14883,16 +14907,23 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     lim.release.setValueAtTime(0.25,t);
     var makeup=_ac.createGain();
     makeup.gain.value=1.05;
-    // One knob for every generated sound: tones.volume in crown-config.js. It
-    // sits AFTER the limiter on purpose — set on the bus in front of it, the
-    // compression hands most of the reduction straight back (measured: 0.6 in
-    // came out barely 1 dB quieter). Here, 0.6 really is 0.6. Guarded: a stale
-    // cached config without a tones section must fall back to full volume,
-    // never to a broken chain and no sound at all.
-    var master=_ac.createGain();
-    master.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1;
-    _bus.connect(lim).connect(makeup).connect(master).connect(_ac.destination);
+    // One knob for every generated sound: tones.volume. It sits AFTER the
+    // limiter on purpose — set on the bus in front of it, the compression
+    // hands most of the reduction straight back (measured: 0.6 in came out
+    // barely 1 dB quieter). Here, 0.6 really is 0.6. Guarded: a stale cached
+    // config without a tones section must fall back to full volume, never to
+    // a broken chain and no sound at all. Module-scoped, because the level
+    // can now change mid-day from the boss's laptop via rdns_audio_v1.
+    _toneGain=_ac.createGain();
+    _toneGain.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1;
+    _bus.connect(lim).connect(makeup).connect(_toneGain).connect(_ac.destination);
   }
+  // Re-read tones.volume into the live chain — called when a remote level
+  // arrives. Harmless before the chain exists: buildChain reads the same
+  // C.tones.volume when it is finally built.
+  window.cbmApplyTones=function(){
+    try{ if(_toneGain) _toneGain.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1; }catch(e){}
+  };
   // Try on every gesture, not once: if the first tap is swallowed the next one
   // must still be able to bring the sound up. A laptop that has been shut and
   // reopened comes back suspended, which is why visibility retries too.
@@ -15497,6 +15528,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var n=parseInt(v,10);
     if(isNaN(n)) return;
     Music.setVolume(Math.max(0,Math.min(100,n)));
+    // A human moved THIS slider. Stamped so the remote master level knows
+    // which write came later — last hand on the knob wins, on the one clock
+    // the devices share (the comparison adds the server offset).
+    try{ localStorage.setItem('rdns_cbm_musicvol_ts', String(Date.now())); }catch(e){}
   };
   window.musPickFolder=function(){
     unlockAudio();
@@ -16424,6 +16459,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       ensureAudio();
       if(!_ac) return;
       if(_ac.state==='suspended'){ try{_ac.resume();}catch(e){} }
+      // Read at every ding, not at creation: the level can change mid-day
+      // from the boss's laptop.
+      try{ _gain.gain.value=(C.tones && isFinite(C.tones.volume)) ? C.tones.volume : 1; }catch(e){}
       var t0=_ac.currentTime;
       [[1318.5,0],[1760,.13],[2217.5,.26]].forEach(function(n){
         var o=_ac.createOscillator(), g=_ac.createGain();
@@ -16627,6 +16665,159 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
           firebase.auth().onAuthStateChanged(function(u){
             if(u && !u.isAnonymous) start();
           });
+          return;
+        }
+      }catch(e){}
+      setTimeout(waitFb,500);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+  else boot();
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     REMOTE AUDIO LEVELS — rdns_audio_v1
+     ---------------------------------------------------------------------
+     The salon's three sound levels — music, the spoken announcements, the
+     chimes and alarms — live in Firebase now, so the boss can turn the ROOM
+     up or down from his own laptop. Every signed-in machine applies whatever
+     is written there; reception's laptop is the one with the speaker, so
+     that is what actually changes in the salon.
+
+     The sliders are rendered ONLY where the device role (the messaging
+     feature's ?role= flag) says owner. Reception keeps her own local music
+     slider exactly as it is; when both have been touched, the LATER write
+     wins, judged on the server clock. The wall boards never sign in, cannot
+     read this key, and keep the config levels — untouched, as always.
+
+     Nothing here can fall back to silence: a missing or garbage field keeps
+     the level already in force, and the chimes being set to zero — allowed,
+     it is the boss's knob — is announced on screen, never silent.
+     ═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  var C=window.CROWN||{};
+  var PATH='rdns_audio_v1';
+  var db=null, off=0, seeded=false, lastTones=null;
+  var OWNER=false;
+  try{ OWNER = localStorage.getItem('rdns_msg_role')==='owner'; }catch(e){}
+
+  // null, undefined and '' are ABSENT, not zero — Number(null) is 0, and a
+  // missing field must never be the thing that silences a sound.
+  function num(x){
+    if(x==null || x==='') return null;
+    var n=Number(x);
+    return isFinite(n)?n:null;
+  }
+  function localMusicTs(){
+    try{ return Number(localStorage.getItem('rdns_cbm_musicvol_ts'))||0; }catch(e){ return 0; }
+  }
+  function warn(text){
+    var w=document.getElementById('raud-warn');
+    if(w) w.textContent=text||'';
+  }
+  function setSliders(v){
+    [['raud-music', v.musicVolume!=null?Math.round(v.musicVolume):null],
+     ['raud-voice', v.voiceVolume!=null?Math.round(v.voiceVolume*100):null],
+     ['raud-tones', v.tonesVolume!=null?Math.round(v.tonesVolume*100):null]
+    ].forEach(function(p){
+      var el=document.getElementById(p[0]);
+      if(el && p[1]!=null && document.activeElement!==el) el.value=p[1];
+    });
+  }
+
+  function apply(v){
+    // A field that is missing or does not parse keeps the level already in
+    // force — nothing on this path can ever default a sound to zero.
+    var vv=num(v.voiceVolume), tv=num(v.tonesVolume), mv=num(v.musicVolume), ts=num(v.ts)||0;
+    if(vv!=null && C.voice) C.voice.volume=Math.max(0,Math.min(1,vv));
+    if(tv!=null && C.tones){
+      C.tones.volume=Math.max(0,Math.min(1,tv));
+      try{ if(window.cbmApplyTones) cbmApplyTones(); }catch(e){}
+      // Zero chimes is the one setting that can cost the salon an alarm. It
+      // is allowed — it is the boss's knob — but it is never silent about it.
+      if(C.tones.volume===0){
+        warn('Zil sesi SIFIR — alarmlar ve zil ÇALMAZ!');
+        if(lastTones!==0){ try{ cbmMusic.note('🔕 Zil sesi uzaktan sıfırlandı — alarmlar çalmaz'); }catch(e){} }
+      } else warn('');
+      lastTones=C.tones.volume;
+    }
+    // Music: reception's own slider keeps working exactly as today. Whichever
+    // hand moved LAST wins — her stamp is device time, so the server offset
+    // puts both writes on the one clock before comparing.
+    if(mv!=null && ts > localMusicTs()+off){
+      try{ cbmMusic.setVolume(Math.max(0,Math.min(100,Math.round(mv)))); }catch(e){}
+    }
+    if(OWNER) setSliders(v);
+  }
+
+  var wt=null;
+  function pushLevels(){
+    if(!db) return;
+    clearTimeout(wt);
+    wt=setTimeout(function(){
+      var m=document.getElementById('raud-music'), vo=document.getElementById('raud-voice'), to=document.getElementById('raud-tones');
+      if(!m||!vo||!to) return;
+      db.ref(PATH).set({
+        musicVolume: Math.max(0,Math.min(100,Math.round(Number(m.value)||0))),
+        voiceVolume: Math.max(0,Math.min(1,(Math.round(Number(vo.value)||0))/100)),
+        tonesVolume: Math.max(0,Math.min(1,(Math.round(Number(to.value)||0))/100)),
+        ts: firebase.database.ServerValue.TIMESTAMP   // the shared clock, never this device's
+      }).catch(function(e){
+        console.warn('[audio] write failed (rules?):',e);
+        warn('Kaydedilemedi — bağlantıyı veya Firebase kuralını kontrol edin');
+      });
+    },250);
+  }
+
+  function start(){
+    if(db) return;
+    db=firebase.database();
+    try{ db.ref('.info/serverTimeOffset').on('value',function(s){ off=Number(s.val())||0; }); }catch(e){}
+    db.ref(PATH).on('value',function(snap){
+      var v=snap.val();
+      if(!v){
+        // Empty: the boss's machine writes the levels the salon is ALREADY
+        // running on, so remote control begins from today's sound — never
+        // from a guess, and never from silence.
+        if(OWNER && !seeded){
+          seeded=true;
+          var curMusic=21; try{ curMusic=cbmMusic.volume(); }catch(e){}
+          db.ref(PATH).set({
+            musicVolume: curMusic,
+            voiceVolume: (C.voice&&isFinite(C.voice.volume))?C.voice.volume:0.6,
+            tonesVolume: (C.tones&&isFinite(C.tones.volume))?C.tones.volume:0.6,
+            ts: firebase.database.ServerValue.TIMESTAMP
+          }).catch(function(e){ console.warn('[audio] seed failed (rules?):',e); });
+        }
+        return;
+      }
+      seeded=true;
+      apply(v);
+    },function(e){ console.warn('[audio] listener failed (rules?):',e); });
+  }
+
+  function boot(){
+    if(OWNER){
+      // Visible at once on the boss's machine, primed with what is in force
+      // right now, so the panel works even before Firebase has answered.
+      var el=document.getElementById('cbm-remote');
+      if(el) el.style.display='';
+      setSliders({
+        musicVolume: (function(){ try{ return cbmMusic.volume(); }catch(e){ return 21; } })(),
+        voiceVolume: (C.voice&&isFinite(C.voice.volume))?C.voice.volume:0.6,
+        tonesVolume: (C.tones&&isFinite(C.tones.volume))?C.tones.volume:0.6
+      });
+      ['raud-music','raud-voice','raud-tones'].forEach(function(id){
+        var s=document.getElementById(id);
+        if(s) s.addEventListener('input', pushLevels);
+      });
+    }
+    (function waitFb(){
+      try{
+        if(window.firebase && firebase.apps && firebase.apps.length){
+          firebase.auth().onAuthStateChanged(function(u){ if(u && !u.isAnonymous) start(); });
           return;
         }
       }catch(e){}
