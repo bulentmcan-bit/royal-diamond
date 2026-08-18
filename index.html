@@ -14915,6 +14915,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // gesture, so this is tried on every one until it takes.
     try{
       if(Music && !Music.wanted() && localStorage.getItem('rdns_cbm_musicon')==='1') Music.play();
+      // Music that is wanted but stalled — a comeback the browser refused —
+      // is restarted by the same gesture: inside a real tap the browser says yes.
+      else if(Music && Music.wanted() && !Music.playing()) Music.revive();
     }catch(e){}
     try{
       if(!_ac){
@@ -15234,7 +15237,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         url=URL.createObjectURL(f);
         a.src=url;
         a.volume=cur/100;   // whatever the ducking has it at right now, kept across the join
-        if(wanted) { var p=a.play(); if(p&&p.catch) p.catch(function(){}); }
+        // A refused play must at least repaint, so the stalled state shows
+        // instead of hiding behind the last track's title; revive() and the
+        // next real tap take it from there.
+        if(wanted) { var p=a.play(); if(p&&p.catch) p.catch(function(){ paintMusic(); }); }
         // The old blob is let go only once the element has moved off it, or the
         // element reports the release as a broken file.
         if(old) setTimeout(function(){ try{ URL.revokeObjectURL(old); }catch(e){} }, 2000);
@@ -15396,6 +15402,24 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       // catches a duck that nothing else ever accounted for.
       watchdog:function(){
         if(ducks>0 && Date.now()-duckedAt>35000) this.unduckAll();
+      },
+      // Every net above guards the VOLUME. This one guards PLAYBACK itself.
+      // A comeback play() the browser refused, a track that died mid-file, a
+      // pause from outside — any of them used to leave the element dead while
+      // wanted stayed true and the panel showed a title as if nothing were
+      // wrong. That is how a crown fanfare "killed" the music on 18 Aug: the
+      // duck and the release both worked, the element never came back, and
+      // nothing said so. Called every second from render, and again inside
+      // every real tap via unlockAudio — a browser that refuses a
+      // programmatic play still honours one made inside a gesture.
+      revive:function(){
+        if(!wanted || ducks>0 || scanning || !tracks.length) return;
+        if(!el || !el.paused) return;
+        if(at<0){ step(1); return; }
+        try{
+          var p=el.play();
+          if(p&&p.catch) p.catch(function(){ paintMusic(); });
+        }catch(e){}
       }
     };
   })();
@@ -15437,6 +15461,13 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     else if(Music.needsPermission()) t.textContent='Klasöre erişim izni gerekiyor';
     else if(!Music.hasList()) t.textContent='Müzik klasörü seçilmedi';
     else if(!on) t.textContent='Duraklatıldı';
+    // While an announcement holds the music down, say THAT — a duck used to
+    // paint exactly like ordinary playing, so a stuck one could never be told
+    // apart from a working afternoon.
+    else if(Music.ducked()>0) t.textContent='🔇 Anons çalıyor — müzik birazdan döner';
+    // And a player that is wanted but actually stopped — the state the panel
+    // used to hide behind a track title — says so, and says what fixes it.
+    else if(!Music.playing()) t.textContent='⏸ Müzik takıldı — bir dokunuş başlatır';
     // Playing with the volume at nothing looks exactly like a broken player.
     // Say which it is, rather than leaving reception to guess.
     else if(Music.volume()===0) t.textContent='Ses kısık — çalıyor';
@@ -15700,7 +15731,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     watch();
     syncSound();
     syncTest();
-    try{ Music.watchdog(); paintMusic(); }catch(e){}
+    try{ Music.watchdog(); Music.revive(); paintMusic(); }catch(e){}
     var c=counts();
     // Sound still asleep is worth saying wherever the panel is put away, or
     // nobody finds out it was silent until an alarm has already been missed.
