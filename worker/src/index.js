@@ -111,10 +111,15 @@ function smsPhone(raw) {
   return /^90\d{10}$/.test(p) ? '+' + p : null;
 }
 
-function smsText(name, time) {
-  return 'Merhaba ' + name + ', bugün saat ' + time +
-    "'de Royal Diamond Nail Studio'da randevunuz var. Değişiklik için " +
-    SMS_REPLY_NUMBER + '.';
+// The settled wording (18 Aug). Only the time changes — no name, so one
+// recording of the sentence fits every customer. Proper Turkish with accents;
+// three SMS parts, and that is accepted.
+function smsText(time) {
+  return 'Merhabalar, bugün saat ' + time +
+    "'de Royal Diamond'da randevunuz var. " +
+    'Yoğun programımız nedeniyle lütfen zamanında gelin. ' +
+    '15 dk gecikmede randevu ertelenebilir. ' +
+    'Değişiklik için bizi arayın: ' + SMS_REPLY_NUMBER;
 }
 
 // Today's sendable reminders out of the salon's data: every appointment on
@@ -135,7 +140,7 @@ function pickReminders(data, ymd, alreadySent) {
     const cl = byId[String(a.clientId)];
     const phone = smsPhone(cl && cl.phone);
     if (!cl || !phone) { skipped.push({ id: a.id, why: cl ? 'bad-phone' : 'no-client' }); return; }
-    out.push({ apptId: a.id, phone, text: smsText(String(cl.name || '').trim() || 'değerli müşterimiz', dt.slice(11, 16)) });
+    out.push({ apptId: a.id, phone, text: smsText(dt.slice(11, 16)) });
   });
   out.sort((x, y) => String(x.apptId).localeCompare(String(y.apptId)));
   return { send: out, skipped };
