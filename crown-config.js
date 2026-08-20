@@ -132,7 +132,19 @@ window.CROWN = {
     lang:   'tr-TR',
     pitch:  1.1,
     rate:   0.95,
-    volume: 0.396
+    volume: 0.396,
+    /* WHO does the talking. The line was heard twice not because anything
+       said it twice, but because two devices each said it once: reception's
+       laptop (index.html, wired to the speaker) and a wall board
+       (timers.html) both announced. One room, two mouths.
+
+       So the spoken line belongs to ONE device: reception's laptop. The wall
+       boards keep everything else — the lead chime, the tail chime, all of
+       it visual — but stay out of the sentence unless this is switched to
+       true. The boards check the flag itself, so a board running an old
+       cached copy of this file simply finds it missing and stays quiet —
+       the safe way round. */
+    boardsSpeak: false
   },
 
   /* The generated tones — the fifteen-minute chime, the over-the-limit alarm

@@ -1103,11 +1103,19 @@ function alarmOver(passes){
 }
 /* ── saying it out loud ─────────────────────────────────────────────────────
    A sound says something happened; it does not say who. This board carries
-   three technicians, so it now says the name as well: the sound to make the
+   three technicians, so it can say the name as well: the sound to make the
    room look up, then the name and the news ONCE, then the sound again for
    anyone who missed the first. The line used to be said twice to get a
    mumbling speech engine through a loud room; the recorded voice is clear
    enough that the repeat only made every alarm drag on.
+
+   By default, though, this board does NOT speak at all — chimes only. The
+   room was hearing every line twice because reception's laptop (index.html)
+   and a wall board each announced once; the spoken part now belongs to the
+   one device wired to the speaker, and the boards join in only if
+   voice.boardsSpeak in crown-config.js is set to true. Everything below —
+   say(), the voice picking, the queue — stays as the machinery for that
+   switch, and pump() is where it is asked.
 
    Which voice and how she sounds are in crown-config.js, the same settings
    reception reads, so both screens are the same person rather than two.
@@ -1209,7 +1217,14 @@ function pump(){
       setTimeout(release, Math.round(tail*1000));
     };
     try {
-      if (!it.text) return finishTail();
+      // The boards no longer say the line unless crown-config.js turns
+      // voice.boardsSpeak on: reception's laptop (index.html) is the device
+      // wired to the speaker and it already announces, so a board speaking
+      // too meant one room heard the same sentence from two mouths. Chimes,
+      // and everything visual, are untouched — only the sentence is skipped.
+      // Checked as truthy-on so a stale cached crown-config without the flag
+      // leaves the board quiet rather than doubling the room again.
+      if (!it.text || !C.voice.boardsSpeak) return finishTail();
       // Once. The line used to be said twice to get through the old speech
       // engine's mumble; the recorded voice is clear enough that the repeat
       // only made announcements drag.
