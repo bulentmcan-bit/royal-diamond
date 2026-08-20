@@ -41,7 +41,7 @@ window.CROWN = {
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
     { key:'hannah', name:'Hannah', photo:'op-hannah.png',
-      commissionPaused: true, commissionPausedSince: '2026-08-20' },
+      commissionPaused: true, commissionPausedSince: '2026-08-01' },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
   ],
 
