@@ -5191,8 +5191,8 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       }
       op.total  += amount;
       op.count  += 1;
-      const rate = DI_COMM[staffName]||0;
-      const extra = (DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
+      const rate = commPausedOn(staffName, dateKey) ? 0 : (DI_COMM[staffName]||0);
+      const extra = (rate>0 && DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
       op.commission = Math.round(op.total * rate) + extra;
       day.total = (day.ops||[]).reduce(function(s,o){return s+o.total;},0);
       dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
@@ -5231,8 +5231,8 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       if(!op) return;
       op.total = Math.max(0, op.total - amount);
       op.count = Math.max(0, op.count - 1);
-      const rate = DI_COMM[staffName]||0;
-      const extra = (DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
+      const rate = commPausedOn(staffName, dateKey) ? 0 : (DI_COMM[staffName]||0);
+      const extra = (rate>0 && DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
       op.commission = Math.round(op.total * rate) + extra;
       if(op.total===0 && op.count===0){
         day.ops = (day.ops||[]).filter(function(o){return o!==op;});
@@ -5401,6 +5401,19 @@ const DED_TYPES = {
 // only offers the two technicians on the scheme, but the commission maths has
 // to know about all of them.
 const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+// A rate in the table is not the whole answer any more: a technician can have
+// her commission STOPPED from a date (crown-config.js — commissionPaused on
+// her operator line; Hannah, from 20 Aug 2026). This asks that flag for one
+// technician and one day. Days before the pause date come back false, so
+// everything already earned stays exactly as it was; called without a day it
+// answers for right now. crown-config.js loads further down the file, so the
+// window.CROWN check also covers being asked before the roster exists.
+function commPausedOn(name, day){
+  try{
+    var c = window.CROWN;
+    return !!(c && c.commissionPausedOn && c.commissionPausedOn(name, day));
+  }catch(e){ return false; }
+}
 function dedRateOf(tech){
   if(DED_RATES[tech]!==undefined) return DED_RATES[tech];
   return TECH_COMM_RATES[tech]||0;
@@ -5441,6 +5454,10 @@ function dedIsFull(item){ return !!(DED_TYPES[item&&item.type]||{}).full; }
 function dedAmountOf(item){
   if(!item) return 0;
   if(dedIsFull(item)) return dedJobAmount(item);
+  // A cancelled commission on a day her commission was already stopped costs
+  // her nothing — there was no commission on that job to take away. The free
+  // redo above is different: that is the salary, and the pause never touches it.
+  if(commPausedOn(item.tech, item.date)) return 0;
   return Math.round(dedJobAmount(item) * dedRateOf(item.tech));
 }
 function dedItemsForMonth(monthKey){
@@ -5463,6 +5480,9 @@ function dedNoCommByTech(monthKey){
   const t = {};
   dedItemsForMonth(monthKey).forEach(function(it){
     if(dedIsFull(it)) return;         // free redo — no money came in to commission
+    // A job on a day her commission was stopped is already out of the base;
+    // counting it here would take the same money off twice.
+    if(commPausedOn(it.tech, it.date)) return;
     t[it.tech] = (t[it.tech]||0) + dedJobAmount(it);
   });
   return t;
@@ -5503,6 +5523,7 @@ function techCommFromDays(days, monthKey){
   (days||[]).forEach(function(d){
     (d.ops||[]).forEach(function(op){
       if(!op||!op.name) return;
+      if(commPausedOn(op.name, d.date)) return;   // commission stopped that day — nothing to add
       const rate = TECH_COMM_RATES[op.name]||0;
       const comm = (op.commission && op.commission>0) ? op.commission : (op.total||0)*rate;
       if(comm>0) raw[op.name] = (raw[op.name]||0) + comm;
@@ -5766,8 +5787,13 @@ function dedPreview(){
     return;
   }
   const rate = dedRateOf(tech);
+  const dEl = document.getElementById('ded-date');
   if(full){
     el.innerHTML = 'Maaştan kesilecek: <b style="color:#c94040;">₺'+amount.toLocaleString('tr-TR')+'</b> (tutarın tamamı)';
+  }else if(commPausedOn(tech, dEl && dEl.value)){
+    // Her commission is already stopped on this day — there is nothing on the
+    // job to cancel, and the record must not promise a cut that never happens.
+    el.innerHTML = tech+' — komisyon bu tarihte zaten durdurulmuş; bu işten komisyon doğmadı, kesilecek bir şey yok. Kayıt yine de tutulur.';
   }else{
     el.innerHTML = 'Bu işin komisyonu <b style="color:#c94040;">verilmeyecek</b> — '+tech+
       ' komisyonundan ₺'+Math.round(amount*rate).toLocaleString('tr-TR')+
@@ -6226,6 +6252,16 @@ function renderSalaryPage(){
 
     staff.forEach(function(s){
       var salTRY=Math.round(toTRY(s.salary,s.cur));
+      // Commission stopped (crown-config.js — commissionPaused on her line):
+      // said in plain words next to her name, with the date it started, so a
+      // smaller figure never has to be guessed at. Anything in her commission
+      // row was earned BEFORE that date and stands.
+      var commPaused=commPausedOn(s.name);
+      var commPausedSince='';
+      try{
+        var _po=(window.CROWN&&window.CROWN.find)?window.CROWN.find(s.name):null;
+        if(_po&&_po.commissionPausedSince) commPausedSince=String(_po.commissionPausedSince).split('-').reverse().join('.');
+      }catch(e){}
       var advMap=advByCur[s.name]||{};
       var adv=Math.round(advToTRY(advMap));
       // Jobs this technician earned no commission on. The cancelled-commission
@@ -6243,7 +6279,8 @@ function renderSalaryPage(){
       cardsHtml+='<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+s.color+';border-radius:12px;padding:18px;">';
       // Header
       cardsHtml+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">';
-      cardsHtml+='<div><div style="font-weight:700;font-size:1rem;color:'+s.color+';">'+s.name+'</div>';
+      cardsHtml+='<div><div style="font-weight:700;font-size:1rem;color:'+s.color+';">'+s.name+
+        (commPaused?' <span style="font-size:0.6rem;font-weight:800;color:#c94040;border:1px solid #c94040;border-radius:6px;padding:1px 6px;vertical-align:middle;white-space:nowrap;">&#9208; Komisyon durduruldu'+(commPausedSince?' &middot; '+commPausedSince:'')+'</span>':'')+'</div>';
       cardsHtml+='<div style="font-size:0.78rem;color:#444;font-weight:600;margin-top:2px;">'+s.role+'</div></div>';
       cardsHtml+='<div style="text-align:right;"><div style="font-size:1.25rem;font-weight:700;color:'+s.color+';">'+fmt(total)+'</div>';
       cardsHtml+='<div style="font-size:0.65rem;color:#666;font-weight:600;">this month</div></div></div>';
@@ -6259,9 +6296,11 @@ function renderSalaryPage(){
         cardsHtml+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);">';
         cardsHtml+='<span style="font-size:0.8rem;color:#333;font-weight:600;">'+s.commLabel+'</span>';
         cardsHtml+='<span style="font-size:0.85rem;font-weight:700;color:#7b2d8b;">'+fmt(s.comm)+'</span></div>';
+        if(commPaused) cardsHtml+='<div style="font-size:0.65rem;color:#c94040;font-weight:600;margin-top:2px;">Komisyon '+commPausedSince+' tarihinde durduruldu — bu tutar o günden önceki işlerden.</div>';
       }
       if(s.comm===0 && s.commLabel!=='Fixed salary only'){
-        cardsHtml+='<div style="font-size:0.72rem;color:#888;margin-top:6px;font-style:italic;font-weight:500;">'+s.commLabel+' — no earnings this month</div>';
+        cardsHtml+='<div style="font-size:0.72rem;color:'+(commPaused?'#c94040':'#888')+';margin-top:6px;font-style:italic;font-weight:500;">'+
+          (commPaused?'Komisyon durduruldu'+(commPausedSince?' — '+commPausedSince+' tarihinden itibaren komisyon işlemiyor':'')+'.':s.commLabel+' — no earnings this month')+'</div>';
       }
       // Which customers this month did NOT earn them commission, and why. The
       // technician can see the reason next to the name rather than only a
@@ -6521,14 +6560,17 @@ function diRenderGrid(){
 
   grid.innerHTML = DI_STAFF.map(function(s){
     const val = diValues[s.name] || 0;
-    const comm = val > 0 ? Math.round(val * s.commRate + (s.extraOnWorkDay&&val>0 ? s.extraOnWorkDay : 0)) : 0;
+    // Commission stopped for this technician on the selected day: the card
+    // says so, previews nothing, and the save below writes nothing.
+    const paused = commPausedOn(s.name, diCurrentDate);
+    const comm = (val > 0 && !paused) ? Math.round(val * s.commRate + (s.extraOnWorkDay&&val>0 ? s.extraOnWorkDay : 0)) : 0;
     const net  = val - comm;
-    const showPreview = s.commRate > 0 && val > 0;
+    const showPreview = s.commRate > 0 && val > 0 && !paused;
 
     return '<div style="background:var(--card);border:1px solid var(--border);border-top:3px solid '+s.color+';border-radius:12px;padding:16px;">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
       +'<div style="font-weight:700;font-size:0.95rem;color:'+s.color+';">'+s.name+'</div>'
-      +'<div style="font-size:0.68rem;color:var(--muted);">'+(s.commRate>0?(s.commRate*100)+'% commission':'Salary only')+'</div>'
+      +'<div style="font-size:0.68rem;color:'+(paused?'#c94040':'var(--muted)')+';">'+(paused?'⏸ Komisyon durduruldu':(s.commRate>0?(s.commRate*100)+'% commission':'Salary only'))+'</div>'
       +'</div>'
       +'<div style="margin-bottom:10px;">'
       +'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:5px;">Income Generated (₺)</div>'
@@ -6568,12 +6610,13 @@ function diOnInput(name){
 function diUpdateCard(name, val){
   const s = DI_STAFF.find(function(x){return x.name===name;});
   if(!s) return;
-  const comm = val>0 ? Math.round(val*s.commRate + (s.extraOnWorkDay&&val>0?s.extraOnWorkDay:0)) : 0;
+  const paused = commPausedOn(name, diCurrentDate);
+  const comm = (val>0 && !paused) ? Math.round(val*s.commRate + (s.extraOnWorkDay&&val>0?s.extraOnWorkDay:0)) : 0;
   const net  = val - comm;
   const commEl = document.getElementById('di-comm-'+name);
   const netEl  = document.getElementById('di-net-'+name);
   const previewEl = document.getElementById('di-preview-'+name);
-  if(previewEl) previewEl.style.display = (s.commRate>0 && val>0) ? 'block' : 'none';
+  if(previewEl) previewEl.style.display = (s.commRate>0 && val>0 && !paused) ? 'block' : 'none';
   if(commEl) commEl.textContent = '₺ '+comm.toLocaleString('tr-TR');
   if(netEl)  netEl.textContent  = '₺ '+net.toLocaleString('tr-TR');
 }
@@ -6583,7 +6626,7 @@ function diUpdateTotals(){
   DI_STAFF.forEach(function(s){
     const v = diValues[s.name]||0;
     total += v;
-    if(v>0) totalComm += Math.round(v*s.commRate + (s.extraOnWorkDay&&v>0?s.extraOnWorkDay:0));
+    if(v>0 && !commPausedOn(s.name, diCurrentDate)) totalComm += Math.round(v*s.commRate + (s.extraOnWorkDay&&v>0?s.extraOnWorkDay:0));
   });
   const net = total - totalComm;
   const tEl=document.getElementById('di-day-total');
@@ -6606,7 +6649,8 @@ function diSaveDay(){
     .filter(function(s){ return (diValues[s.name]||0)>0; })
     .map(function(s){
       const total = diValues[s.name];
-      const commission = Math.round(total*s.commRate + (s.extraOnWorkDay&&total>0?s.extraOnWorkDay:0));
+      const commission = commPausedOn(s.name, diCurrentDate) ? 0
+        : Math.round(total*s.commRate + (s.extraOnWorkDay&&total>0?s.extraOnWorkDay:0));
       return {name:s.name, total:total, count:1, commission:commission};
     });
 
@@ -14603,6 +14647,33 @@ window.addEventListener('load',function(){
      The roster comes from crown-config.js: add a name there, not here.
      ═══════════════════════════════════════════════════════════════════════ -->
 <script src="crown-config.js"></script>
+<script>
+// The commission pause, applied to what is already STORED. The commission
+// "fixer" passes earlier in this file run before crown-config.js has loaded,
+// so they rewrite every history day from the flat rates — paused days
+// included. Now that the roster and its commissionPaused flags exist, zero
+// the stored commission back out of every paused day, so a past day opened
+// from history shows the same nothing the salary maths pays. Days before the
+// pause date are left exactly as they were, and with no pause flag up this
+// changes nothing at all.
+(function(){
+  try{
+    if(!window.CROWN || typeof dtState==='undefined' || !dtState || !dtState.history) return;
+    var changed=false;
+    dtState.history.forEach(function(h){
+      (h.ops||[]).forEach(function(op){
+        if(op && op.commission>0 && window.CROWN.commissionPausedOn(op.name, h.date)){
+          op.commission=0; changed=true;
+        }
+      });
+    });
+    if(changed){
+      localStorage.setItem('rdns_takings_v3', JSON.stringify(dtState));
+      if(typeof syncPush==='function') syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
+    }
+  }catch(e){}
+})();
+</script>
 <script>
 // Last known 60/90 setting, so the board, the monitor and the first availability
 // push are all right from the opening frame rather than after Firebase answers.

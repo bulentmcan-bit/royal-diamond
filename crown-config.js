@@ -29,7 +29,19 @@ window.CROWN = {
 
   operators: [
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
-    { key:'hannah', name:'Hannah', photo:'op-hannah.png' },
+    /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
+       included) her jobs earn no commission on any screen that counts money;
+       everything she earned BEFORE that date stays exactly as it was, and her
+       base salary is not touched — this is the commission only. The salary
+       page says "Komisyon durduruldu" next to her name while this is on.
+       To start her commission again: set commissionPaused to false. Leave
+       `commissionPausedSince` where it is — it is the answer to "from when
+       was it stopped". (Note: switching it back on mid-month lets the days of
+       that month from the date onward earn again; if the paused stretch must
+       stay unpaid, flip the flag at the start of a month or record those jobs
+       as ✂️ kesinti.) */
+    { key:'hannah', name:'Hannah', photo:'op-hannah.png',
+      commissionPaused: true, commissionPausedSince: '2026-08-20' },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
   ],
 
@@ -220,6 +232,19 @@ window.CROWN = {
     return this.operators.filter(function(o){
       return o.key === k || o.name.toLowerCase() === k;
     })[0] || null;
+  },
+  // Does `who` earn NO commission on the day given? True only while her
+  // commissionPaused flag is up AND the day is on or after the date it was
+  // raised — never before it, so nothing already earned is ever touched.
+  // `day` is 'YYYY-MM-DD'; asked without a day it answers for right now,
+  // i.e. simply "is she paused". Every screen that counts commission money
+  // asks this one question, so switching the flag off switches all of it.
+  commissionPausedOn: function(who, day){
+    var o = this.find(who);
+    if (!o || !o.commissionPaused) return false;
+    var since = String(o.commissionPausedSince || '').slice(0, 10);
+    if (!since || !day) return true;
+    return String(day).slice(0, 10) >= since;
   },
   // Anything that is not one of the two offered lengths is not a choice — a
   // stray value out of Firebase, an old record, a typo in the console — and
