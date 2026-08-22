@@ -1468,8 +1468,8 @@
       const cap=_obCap(req.time);
       const booked=maps.total[req.time]||0;
       // The first technician who is free for her own whole length from this
-      // start. Each is measured on her own 60 or 90 — Helen may be able to take
-      // a time that Hannah, needing half an hour more, cannot.
+      // start — the same 60 minutes for everyone now, but still read through
+      // slotFor() so it is asked, not assumed.
       const staffPick=_obTechs().find(t=>_obTechCanStart(t, req.time, maps))||'';
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
@@ -3690,7 +3690,7 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
       </div>
 
-      <!-- Per-technician appointment length · 60 or 90 minutes ─────────────────
+      <!-- Per-technician appointment length · 60 minutes ────────────────────────
            One number per technician, and it does two jobs: it is her Crown Board
            countdown for every kind of work, and it is how much of her day one
            online booking takes. This page is already behind the owner PIN, so
@@ -3701,10 +3701,10 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
         <div class="m-section-body open">
           <div style="font-size:0.75rem;color:var(--muted);line-height:1.6;margin-bottom:12px;">
-            Her teknisyen için 60 veya 90 dakika seçin. Seçtiğiniz süre hem
+            Tüm teknisyenler 60 dakika üzerinden çalışır. Bu süre hem
             <b>Crown Board sayacını</b> (tüm hizmetler için) hem de
-            <b>online randevu aralığını</b> belirler — bir randevu o kadar dakika yer tutar.
-            Değişiklik anında tüm ekranlara gider; <b>süren mevcut randevular olduğu gibi kalır.</b>
+            <b>online randevu aralığını</b> belirler — bir randevu 60 dakika yer tutar.
+            <b>Süren mevcut randevular olduğu gibi kalır.</b>
           </div>
           <div id="m-tech-slot-rows"></div>
         </div>
@@ -4717,7 +4717,7 @@ const STAFF_COLORS = {
 };
 const GRID_START = 7.5;   // 07:30
 const GRID_END   = 20.0;  // 20:00
-const SLOT_MINS  = 90;    // 1.5 hours
+const SLOT_MINS  = 60;    // 1 hour
 
 function dashGridPrev(){ dashGridDate.setDate(dashGridDate.getDate()-1); renderDashGrid(); }
 function dashGridNext(){ dashGridDate.setDate(dashGridDate.getDate()+1); renderDashGrid(); }
@@ -6968,8 +6968,8 @@ function quickBook(cid){openModal("mAppt");setTimeout(()=>{document.getElementBy
 // ════ GAP REPORT ════
 // ⏱ Per-staff service durations (minutes) — Lissa & Hannah, July 2026
 const STAFF_SVC_DUR={
-  lissa:{man:75,ped:45,lash:75},
-  hannah:{man:90,ped:60,lash:75}
+  lissa:{man:60,ped:45,lash:60},
+  hannah:{man:60,ped:60,lash:60}
 };
 function svcCat(service){
   const s=(service||'').toLowerCase();
@@ -7038,7 +7038,7 @@ function renderGapReport(){
     const matchedTech = TECHS.find(t => techName.toLowerCase().includes(t.toLowerCase()));
     if(!matchedTech) return;
     const startMin = dt.getHours()*60 + dt.getMinutes();
-    const dur = parseInt(a.duration) || staffSvcDur(a.staff,a.service) || (matchedTech==='Helen'?60:90);
+    const dur = parseInt(a.duration) || staffSvcDur(a.staff,a.service) || 60;
     const cl = (clients||[]).find(c => String(c.id)===String(a.clientId));
     const name = cl ? cl.name.split(' ')[0] : 'Client';
     GRID[matchedTech].forEach(s => {
@@ -14242,7 +14242,7 @@ window.addEventListener('load',function(){
   // the column offers her the next start she could really take rather than a
   // half hour that would strand her.
   //
-  // That length is the ONE number set on the Aylık page — the same 60 or 90
+  // That length is the ONE number shown on the Aylık page — the same 60
   // that drives her Crown Board countdown and her online booking spacing. It
   // used to be a third hardcoded copy of the rhythm here, which is how a
   // technician switched to 60 carried on being shown 90-minute gaps on this
@@ -16077,8 +16077,8 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   window.cbmToggle   =function(){ _state=(_state==='open')?'closed':'open'; apply(); };
 
   // ── management: how long each technician gets ────────────────────────────
-  // 60 or 90 minutes, one choice per technician, on the Aylık page — which is
-  // already behind the owner PIN, so these toggles are management's alone. The
+  // 60 minutes, the one length every technician runs on, on the Aylık page —
+  // which is already behind the owner PIN, so it is management's alone. The
   // number sets her Crown Board countdown for every kind of work AND how much
   // of her day one online booking takes, which is the whole point of it: the
   // chair and the diary can no longer be told different things.

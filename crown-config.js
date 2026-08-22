@@ -17,10 +17,10 @@
            monitor. Drop the file next to this one and name it here. Leave it
            out and her tile simply shows no picture — nothing else changes.
 
-   HOW LONG SHE GETS is no longer written here. Each technician runs on 60 or 90
-   minutes, and management sets which on the Aylık page, behind the owner
-   password — see `slotChoices` below. A new name added here starts on 60 until
-   somebody chooses otherwise.
+   HOW LONG SHE GETS is no longer written here. Every technician runs on 60
+   minutes — the one length offered in `slotChoices` below, shown on the Aylık
+   page behind the owner password. A new name added here runs on 60 from her
+   first minute.
 
    A technician who has left: take her line out and her tiles stop appearing.
    The sessions she already earned stay in Firebase for the commission.
@@ -53,17 +53,22 @@ window.CROWN = {
        · the online booking page — how much of her day one appointment takes,
          so the next start she is offered is this long after the last one.
 
-     The two used to be set apart, which is how a technician could be given 90
-     minutes at the chair and still be offered a booking an hour later. They are
-     the same number now, chosen on the Aylık page behind the owner password.
+     The two used to be set apart, which is how a technician could be given
+     more time at the chair than the diary left room for. They are the same
+     number now — 60 minutes for everyone — shown on the Aylık page behind the
+     owner password.
 
      It is stored in Firebase at `timers/limits/<key>` so every screen agrees —
      the wall boards, reception's monitor and the customer's booking page all
      read the one value. `setSlots` below is what puts it into this object when
-     it arrives; nothing writes to `slotMins` by hand. */
-  slotChoices: [60, 90],
+     it arrives; nothing writes to `slotMins` by hand.
+
+     Doksan dakika seçeneği kaldırıldı; Firebase'de kalmış eski 90 değerleri
+     normSlot testinden geçemeyip slotDefault'a, yani 60'a düşer — elle
+     temizlemeye gerek yok. */
+  slotChoices: [60],
   slotDefault: 60,
-  slotMins: {},        // key -> 60 | 90, filled from Firebase at runtime
+  slotMins: {},        // key -> 60, filled from Firebase at runtime
 
   // The two kinds of job. A board is one of these; so is a tile's colour.
   types: {
@@ -258,9 +263,10 @@ window.CROWN = {
     if (!since || !day) return true;
     return String(day).slice(0, 10) >= since;
   },
-  // Anything that is not one of the two offered lengths is not a choice — a
-  // stray value out of Firebase, an old record, a typo in the console — and
-  // comes back null so the caller falls through to the default.
+  // Anything that is not an offered length is not a choice — a stray value
+  // out of Firebase, an old 90 from before the option was removed, a typo in
+  // the console — and comes back null so the caller falls through to the
+  // default.
   normSlot: function(v){
     var n = Number(v);
     return this.slotChoices.indexOf(n) !== -1 ? n : null;

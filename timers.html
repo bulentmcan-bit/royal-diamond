@@ -288,11 +288,12 @@ const firebaseConfig = {
      timers/ops/<key>/current         the job running right now (one at a time)
      timers/ops/<key>/last/<type>     her last finished manicure / pedicure
      timers/sessions/<pushId>         one permanent record per finished job
-     timers/limits/<key>              her limit in minutes: 60 or 90
+     timers/limits/<key>              her limit in minutes: 60 (a stale 90
+                                      left over falls back to 60 via normSlot)
    ========================================================================== */
 
 const C = window.CROWN;
-// Last known 60/90 setting, so a board that opens before Firebase answers — or
+// Last known slot setting, so a board that opens before Firebase answers — or
 // on a morning the wifi is slow — still counts down on the right limit rather
 // than falling back to the default and taking a crown off somebody unfairly.
 try{ C.setSlots(JSON.parse(localStorage.getItem('rdns_tech_slots')||'{}')); }
