@@ -104,6 +104,9 @@
         try{
           const remote=typeof val==='string'?JSON.parse(val):val;
           if(!remote||!remote.appointments)return;
+          // Who wrote the copy we are about to merge, and how old it is — the
+          // console trail that lets two laptops be compared side by side.
+          try{ console.log('[sync] ↓ snapshot:', 'yazan='+(remote._by||'?'), 'yaş='+Math.round((Date.now()-(remote._ts||0))/1000)+'sn'); }catch(e){}
           // Clean + / 00 prefixes on phone numbers arriving from the cloud
           let phonesFixed=false;
           if(Array.isArray(remote.clients) && typeof normalizeWaPhone==='function'){
@@ -365,13 +368,57 @@
       showSyncStatus('synced');
     }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
   }
+  // ═══════ THE PUSH MUST BE SEEN TO LAND ═══════
+  // set() resolves only when the SERVER confirms the write. It used to be
+  // fired and forgotten: a rejected write left one line in a console nobody
+  // reads, a push attempted while signed out returned without a word, and the
+  // ☁️ Synced badge stayed green throughout because it only ever listened to
+  // the READ side. That is exactly how one laptop spent a day marking
+  // appointments Done that no other screen ever saw. Now every push logs its
+  // outcome with this device's id, a failure turns the badge red, toasts, and
+  // retries with backoff off the current localStorage copy — and the badge may
+  // only say Synced while nothing on this device is known to be unsent.
+  const _rdDevId=(function(){
+    try{
+      let d=localStorage.getItem('rdns_device_id_v1');
+      if(!d){ d=Math.random().toString(36).slice(2,8); localStorage.setItem('rdns_device_id_v1',d); }
+      return d;
+    }catch(e){ return 'anon'; }
+  })();
+  const _pushFail={};      // key -> consecutive failed pushes (0 = healthy)
+  function _pushBroken(){ for(const k in _pushFail){ if(_pushFail[k]>0) return true; } return false; }
+  function _syncRetry(key){
+    try{ const raw=localStorage.getItem(key); if(raw!=null) syncPush(key, raw); }catch(e){}
+  }
   function syncPush(key,data){
-    if(!_syncEnabled||!_fbDb)return;
+    if(!_fbDb)return;
+    if(!_syncEnabled){
+      // Signed out. The listeners attached earlier may still be feeding this
+      // screen, so it looks alive — but nothing saved here is leaving the
+      // machine. That must never be silent again.
+      _pushFail[key]=(_pushFail[key]||0)+1;
+      console.warn('[sync] ↑ SKIPPED (oturum yok):', key, '— bu cihazdaki değişiklik buluta GİTMİYOR');
+      showSyncStatus('error');
+      return;
+    }
     _isSyncing[key]=true;
     try{
       const payload=typeof data==='string'?JSON.parse(data):JSON.parse(JSON.stringify(data));
       payload._ts=Date.now();
-      _fbDb.ref(key).set(payload).catch(e=>console.warn('Push error:',e));
+      payload._by=_rdDevId;
+      _fbDb.ref(key).set(payload).then(()=>{
+        const was=_pushFail[key]||0;
+        _pushFail[key]=0;
+        console.log('[sync] ↑ push OK:', key, '('+_rdDevId+')');
+        if(was){ try{ toast('☁️','Senkron düzeldi',key+' buluta yazıldı — diğer ekranlar birazdan güncellenir.','g'); }catch(e){} }
+        showSyncStatus('synced');
+      }).catch(e=>{
+        const n=_pushFail[key]=(_pushFail[key]||0)+1;
+        console.error('[sync] ↑ PUSH FAILED ('+n+'×):', key, e&&(e.code||e.message)||e);
+        showSyncStatus('error');
+        if(n===1){ try{ toast('⚠️','BULUTA YAZILAMADI',key+' — bu cihazdaki değişiklikler diğer ekranlara GİTMİYOR: '+(e&&(e.code||e.message)||'bilinmeyen hata'),'r'); }catch(_){} }
+        if(n<=6) setTimeout(()=>{ _syncRetry(key); }, Math.min(30000, 1500*Math.pow(2,n-1)));
+      });
       if(key==='rdns_main_v1'){try{publishAvailability();}catch(e){}}
     }catch(e){console.warn('syncPush error:',e);}
     setTimeout(()=>{_isSyncing[key]=false;},600);
@@ -895,7 +942,7 @@
       const keys=Object.keys(a).sort();
       for(let i=0;i<keys.length;i++){
         const k=keys[i];
-        if(k==='_ats'||k==='_pts'||k==='_payTs'||k==='_cts') continue;
+        if(k==='_ats'||k==='_pts'||k==='_payTs'||k==='_cts'||k==='_sts') continue;
         const v=a[k];
         s+=k+':'+((v&&typeof v==='object')?JSON.stringify(v):String(v))+'|';
       }
@@ -1024,6 +1071,29 @@
           out.push(r);                                    // the cloud is at least as new
           _apptMergeMeta[k]={ts:rts,l:0};
         }
+        // ═══ THE STATUS RIDES ON ITS OWN STAMP ═══
+        // The record stamp above says which COPY is newer, and a reminder flag
+        // flipped by the five-minute pass re-stamps the whole record. That is
+        // how a laptop that merely NOTICED a reminder outranked the laptop
+        // where Done was actually pressed: the completion lost the merge to a
+        // bookkeeping edit, both sides kept winning at home, and the two
+        // screens split for good. So a status change carries its own stamp —
+        // _sts, written by apptTouch the moment Done / iptal / gelmedi is
+        // pressed — and the NEWER STATUS comes through whichever copy won.
+        // Records from before _sts existed carry none and behave as before.
+        if(loc){
+          const w=out[out.length-1];          // the copy the record stamp chose
+          const o=(w===loc)?r:loc;            // the copy that lost
+          const wst=Number(w._sts)||0, ost=Number(o._sts)||0;
+          if(ost>wst && o.status && o.status!==w.status){
+            w.status=o.status;
+            w._sts=ost;
+            // gelmedi travels with the status it belongs to
+            if(o.noShow===undefined){ delete w.noShow; delete w.noShowAt; }
+            else { w.noShow=o.noShow; w.noShowAt=o.noShowAt; }
+            _apptMergeKept=true;              // the merged truth differs — push it back
+          }
+        }
       });
       // 2 — everything we hold that the snapshot has not caught up with. Nothing
       //     is dropped here for looking old, for being unstamped, or for having
@@ -1106,6 +1176,63 @@
       apptTombPrune();
     }catch(e){ console.warn('apptStampSync error:',e); }
   }
+  // Called the moment a status changes hands — Done, iptal, gelmedi, or undo.
+  // apptStampSync would catch it on the next save anyway; this stamps the
+  // change EXPLICITLY and writes _sts, the status field's own stamp. The
+  // whole-record stamp cannot speak for the status (see the merge above), so
+  // every status change gets both: a fresh record stamp and a fresh _sts.
+  function apptTouch(a){
+    try{
+      if(!a||a.id==null) return;
+      const k=String(a.id);
+      let ts=Date.now();
+      const st=apptStamps[k];
+      if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
+      if((Number(a._ats)||0)>=ts) ts=(Number(a._ats)||0)+1;
+      if((Number(a._sts)||0)>=ts) ts=(Number(a._sts)||0)+1;
+      a._ats=ts;
+      a._sts=ts;
+      apptStamps[k]={ts:ts, h:_apptSigHash(a), l:1};
+      apptStampPersist();
+      console.log('[sync] status →', a.status, '#'+k, '_sts='+ts);
+    }catch(e){ console.warn('apptTouch error:',e); }
+  }
+  // Two laptops on one desk, simulated. Run rdSyncSelfTest() in the console:
+  // it drives fake records through the REAL merge and proves a status change
+  // survives whichever side holds the fresher record stamp. Touches nothing —
+  // the live arrays are put back exactly as they were.
+  window.rdSyncSelfTest=function(){
+    const savedAppts=appointments, savedStamps=apptStamps, savedTomb=apptTomb, savedMeta=_apptMergeMeta;
+    const rows=[];
+    try{
+      const ID=999900001, NOW=Date.now(), T0=NOW-3600000, T1=T0+60000;
+      const mk=function(o){ return Object.assign({id:ID,clientId:0,service:'SELFTEST',datetime:'2099-01-01T10:00',duration:60,price:0},o); };
+      apptTomb={};
+      // 1 — Done on the OTHER laptop an hour ago; a reminder flag flipped HERE
+      //     just now, so the local record stamp is fresher. The completion must
+      //     still come through.
+      appointments=[mk({status:'confirmed',r24:true,_ats:NOW,_sts:T0})];
+      apptStamps={}; apptStamps[ID]={ts:NOW,h:0,l:1};
+      let m=_mergeRemoteAppts([mk({status:'completed',_ats:T1,_sts:T1})], NOW).find(function(x){return x&&String(x.id)===String(ID);});
+      rows.push({test:'Done orada · hatırlatma bayrağı burada', beklenen:'completed', sonuc:m&&m.status, PASS:!!m&&m.status==='completed'});
+      // 2 — gelmedi HERE after the cloud copy was written: local status newer,
+      //     cloud record stamp fresher. The gelmedi must survive, flag and all.
+      appointments=[mk({status:'cancelled',noShow:true,noShowAt:'x',_ats:T0,_sts:NOW})];
+      apptStamps={}; apptStamps[ID]={ts:T0,h:0,l:1};
+      m=_mergeRemoteAppts([mk({status:'confirmed',_ats:NOW-1000,_sts:T0-1})], NOW).find(function(x){return x&&String(x.id)===String(ID);});
+      rows.push({test:'Gelmedi burada · bulut kopyası daha taze', beklenen:'cancelled+noShow', sonuc:(m&&m.status)+((m&&m.noShow)?'+noShow':''), PASS:!!m&&m.status==='cancelled'&&m.noShow===true});
+      // 3 — legacy records with no _sts anywhere: plain newest-record-wins.
+      appointments=[mk({status:'confirmed',_ats:NOW})];
+      apptStamps={}; apptStamps[ID]={ts:NOW,h:0,l:1};
+      m=_mergeRemoteAppts([mk({status:'completed',_ats:T0})], NOW).find(function(x){return x&&String(x.id)===String(ID);});
+      rows.push({test:'_sts yok (eski kayıt) · taze kayıt kazanır', beklenen:'confirmed', sonuc:m&&m.status, PASS:!!m&&m.status==='confirmed'});
+    }catch(e){ rows.push({test:'HATA', sonuc:String(e&&e.message||e), PASS:false}); }
+    finally{ appointments=savedAppts; apptStamps=savedStamps; apptTomb=savedTomb; _apptMergeMeta=savedMeta; }
+    try{ console.table(rows); }catch(e){ console.log(rows); }
+    const ok=rows.length===3&&rows.every(function(r){return r.PASS;});
+    console.log(ok?'✅ rdSyncSelfTest: tümü geçti':'❌ rdSyncSelfTest: BAŞARISIZ satır var');
+    return ok;
+  };
 
   // ═══════ THE SAME GUARANTEE FOR THE CUSTOMER LIST ═══════
   // Client records were still being REPLACED wholesale by every snapshot, which
@@ -1324,6 +1451,9 @@
 
   function showSyncStatus(s){
     const el=document.getElementById('sync-indicator');if(!el)return;
+    // A listener event may not paint the badge green over a failed WRITE: an
+    // honest red beats a comforting green. Only a confirmed push clears it.
+    if(s==='synced' && _pushBroken()) s='error';
     const m={local:{t:'💾 Local',c:'#888'},connecting:{t:'🔄 Syncing...',c:'#f0a500'},synced:{t:'☁️ Synced',c:'#4caf50'},error:{t:'⚠️ Sync Error',c:'#f44'}};
     const v=m[s]||m.local;el.textContent=v.t;el.style.color=v.c;
   }
@@ -5346,6 +5476,7 @@ function undoComplete(id){
     diAutoRemove(a.staff, a.price, a.datetime, a.id);
   }
   a.status="confirmed";
+  apptTouch(a);        // the undo is a status change too — stamp it as one
   a.price=0;
   a._pts=Date.now();   // deliberate reset — must outrank any older cloud copy
   delete a._ptsAdded;
@@ -5378,6 +5509,7 @@ function dashCancelAppt(id){
     return;
   }
   a.status = 'cancelled';
+  apptTouch(a);
   priceOvrSealCancel(a);
   cancelLogAdd(a, auth.role);
   saveAll(); renderDash(); renderAppts(); updateApptBadge();
@@ -5813,6 +5945,7 @@ function noShowClose(a, role, reason){
   a.status = 'cancelled';
   a.noShow = true;
   a.noShowAt = new Date().toISOString();
+  apptTouch(a);
   priceOvrSealCancel(a);
   cancelLogAdd(a, role, reason||'gelmedi');
 }
@@ -7395,6 +7528,7 @@ function showRebookModal(a, c){
 function completeAppt(id){
   const a=appointments.find(x=>x.id===id);const c=cObj(a.clientId);
   a.status="completed";
+  apptTouch(a);   // stamp the status itself, so the Done survives every merge
   const ci=clients.findIndex(x=>x.id===a.clientId);
   if(ci>=0){
     const ptsAdded=Math.floor((a.price||200)/10);
@@ -7576,7 +7710,7 @@ function skipRebook(){
   closeModal("mRebook");rebookPending=null;
 }
 
-function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
+function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
 function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
