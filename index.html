@@ -1756,6 +1756,7 @@ body::before{
 
 /* ── Cards & Grid ── */
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px;}
+.grid-4.stats-5{grid-template-columns:repeat(5,1fr);}
 .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .stat-card{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:17px;transition:transform 0.18s,box-shadow 0.18s;}
@@ -2408,6 +2409,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
 
   /* Grids stack on mobile */
   .grid-4 { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+  .grid-4.stats-5 { grid-template-columns: repeat(2, 1fr); }
   .grid-3 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .grid-2 { grid-template-columns: 1fr; }
 
@@ -2468,6 +2470,7 @@ textarea.fctrl{resize:vertical;min-height:70px;}
 
 @media (max-width: 400px) {
   .grid-4 { grid-template-columns: 1fr 1fr; }
+  .grid-4.stats-5 { grid-template-columns: 1fr 1fr; }
   #page-monthly .m-cards { grid-template-columns: 1fr; }
   .dt-dash-ops { grid-template-columns: 1fr !important; }
 }
@@ -2891,11 +2894,14 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="dt-dash-ops" id="dt-dash-ops"><!-- filled by renderDashTakings() --></div>
       </div>
 
-      <div class="grid-4">
+      <div class="grid-4 stats-5">
         <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-val" id="s-clients">0</div><div class="stat-lbl">Toplam Müşteri</div><div class="stat-change">↑ 2 this month</div></div>
         <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-val" id="s-upcoming">0</div><div class="stat-lbl">Yaklaşan</div><div class="stat-change">Active today</div></div>
         <div class="stat-card"><div class="stat-icon">💷</div><div class="stat-val" id="s-revenue">₺0</div><div class="stat-lbl">Gelir</div><div class="stat-change">↑ This month</div></div>
         <div class="stat-card"><div class="stat-icon">💬</div><div class="stat-val" id="s-wa">0</div><div class="stat-lbl">WA Bugün</div><div class="stat-change">Messages</div></div>
+        <!-- The number the WhatsApp reminders will be judged against: no-shows
+             per day before the reminders go live, and after. -->
+        <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-val" id="s-noshow">0</div><div class="stat-lbl">Gelmedi Bugün</div><div class="stat-change">No-show</div></div>
       </div>
       <div class="grid-2">
         <div>
@@ -3707,6 +3713,23 @@ p, span, div, label, h1, h2, h3, h4 {
             <b>Süren mevcut randevular olduğu gibi kalır.</b>
           </div>
           <div id="m-tech-slot-rows"></div>
+        </div>
+      </div>
+
+      <!-- Past appointments still standing open ─────────────────────────────────
+           Bookings whose day has passed but whose status never moved off
+           'confirmed'. The money never reached Daily Takings — each day's till
+           total matches its completed appointments to the kuruş — so these are
+           clients who did not come. They are closed as no-shows, NEVER completed:
+           completing them would invent revenue and commission nobody earned.
+           Today and the future are never touched. This page sits behind the
+           owner PIN, and the button asks for it again before it acts. -->
+      <div class="m-section">
+        <div class="m-section-title open">
+          🚫 &nbsp;Geçmiş Açık Randevular
+        </div>
+        <div class="m-section-body open">
+          <div id="m-stale-appts"></div>
         </div>
       </div>
 
@@ -4582,7 +4605,7 @@ function _gotoActual(page,el){
   if(page==="takings"){if(typeof dtInit==="function")dtInit();}
   if(page==="cashcheck"){renderCashCheck();try{dpUpdateBadges();}catch(e){}}
   if(page==="calendar")renderCalendar();
-  if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}}
+  if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}try{mRenderStaleAppts();}catch(e){}}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
   if(page==="deductions"){ renderDeductionsPage(); }
   if(page==="advance"){ renderAdvancePage(); }
@@ -4814,6 +4837,7 @@ function renderDashGrid(){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
         html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:#2f7fe0;border:1px solid #2f7fe0;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
+        html += '<button onclick="noShowAppt('+a.id+')" title="Gelmedi — ciroya ve komisyona yazılmaz" style="flex:0 0 28px;padding:2px 0;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">🚫</button>';
       } else if(needsAttention){
         html += '<span style="font-size:0.68rem;font-weight:800;color:#b8791f;padding:2px 4px;" title="Completed but no price recorded in Daily Takings">⚠ Needs Price</span>';
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fix</button>';
@@ -5743,7 +5767,7 @@ function cancelAuth(){
   alert('❌ Yanlış şifre — iptal yapılmadı.');
   return null;
 }
-function cancelLogAdd(a, role){
+function cancelLogAdd(a, role, reason){
   try{
     var log = JSON.parse(localStorage.getItem('rdns_cancel_log_v1')||'{"items":[]}');
     if(!log.items) log.items=[];
@@ -5758,11 +5782,100 @@ function cancelLogAdd(a, role){
       price: a.price||0,
       apptTime: a.datetime||'',
       cancelledAt: new Date().toISOString(),
-      by: role
+      by: role,
+      reason: reason||''
     });
     localStorage.setItem('rdns_cancel_log_v1', JSON.stringify(log));
     if(typeof syncPush==='function') try{ syncPush('rdns_cancel_log_v1', log); }catch(e){}
   }catch(e){ console.warn('cancel log error:', e); }
+}
+
+// ── 🚫 GELMEDİ — a no-show is closed like a cancellation, never completed ────
+// The money never reached the till: day by day, the Daily Takings total equals
+// the completed appointments' prices to the kuruş, and the open ones are in
+// neither. Completing them would invent revenue that was never taken and
+// commission nobody earned, so a no-show goes down the cancel path — sealed
+// with priceOvrSealCancel like any cancellation, so a stale device cannot
+// resurrect it — and keeps `noShow:true` so it can be counted apart from real
+// cancellations. That daily count is the number the WhatsApp reminders will be
+// judged against once they go live.
+function apptDayStr(a){
+  var dt = new Date(a && a.datetime);
+  if(isNaN(dt)) return String((a && a.datetime)||'').slice(0,10);
+  var p = function(n){ return String(n).padStart(2,'0'); };
+  return dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate());
+}
+function todayStr(){
+  var d = new Date(), p = function(n){ return String(n).padStart(2,'0'); };
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function noShowClose(a, role, reason){
+  a.status = 'cancelled';
+  a.noShow = true;
+  a.noShowAt = new Date().toISOString();
+  priceOvrSealCancel(a);
+  cancelLogAdd(a, role, reason||'gelmedi');
+}
+// The third button on the appointment card, next to ✓ Done and ✕. Same
+// password and the same guards as a cancellation — only the reason differs.
+function noShowAppt(id){
+  const auth = cancelAuth();
+  if(!auth) return;
+  const a = appointments.find(x=>x.id===id);
+  if(!a) return;
+  if(a.status==='completed'){
+    toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. Gelmedi yapmadan önce ↩ Undo ile geri alın.','r');
+    renderAppts(); renderDash();
+    return;
+  }
+  if(!confirm('Bu randevu GELMEDİ olarak kapatılsın mı?\nCiroya girmez, komisyon yazılmaz.')) return;
+  noShowClose(a, auth.role, 'gelmedi');
+  saveAll(); renderDash(); renderAppts(); updateApptBadge();
+  toast('🚫','Gelmedi','Randevu gelmedi olarak kapatıldı — ciro ve komisyon yazılmadı. ('+auth.role+')','r');
+}
+
+// ── 🚫 One-off cleanup: past appointments still standing 'confirmed' ─────────
+// Yesterday and earlier only — today's open bookings may still walk in, and
+// the future is nobody's to close.
+function staleOpenAppts(){
+  const today = todayStr();
+  return appointments.filter(a => a.status==='confirmed' && apptDayStr(a) < today);
+}
+function mRenderStaleAppts(){
+  const el = document.getElementById('m-stale-appts');
+  if(!el) return;
+  const list = staleOpenAppts();
+  if(!list.length){
+    el.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;padding:10px 0;text-align:center;font-style:italic;">Geçmişte açık kalmış randevu yok. 🎉</div>';
+    return;
+  }
+  const days = new Set(list.map(apptDayStr)).size;
+  const noTech = list.filter(a=>!String(a.staff||'').trim()).length;
+  el.innerHTML =
+    '<div style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:12px;">'+
+      'Bugünden önceki tarihlerde hâlâ <b>confirmed</b> duran <b style="color:var(--red);">'+list.length+'</b> randevu var '+
+      '('+days+' güne yayılmış'+(noTech?', '+noTech+' tanesinde teknisyen atanmamış':'')+'). '+
+      'Bunlar gelmeyen müşteriler: paraları Daily Takings\'e hiç girmemiş. '+
+      'Bu yüzden <b>tamamlanmış sayılmazlar</b> — "gelmedi" sebebiyle iptal olarak kapatılırlar; '+
+      'ciroya ve komisyona yazılmaz. Bugüne ve gelecek tarihlere dokunulmaz.'+
+    '</div>'+
+    '<button onclick="mCloseStaleAppts()" style="background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.3);color:var(--red);'+
+      'border-radius:8px;padding:9px 16px;font-size:0.82rem;cursor:pointer;font-family:\'Nunito\',sans-serif;font-weight:800;">'+
+      '🚫 '+list.length+' randevuyu "gelmedi" olarak kapat</button>';
+}
+function mCloseStaleAppts(){
+  if(!ownerPin()) return;
+  const list = staleOpenAppts();
+  if(!list.length){ mRenderStaleAppts(); return; }
+  if(!confirm(list.length+' geçmiş randevu "GELMEDİ" olarak kapatılacak.\n\n'+
+              '· Ciroya girmez, komisyon yazılmaz\n'+
+              '· İptal kaydına "toplu kapatma — gelmedi" sebebiyle yazılır\n'+
+              '· Bugüne ve gelecek tarihlere dokunulmaz\n\nDevam?')) return;
+  list.forEach(a => noShowClose(a, 'Patron', 'toplu kapatma — gelmedi'));
+  saveAll(); renderDash(); renderAppts(); updateApptBadge();
+  mRenderStaleAppts();
+  try{ renderMonthly(); }catch(e){}
+  toast('🚫','Geçmiş randevular kapatıldı', list.length+' randevu "gelmedi" olarak kapatıldı — ciro ve komisyon yazılmadı.','g');
 }
 
 function dedDelete(id){
@@ -6755,6 +6868,9 @@ function renderDash(){
   renderDash24h();
   const upcoming=appointments.filter(a=>a.status==="confirmed"&&new Date(a.datetime)>=new Date());
   document.getElementById("s-upcoming").textContent=upcoming.length;
+  // No-shows among TODAY'S appointments — the WhatsApp before/after number.
+  const nsEl=document.getElementById("s-noshow");
+  if(nsEl){ const _t=todayStr(); nsEl.textContent=appointments.filter(a=>a.noShow&&apptDayStr(a)===_t).length; }
   document.getElementById("s-revenue").textContent="₺"+payments.reduce((s,p)=>s+p.amount,0).toLocaleString();
   renderStaff();
   document.getElementById("s-wa").textContent=waSentToday;
@@ -7183,9 +7299,9 @@ function renderAppts(){
       <td><span class="badge ${a.r24?"badge-green":"badge-muted"}">${a.r24?"✓":"—"}</span></td>
       <td><span class="badge ${a.r1?"badge-green":"badge-muted"}">${a.r1?"✓":"—"}</span></td>
       <td>${a.autoRebooked?'<span class="badge badge-mint">🔄Auto</span>':'<span class="badge badge-muted">Manual</span>'}</td>
-      <td>${statusBadge(a.status)}</td>
+      <td>${a.noShow?'<span class="badge badge-muted">🚫 gelmedi</span>':statusBadge(a.status)}</td>
       <td><div style="display:flex;gap:4px">
-        ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${a.id})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${a.id})">✕</button>`:""}
+        ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${a.id})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${a.id})">✕</button><button class="btn btn-sm" style="background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="noShowAppt(${a.id})">🚫 Gelmedi</button>`:""}
         ${a.status!=="cancelled"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dashEditAppt(${a.id})">✏ Düzenle</button>`:""}
         ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dpFromAppt(${a.id})">📆 Vadeli</button>`:""}
         ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(150,150,150,0.15);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="undoComplete(${a.id})">↩ Undo</button>`:""}
@@ -12295,7 +12411,7 @@ function renderMonthly(){
           const byCol = it.by==='Resepsiyon' ? 'var(--gold)' : 'var(--red)';
           return '<div class="m-day-row">'+
             '<span class="m-day-date">'+at+'</span>'+
-            '<span class="m-day-ops">'+(it.client||'—')+(it.service?' · '+it.service:'')+(it.staff?' · '+it.staff:'')+(it.price?' · ₺'+Number(it.price).toLocaleString('tr-TR'):'')+'</span>'+
+            '<span class="m-day-ops">'+(it.client||'—')+(it.service?' · '+it.service:'')+(it.staff?' · '+it.staff:'')+(it.price?' · ₺'+Number(it.price).toLocaleString('tr-TR'):'')+(it.reason?' · <b style="color:var(--red);">'+it.reason+'</b>':'')+'</span>'+
             '<span style="font-size:0.72rem;font-weight:700;color:'+byCol+';margin-left:12px;flex-shrink:0;white-space:nowrap;">'+(it.by||'?')+' ✕ '+whenTxt+'</span>'+
           '</div>';
         }).join('');
