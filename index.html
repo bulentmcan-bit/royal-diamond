@@ -94,12 +94,42 @@
       });
     }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
   }
-  function _startSyncListeners(){
-    try{
-      showSyncStatus('connecting');
-      setTimeout(()=>{try{_startBookingRequestListener();publishAvailability();}catch(e){console.warn('OB init:',e);}},4000);
-      _fbDb.ref('rdns_main_v1').on('value',snap=>{
-        if(_isSyncing['rdns_main_v1'])return;
+  // ═══════ THE LISTENER MUST BE HEARD TO BE BELIEVED ═══════
+  // 24 Aug 2026: two screens side by side, both "Synced", seven bookings on one
+  // that the other never saw and one booking the other way. The WRITES were
+  // landing — the badge was honest about that since the push-failure work — but
+  // nothing ever proved the READS were alive. The 'value' listener carried no
+  // error callback, so a read denial or a dead listener was perfectly silent:
+  // each laptop kept pushing its own world up, last writer won the cloud, and
+  // neither ever heard the other. Three guards close that hole:
+  //   • the listener gets an error callback — a read failure goes red, says so
+  //     on screen, and re-attaches itself;
+  //   • after every push the echo must come back: our own .set() always fires
+  //     our own listener, so a push whose echo does not arrive within 6 s
+  //     means the line is dead no matter what the badge says — red, toast,
+  //     re-attach;
+  //   • a FOREIGN snapshot landing inside a suppress window is news, not an
+  //     echo — 'value' will never repeat it, so it is re-read once the window
+  //     closes instead of being dropped forever.
+  let _lastMainSnapRx=0;      // last time ANY rdns_main_v1 event reached this device
+  let _mainSnapMissed=false;  // a foreign snapshot fell into a suppress window
+  let _mainListenerDead=false;
+  function _mainSnapRecheck(){
+    if(!_mainSnapMissed) return;
+    _mainSnapMissed=false;
+    try{ syncForceLoad(); }catch(e){}
+  }
+  function _attachMainApptListener(){
+    try{ _fbDb.ref('rdns_main_v1').off('value'); }catch(e){}
+    _mainListenerDead=false;
+    _fbDb.ref('rdns_main_v1').on('value',snap=>{
+        _lastMainSnapRx=Date.now();   // even a suppressed event proves the line is alive
+        if(_isSyncing['rdns_main_v1']){
+          // Not our own echo? Then this is another device's edit that 'value'
+          // will never hand us again — mark it for a re-read after the window.
+          try{ const v=snap.val(); if(v&&v._by&&v._by!==_rdDevId) _mainSnapMissed=true; }catch(e){}
+          return;
+        }
         const val=snap.val();if(!val)return;
         try{
           const remote=typeof val==='string'?JSON.parse(val):val;
@@ -152,7 +182,7 @@
           remote.apptTomb=apptTomb;
           remote.clientTomb=clientTomb;
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
-          setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
+          setTimeout(()=>{_isSyncing['rdns_main_v1']=false;_mainSnapRecheck();},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
           if(phonesFixed||moneyKept||apptsKept||clientsKept){
             setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
@@ -170,7 +200,22 @@
           showSyncStatus('synced');
           try{publishAvailability();}catch(e){}
         }catch(e){console.warn('Sync read error:',e);}
-      });
+    }, err=>{
+      // Without this callback a read denial was invisible: pushes kept landing,
+      // the badge stayed green off the other keys, and the two laptops each
+      // lived in their own world. A broken EAR is now as loud as a broken hand.
+      _mainListenerDead=true;
+      console.error('[sync] ✂ DİNLEME KOPTU: rdns_main_v1 buluttan okunamıyor —', err&&(err.code||err.message)||err);
+      showSyncStatus('error');
+      try{ toast('⚠️','SENKRON DİNLEME KOPTU','Randevular buluttan OKUNAMIYOR ('+(err&&(err.code||err.message)||'?')+') — diğer cihazın kayıtları bu ekrana GELMEZ. 15 sn sonra yeniden bağlanılacak.','r'); }catch(e){}
+      setTimeout(_attachMainApptListener,15000);
+    });
+  }
+  function _startSyncListeners(){
+    try{
+      showSyncStatus('connecting');
+      setTimeout(()=>{try{_startBookingRequestListener();publishAvailability();}catch(e){console.warn('OB init:',e);}},4000);
+      _attachMainApptListener();
       _fbDb.ref('rdns_takings_v3').on('value',snap=>{
         if(_isSyncing['rdns_takings_v3'])return;
         const val=snap.val();if(!val)return;
@@ -434,9 +479,24 @@
       _fbDb.ref(key).set(payload).then(()=>{
         const was=_pushFail[key]||0;
         _pushFail[key]=0;
-        console.log('[sync] ↑ push OK:', key, '('+_rdDevId+')');
+        console.log('[sync] ↑ push OK:', key, '('+_rdDevId+')'+((key==='rdns_main_v1'&&Array.isArray(payload.appointments))?(' · '+payload.appointments.length+' randevu'):''));
         if(was){ try{ toast('☁️','Senkron düzeldi',key+' buluta yazıldı — diğer ekranlar birazdan güncellenir.','g'); }catch(e){} }
         showSyncStatus('synced');
+        // ═══ THE ECHO TEST ═══ Our own .set() must fire our own listener —
+        // even a suppressed event stamps _lastMainSnapRx. A landed push with
+        // no echo means this device WRITES but no longer HEARS: exactly the
+        // silent split of 24 Aug. Say so and re-attach the ear.
+        if(key==='rdns_main_v1'){
+          const at=Date.now();
+          setTimeout(()=>{
+            if(_lastMainSnapRx>=at||_mainListenerDead) return;
+            _mainListenerDead=true;
+            console.error('[sync] ✂ dinleyici SAĞIR: push landı ama yankısı 6 sn içinde gelmedi — yeniden bağlanılıyor');
+            showSyncStatus('error');
+            try{ toast('⚠️','SENKRON TEK YÖNLÜ','Bu cihaz buluta yazıyor ama geri DUYMUYOR — diğer cihazın randevuları gelmiyor olabilir. Dinleyici yeniden bağlanıyor.','r'); }catch(e){}
+            try{ _attachMainApptListener(); }catch(e){}
+          },6000);
+        }
       }).catch(e=>{
         const n=_pushFail[key]=(_pushFail[key]||0)+1;
         console.error('[sync] ↑ PUSH FAILED ('+n+'×):', key, e&&(e.code||e.message)||e);
@@ -446,7 +506,10 @@
       });
       if(key==='rdns_main_v1'){try{publishAvailability();}catch(e){}}
     }catch(e){console.warn('syncPush error:',e);}
-    setTimeout(()=>{_isSyncing[key]=false;},600);
+    // When the deaf window closes, anything a foreign device pushed into it is
+    // fetched back — 'value' events are not replayed, so a dropped one would
+    // otherwise stay dropped until the next unrelated edit.
+    setTimeout(()=>{_isSyncing[key]=false; if(key==='rdns_main_v1')_mainSnapRecheck();},600);
   }
   // ═══════ PERSISTENT PRICE OVERRIDES ═══════
   // The appointments array is replaced wholesale every time a cloud snapshot
@@ -1242,6 +1305,12 @@
       console.log('[sync] status →', a.status, '#'+k, '_sts='+ts);
     }catch(e){ console.warn('apptTouch error:',e); }
   }
+  // One line per new booking: which id, which device, which path made it. Read
+  // next to '[sync] ↑ push OK: rdns_main_v1 (…) · N randevu' it answers the
+  // question "did that booking actually leave this machine?" in the console.
+  window._rdLogApptCreate=function(a,src){
+    try{ console.log('[appt-create] #'+(a&&a.id), 'cihaz='+_rdDevId, 'yol='+src, (a&&a.staff||'?')+' '+(a&&a.datetime||'')); }catch(e){}
+  };
   // Two laptops on one desk, simulated. Run rdSyncSelfTest() in the console:
   // it drives fake records through the REAL merge and proves a status change
   // survives whichever side holds the fresher record stamp. Touches nothing —
@@ -1666,6 +1735,7 @@
       }
       const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true};
       appointments.push(a);
+      try{ _rdLogApptCreate(a,'online-booking'); }catch(e){}
       _obMarkProcessed(id);
       try{saveAll();}catch(e){try{syncPush('rdns_main_v1',{clients,appointments,payments});}catch(_){}}
       console.log('[OB] appointment created:',a);
@@ -1732,7 +1802,7 @@
       val.apptTomb=apptTomb;
       val.clientTomb=clientTomb;
       localStorage.setItem('rdns_main_v1',JSON.stringify(val));
-      setTimeout(()=>{_isSyncing['rdns_main_v1']=false;},800);
+      setTimeout(()=>{_isSyncing['rdns_main_v1']=false;_mainSnapRecheck();},800);
       // Anything the cloud copy was still missing goes straight back up, so the
       // other devices stop handing us the stale picture.
       if(apptsKept||_apptMoneyKept||clientsKept){
@@ -7634,6 +7704,7 @@ function saveAppt(){
   const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:parseInt(document.getElementById("a-dur").value),price:parseInt(document.getElementById("a-price").value)||0,staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
   if(isBirthdayAppt(cid, dt)){ a.birthday = true; }
   appointments.push(a);
+  try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
   saveAll();
   closeModal("mAppt");
   if(a.birthday){
@@ -7812,6 +7883,7 @@ function confirmRebook(){
   const newApptId=Date.now();
   const newAppt={id:newApptId,clientId:appt.clientId,service:appt.service,datetime:dt,duration:(typeof rdSvcDur==='function'?rdSvcDur(appt.service):60),price:appt.price,staff:appt.staff,status:"confirmed",r24:false,r1:false,autoRebooked:true,parentId:appt.id};
   appointments.push(newAppt);
+  try{ _rdLogApptCreate(newAppt,'rebook'); }catch(e){}
   saveAll();
 
   // 1. Immediately queue a WhatsApp booking confirmation
