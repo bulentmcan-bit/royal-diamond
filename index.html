@@ -609,6 +609,66 @@
       }
     }catch(e){}
   })();
+  // ═══════ FIREBASE KEY HYGIENE ═══════
+  // 24 Aug 2026, reception laptop: one client id minted as
+  // Date.now()+Math.random() ("1779103044957.9568") was deleted, its decimal
+  // id became a clientTomb KEY, and Firebase refuses the ENTIRE set() when any
+  // key contains . # $ / [ ] or is empty. Reads kept working, so the screen
+  // looked alive while EVERY push from that device was rejected. Three rules
+  // close it: no payload leaves with an illegal key, the maps already on disk
+  // are repaired at boot, and no new id ever carries a decimal tail.
+  const _RD_BAD_KEY=/[.#$\/\[\]]/;
+  function _rdFbKeyOk(k){ return !!k && !_RD_BAD_KEY.test(k); }
+  // A decimal id is recoverable — its integer part IS the id. Any other
+  // illegal key has no true form to return to and is dropped instead.
+  function _rdIdKey(id){
+    const s=String(id);
+    return /^\d+\.\d+$/.test(s) ? s.slice(0, s.indexOf('.')) : s;
+  }
+  function _rdTsOf(v){
+    if(typeof v==='number') return v;
+    if(v&&typeof v==='object'&&isFinite(Number(v.ts))) return Number(v.ts);
+    return NaN;
+  }
+  // Walks a payload in place and repairs every object key Firebase would
+  // refuse: decimal ids collapse to their integer part (the newer stamp wins
+  // if both forms exist), everything else illegal is dropped. Each repair is
+  // written to the removal log, so tomorrow's "why" has an answer.
+  function rdSanitizeForCloud(node, where, stats){
+    if(!node||typeof node!=='object') return node;
+    if(Array.isArray(node)){
+      for(let i=0;i<node.length;i++) node[i]=rdSanitizeForCloud(node[i], where, stats);
+      return node;
+    }
+    Object.keys(node).forEach(function(k){
+      node[k]=rdSanitizeForCloud(node[k], where, stats);
+      if(_rdFbKeyOk(k)) return;
+      const v=node[k];
+      delete node[k];
+      if(stats) stats.fixed++;
+      const fixed=_rdIdKey(k);
+      if(fixed!==k&&_rdFbKeyOk(fixed)){
+        const cur=node[fixed], a=_rdTsOf(cur), b=_rdTsOf(v);
+        if(cur===undefined||(isFinite(a)&&isFinite(b)&&b>a)) node[fixed]=v;
+        try{ apptDropLog(null,k,'geçersiz senkron anahtarı düzeltildi ('+(where||'?')+')','→ '+fixed); }catch(e){}
+        try{ console.warn('[sync] 🧹 geçersiz anahtar düzeltildi ('+(where||'?')+'):', k, '→', fixed); }catch(e){}
+      }else{
+        try{ apptDropLog(null,k,'geçersiz senkron anahtarı atıldı ('+(where||'?')+')',''); }catch(e){}
+        try{ console.warn('[sync] 🧹 geçersiz anahtar atıldı ('+(where||'?')+'):', k); }catch(e){}
+      }
+    });
+    return node;
+  }
+  // Every locally minted id is a plain integer: Date.now(), bumped past the
+  // last id handed out, so a tight import loop still gets unique ids without
+  // Math.random()'s decimal tail — the tail is what poisoned clientTomb.
+  let _rdLastNewId=0;
+  function rdNewId(){
+    let t=Date.now();
+    if(t<=_rdLastNewId) t=_rdLastNewId+1;
+    _rdLastNewId=t;
+    return t;
+  }
   function syncPush(key,data){
     if(!_fbDb)return;
     // A payload that cannot become JSON is a bug AT THE CALL SITE — it must be
@@ -638,6 +698,15 @@
       const payload=typeof data==='string'?JSON.parse(data):JSON.parse(JSON.stringify(data));
       payload._ts=Date.now();
       payload._by=_rdDevId;
+      // No payload leaves this device with a key Firebase will refuse — one
+      // bad tombstone key must never again silence a whole device's pushes.
+      // If the cleaner itself throws, the push still goes: a rejection lands
+      // in the diagnosis panel, a swallowed push would not.
+      try{
+        const _san={fixed:0};
+        rdSanitizeForCloud(payload, 'push:'+key, _san);
+        if(_san.fixed) console.warn('[sync] 🧹 push öncesi '+_san.fixed+' geçersiz anahtar temizlendi:', key);
+      }catch(e){ console.warn('[sync] anahtar temizliği hata verdi (push yine de deneniyor):', e); }
       _fbDb.ref(key).set(payload).then(()=>{
         const was=_pushFail[key]||0;
         _pushFail[key]=0;
@@ -1242,24 +1311,30 @@
       if(changed) apptTombPersist();
     }catch(e){}
   }
+  // Tombstones are stored under integer keys, but a legacy record minted with
+  // a decimal id may still be walking around — its deletion must match the
+  // truncated key, or the record resurrects on every device that holds it.
+  function _apptTombHas(k){ return apptTomb[k]||apptTomb[_rdIdKey(k)]||0; }
   // Called from every path that deletes an appointment for good. Without this a
   // deletion is only an ABSENCE, and an absence is exactly what a snapshot that
   // simply hasn't caught up looks like — the two have to stay distinguishable.
   function apptTombAdd(id, reason, appt){
     if(id==null) return;
-    const k=String(id);
+    // A legacy decimal id's tombstone is written under its integer part —
+    // Firebase never sees the dot, and the merge looks the truncated form up.
+    const kRaw=String(id), k=_rdIdKey(kRaw);
     try{
       let a=appt;
       if(!a&&typeof appointments!=='undefined'&&Array.isArray(appointments))
-        a=appointments.find(function(x){ return x&&String(x.id)===k; });
-      apptDropLog(a, k, reason||'deleted on this device', 'tombstone written');
+        a=appointments.find(function(x){ return x&&String(x.id)===kRaw; });
+      apptDropLog(a, kRaw, reason||'deleted on this device', 'tombstone written');
     }catch(e){}
     let ts=Date.now();
-    const st=apptStamps[k];
+    const st=apptStamps[k]||apptStamps[kRaw];
     if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
     if((apptTomb[k]||0)>=ts) ts=apptTomb[k]+1;
     apptTomb[k]=ts;
-    if(st){ delete apptStamps[k]; apptStampPersist(); }
+    if(st){ delete apptStamps[k]; delete apptStamps[kRaw]; apptStampPersist(); }
     apptTombPersist();
   }
   function apptTombAddMany(ids, reason){
@@ -1272,9 +1347,13 @@
     try{
       if(!remoteTomb||typeof remoteTomb!=='object') return;
       let changed=false;
-      Object.keys(remoteTomb).forEach(function(k){
-        const ts=Number(remoteTomb[k])||0;
+      Object.keys(remoteTomb).forEach(function(k0){
+        const ts=Number(remoteTomb[k0])||0;
         if(!ts) return;
+        // Whatever arrives — an old device's decimal id included — enters the
+        // live map only under a key Firebase will accept.
+        const k=_rdIdKey(k0);
+        if(!_rdFbKeyOk(k)) return;
         if((apptTomb[k]||0)>=ts) return;
         apptTomb[k]=ts; changed=true;
       });
@@ -1297,7 +1376,7 @@
         if(!a||a.id==null) return;
         const k=String(a.id);
         if(have[k]) return;
-        if(apptTomb[k]) return;            // a real deletion — allowed to go
+        if(_apptTombHas(k)) return;        // a real deletion — allowed to go
         have[k]=1;
         out.push(a);
         _apptMergeKept=true;
@@ -1335,7 +1414,7 @@
         took[k]=1;
         // Someone deleted this for real. A tombstone is the ONLY thing that
         // removes a record, and it does so whatever the clocks say.
-        if(apptTomb[k]){
+        if(_apptTombHas(k)){
           apptDropLog(r,k,'tombstone — deleted on a device','arrived in snapshot');
           _apptMergeKept=true;
           return;
@@ -1387,7 +1466,7 @@
         const k=String(a.id);
         if(took[k]) return;
         took[k]=1;
-        if(apptTomb[k]){
+        if(_apptTombHas(k)){
           apptDropLog(a,k,'tombstone — deleted on a device','held locally');
           _apptMergeKept=true;
           return;
@@ -1520,6 +1599,67 @@
     console.log(ok?'✅ rdSyncSelfTest: tümü geçti':'❌ rdSyncSelfTest: BAŞARISIZ satır var');
     return ok;
   };
+  // The 24 Aug push failure, replayed on purpose. Run rdKeyCleanSelfTest() in
+  // the console: it injects the EXACT tombstone key that silenced the
+  // reception laptop ("1779103044957.9568"), runs the pre-push cleaner, and
+  // then checks every key in the cleaned payload against the same rule
+  // Firebase enforces — zero violations is precisely "set() cannot be refused
+  // for keys". Touches nothing live; the tomb maps are put back as they were.
+  window.rdKeyCleanSelfTest=function(){
+    const rows=[];
+    const T=function(test,pass,detail){ rows.push({test:test, sonuc:detail===undefined?(pass?'ok':'HATA'):detail, PASS:!!pass}); };
+    // Walk a payload exactly as Firebase judges it: every key non-empty, none
+    // containing . # $ / [ ] — anywhere in the tree.
+    const badKeys=function(node,path,acc){
+      if(!node||typeof node!=='object') return acc;
+      if(Array.isArray(node)){ node.forEach(function(v,i){ badKeys(v,path+'['+i+']',acc); }); return acc; }
+      Object.keys(node).forEach(function(k){
+        if(!_rdFbKeyOk(k)) acc.push(path+'/'+k);
+        badKeys(node[k],path+'/'+k,acc);
+      });
+      return acc;
+    };
+    try{
+      // 1 — new ids are integers, and stay unique even inside one millisecond.
+      let intOk=true, monoOk=true, prev=0;
+      for(let i=0;i<1000;i++){ const id=rdNewId(); if(!Number.isInteger(id)) intOk=false; if(id<=prev) monoOk=false; prev=id; }
+      T('rdNewId: 1000 id, hepsi tam sayı', intOk);
+      T('rdNewId: hepsi birbirinden farklı (artan)', monoOk);
+      // 2 — the decimal id collapses to its integer part, nothing else moves.
+      T('_rdIdKey: 1779103044957.9568 → 1779103044957', _rdIdKey('1779103044957.9568')==='1779103044957');
+      T('_rdIdKey: tam sayı id olduğu gibi kalır', _rdIdKey('1779103044957')==='1779103044957');
+      // 3 — a payload carrying the reception laptop's poison, plus every other
+      //     illegal shape, goes through the pre-push cleaner.
+      const payload={
+        clients:[{id:1,name:'ok'}],
+        clientTomb:{'1779103044957.9568':1779103050000,'1779103044957':1779103040000,'123456':7,'':5,'bad#key':6,'a/b':8},
+        apptTomb:{'55.25':999},
+        priceOverrides:{'42':{price:100,ts:1}}
+      };
+      const st={fixed:0};
+      rdSanitizeForCloud(payload,'selftest',st);
+      const left=badKeys(payload,'',[]);
+      T('temizlik sonrası geçersiz anahtar kalmadı → push reddedilemez', left.length===0, left.length===0?'ok':left.join(', '));
+      T('ondalık mezar taşı tam sayıya taşındı', payload.clientTomb['1779103044957']!==undefined && payload.clientTomb['1779103044957.9568']===undefined);
+      T('çakışmada yeni damga kazandı', payload.clientTomb['1779103044957']===1779103050000);
+      T('sağlam anahtarlar dokunulmadan kaldı', payload.clientTomb['123456']===7 && payload.priceOverrides['42'].price===100);
+      T('kurtarılamayan anahtarlar atıldı', payload.clientTomb['bad#key']===undefined && payload.clientTomb['a/b']===undefined && !(''+'' in payload.clientTomb));
+      T('apptTomb da aynı kuraldan geçti', payload.apptTomb['55']===999 && payload.apptTomb['55.25']===undefined);
+      // 4 — deleting a legacy decimal-id client writes a LEGAL tombstone, and
+      //     the merge still recognises the deletion through the truncated key.
+      const savedCT=clientTomb, savedCS=clientStamps;
+      try{
+        clientTomb={}; clientStamps={};
+        clientTombAdd('888777666555.4321','selftest');
+        T('clientTombAdd: mezar taşı noktasız yazıldı', clientTomb['888777666555']!==undefined && clientTomb['888777666555.4321']===undefined);
+        T('_clientTombHas: ondalıklı kayıt silinmiş sayılır', !!_clientTombHas('888777666555.4321'));
+      }finally{ clientTomb=savedCT; clientStamps=savedCS; clientTombPersist(); }
+    }catch(e){ T('HATA', false, String(e&&e.message||e)); }
+    try{ console.table(rows); }catch(e){ console.log(rows); }
+    const ok=rows.length>0&&rows.every(function(r){return r.PASS;});
+    console.log(ok?'✅ rdKeyCleanSelfTest: tümü geçti — temizlenmiş push Firebase anahtar kuralına takılamaz':'❌ rdKeyCleanSelfTest: BAŞARISIZ satır var');
+    return ok;
+  };
 
   // ═══════ THE SAME GUARANTEE FOR THE CUSTOMER LIST ═══════
   // Client records were still being REPLACED wholesale by every snapshot, which
@@ -1547,25 +1687,42 @@
       if(changed) clientTombPersist();
     }catch(e){}
   }
+  function _clientTombHas(k){ return clientTomb[k]||clientTomb[_rdIdKey(k)]||0; }
+  // One sweep at boot: the tombstone maps this device already holds are
+  // repaired in place, so the reception laptop's poisoned clientTomb — the key
+  // "1779103044957.9568" that made Firebase refuse every push — heals itself
+  // the first time this build loads, before anything tries to push.
+  (function rdTombBootClean(){
+    try{
+      [[apptTomb,apptTombPersist,'apptTomb (açılış)'],
+       [clientTomb,clientTombPersist,'clientTomb (açılış)']].forEach(function(row){
+        const st={fixed:0};
+        rdSanitizeForCloud(row[0], row[2], st);
+        if(st.fixed){ row[1](); console.warn('[sync] 🧹 '+row[2]+': '+st.fixed+' geçersiz anahtar onarıldı'); }
+      });
+    }catch(e){ console.warn('tomb boot clean error:', e); }
+  })();
   // Called from every path that deletes a customer for good. Without this a
   // deletion is only an ABSENCE, and an absence is what a lagging snapshot
   // looks like too.
   function clientTombAdd(id, reason, cl){
     if(id==null) return;
-    const k=String(id);
+    // Same rule as the appointments: a decimal id's tombstone is written
+    // under its integer part, so the key is always legal in Firebase.
+    const kRaw=String(id), k=_rdIdKey(kRaw);
     try{
       let c=cl;
       if(!c&&typeof clients!=='undefined'&&Array.isArray(clients))
-        c=clients.find(function(x){ return x&&String(x.id)===k; });
-      apptDropLog({id:k, clientName:(c&&c.name)||'?'}, k,
+        c=clients.find(function(x){ return x&&String(x.id)===kRaw; });
+      apptDropLog({id:kRaw, clientName:(c&&c.name)||'?'}, kRaw,
         'CLIENT: '+(reason||'deleted on this device'), 'client tombstone written');
     }catch(e){}
     let ts=Date.now();
-    const st=clientStamps[k];
+    const st=clientStamps[k]||clientStamps[kRaw];
     if(st&&(st.ts||0)>=ts) ts=(st.ts||0)+1;
     if((clientTomb[k]||0)>=ts) ts=clientTomb[k]+1;
     clientTomb[k]=ts;
-    if(st){ delete clientStamps[k]; clientStampPersist(); }
+    if(st){ delete clientStamps[k]; delete clientStamps[kRaw]; clientStampPersist(); }
     clientTombPersist();
   }
   function clientTombAddMany(ids, reason){
@@ -1576,9 +1733,12 @@
     try{
       if(!remoteTomb||typeof remoteTomb!=='object') return;
       let changed=false;
-      Object.keys(remoteTomb).forEach(function(k){
-        const ts=Number(remoteTomb[k])||0;
+      Object.keys(remoteTomb).forEach(function(k0){
+        const ts=Number(remoteTomb[k0])||0;
         if(!ts) return;
+        // Same door policy as the appointment tombs: only legal keys enter.
+        const k=_rdIdKey(k0);
+        if(!_rdFbKeyOk(k)) return;
         if((clientTomb[k]||0)>=ts) return;
         clientTomb[k]=ts; changed=true;
       });
@@ -1599,7 +1759,7 @@
         if(!c||c.id==null) return;
         const k=String(c.id);
         if(have[k]) return;
-        if(clientTomb[k]) return;
+        if(_clientTombHas(k)) return;
         have[k]=1;
         out.push(c);
         _clientMergeKept=true;
@@ -1625,7 +1785,7 @@
         const k=String(r.id);
         if(took[k]) return;
         took[k]=1;
-        if(clientTomb[k]){
+        if(_clientTombHas(k)){
           apptDropLog({id:k, clientName:r.name||'?'}, k, 'CLIENT: tombstone — deleted on a device', 'arrived in snapshot');
           _clientMergeKept=true;
           return;
@@ -1657,7 +1817,7 @@
         const k=String(c.id);
         if(took[k]) return;
         took[k]=1;
-        if(clientTomb[k]){
+        if(_clientTombHas(k)){
           apptDropLog({id:k, clientName:c.name||'?'}, k, 'CLIENT: tombstone — deleted on a device', 'held locally');
           _clientMergeKept=true;
           return;
@@ -6135,7 +6295,7 @@ function dedAdd(){
   }
   const cid = dedClientIdFromLabel(label);
   const item = {
-    id: Date.now()+Math.random(),
+    id: rdNewId(),
     date, time, tech, amount: amount||0, type, note,
     clientId: (cid!=null?cid:(ap?ap.clientId:null)),
     client: label || (ap && typeof cName==='function' ? cName(ap.clientId) : ''),
@@ -6207,7 +6367,7 @@ function cancelLogAdd(a, role, reason){
     var cl = '';
     try{ cl = (typeof cName==='function' && a.clientId) ? cName(a.clientId) : (a.client||''); }catch(e){}
     log.items.push({
-      id: Date.now()+Math.random(),
+      id: rdNewId(),
       apptId: a.id,
       client: cl,
       staff: a.staff||'',
@@ -6726,7 +6886,7 @@ function advAdd(){
   const currency = (curEl && ADV_CUR_SYMBOL[curEl.value]) ? curEl.value : 'TRY';
   const note = document.getElementById('adv-note').value.trim();
   if(!date || !staff || !amount || amount<=0){ alert('Tarih, personel ve tutar gerekli.'); return; }
-  advState.items.push({id:Date.now()+Math.random(), date, staff, amount, currency, note, fxRate: advRateNow(currency), ts:Date.now()});
+  advState.items.push({id:rdNewId(), date, staff, amount, currency, note, fxRate: advRateNow(currency), ts:Date.now()});
   advSave();
   document.getElementById('adv-amount').value='';
   document.getElementById('adv-note').value='';
@@ -8931,7 +9091,7 @@ function confirmImport(){
   importedRows.forEach(r=>{
     if(!r.name)return;
     clients.push({
-      id:Date.now()+Math.random(),
+      id:rdNewId(),
       name:r.name, phone:normalizeWaPhone(r.phone||""),
       birthday:r.birthday||'', notes:r.notes||'',
       tier:r.tier||'Bronze', points:r.points||0,
@@ -10276,7 +10436,7 @@ function _dup_confirmImport(){
     const exists=clients.some(c=>c.name.toLowerCase()===r.name.toLowerCase());
     if(exists){skipped++;return;}
     clients.push({
-      id:Date.now()+Math.random(),
+      id:rdNewId(),
       name:r.name, phone:normalizeWaPhone(r.phone||""),
       birthday:r.birthday, notes:r.notes,
       visits:0, points:r.points,
@@ -11648,7 +11808,7 @@ function dedFlagEntry(opIdx, entryIdx){
   if(!type){ alert('Geçersiz seçim. 1, 2 veya 3 yazın.'); return; }
   const n = new Date();
   const date = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
-  const recId = Date.now()+Math.random();
+  const recId = rdNewId();
   // Same record shape as the Kesintiler form, so a job flagged here shows up in
   // the technician's "no commission" list with the customer's name too.
   const _ap = (typeof dedApptById==='function') ? dedApptById(e.apptId) : null;
@@ -12005,7 +12165,7 @@ function dtEditLogAdd(date, changes){
     const log=dtEditLogLoad();
     const at=new Date().toISOString();
     changes.forEach(c=>{
-      log.items.push({ id: Date.now()+Math.random(), date: date, staff: c.op.name||'?', oldTotal: c.old, newTotal: c.nv, at: at });
+      log.items.push({ id: rdNewId(), date: date, staff: c.op.name||'?', oldTotal: c.old, newTotal: c.nv, at: at });
     });
     localStorage.setItem('rdns_takings_editlog_v1', JSON.stringify(log));
     if(typeof syncPush==='function') try{ syncPush('rdns_takings_editlog_v1', log); }catch(e){}
