@@ -589,10 +589,41 @@
   const _pushFail={};      // key -> consecutive failed pushes (0 = healthy)
   function _pushBroken(){ for(const k in _pushFail){ if(_pushFail[k]>0) return true; } return false; }
   function _syncRetry(key){
-    try{ const raw=localStorage.getItem(key); if(raw!=null) syncPush(key, raw); }catch(e){}
+    // localStorage can hold the literal text "undefined" from an old bad
+    // write — retrying that string forever is how a push loop dies quietly.
+    try{ const raw=localStorage.getItem(key); if(raw!=null&&raw!=='undefined'&&raw!=='null') syncPush(key, raw); }catch(e){}
   }
+  // One sweep at boot: a literal "undefined"/"null" stored under any rdns_*
+  // key is garbage from a past bad write and poisons every retry that rereads
+  // it ('"undefined" is not valid JSON'). Out it goes, with its name logged.
+  (function(){
+    try{
+      for(let i=localStorage.length-1;i>=0;i--){
+        const k=localStorage.key(i);
+        if(!k||k.indexOf('rdns_')!==0) continue;
+        const v=localStorage.getItem(k);
+        if(v==='undefined'||v==='null'||v==='NaN'){
+          localStorage.removeItem(k);
+          console.warn('[sync] 🧹 bozuk localStorage değeri temizlendi:', k, '('+v+')');
+        }
+      }
+    }catch(e){}
+  })();
   function syncPush(key,data){
     if(!_fbDb)return;
+    // A payload that cannot become JSON is a bug AT THE CALL SITE — it must be
+    // loud, carry the caller's stack, and land in the diagnosis panel. Before
+    // this guard, JSON.parse(JSON.stringify(undefined)) threw, the catch below
+    // whispered into the console, and the push simply never happened while the
+    // badge stayed green.
+    if(data==null||data==='undefined'||data==='null'){
+      _pushFail[key]=(_pushFail[key]||0)+1;
+      _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false;
+      _rdDiag.pushErr='veri yok ('+(data===null?'null':(typeof data==='string'?'"'+data+'"':'undefined'))+') — çağıran hata';
+      console.error('[sync] ↑ push İPTAL:', key, '— gönderilecek veri yok:', data, '\nçağıran:\n'+(new Error().stack||'?'));
+      showSyncStatus('error');
+      return;
+    }
     if(!_syncEnabled){
       // Signed out. The listeners attached earlier may still be feeding this
       // screen, so it looks alive — but nothing saved here is leaving the
@@ -638,7 +669,16 @@
         if(n<=6) setTimeout(()=>{ _syncRetry(key); }, Math.min(30000, 1500*Math.pow(2,n-1)));
       });
       if(key==='rdns_main_v1'){try{publishAvailability();}catch(e){}}
-    }catch(e){console.warn('syncPush error:',e);}
+    }catch(e){
+      // Serialization failed — the push never left this machine. That is a
+      // failed push, not a shrug: count it, go red, show it in the panel,
+      // and name the caller so the bad call site can be found.
+      _pushFail[key]=(_pushFail[key]||0)+1;
+      _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false;
+      _rdDiag.pushErr='hazırlanamadı: '+String(e&&e.message||e);
+      console.error('[sync] ↑ push HAZIRLANAMADI:', key, e, '\nçağıran:\n'+(new Error().stack||'?'));
+      showSyncStatus('error');
+    }
     // When the deaf window closes, anything a foreign device pushed into it is
     // fetched back — 'value' events are not replayed, so a dropped one would
     // otherwise stay dropped until the next unrelated edit.
