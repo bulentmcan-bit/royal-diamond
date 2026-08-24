@@ -529,6 +529,26 @@
       if((a._pts||0) < ts) a._pts=ts;
     }catch(e){ console.warn('priceOvrSealCancel error:', e); }
   }
+  // The opposite move, for undoing a cancellation that should never have
+  // happened (the 24 Aug 2026 bulk close swept up 22 Aug bookings reception
+  // had really completed). The seal above is written to be the last word, so
+  // simply flipping the record back would lose to it on every device. This
+  // re-stamps the map entry past everything it knows and lets go of
+  // 'cancelled', so the revert is the newer fact wherever the entry travels.
+  function priceOvrLiftCancelSeal(a){
+    try{
+      if(!a||a.id==null) return;
+      const k=String(a.id), prev=priceOverrides[k];
+      if(!prev||prev.st!=='cancelled') return;
+      const ts=Math.max((prev.ts||0)+1, (a._pts||0)+1, Date.now());
+      prev.st='confirmed';
+      prev.ts=ts;
+      priceOverrides[k]=prev;
+      priceOvrPersist();
+      if((a._pts||0) < ts) a._pts=ts;
+      console.log('[revert] mühür kaldırıldı #'+k+' — override st=confirmed, ts='+ts);
+    }catch(e){ console.warn('priceOvrLiftCancelSeal error:', e); }
+  }
   // A remote record only outranks a saved override when it is BOTH stamped
   // later AND actually carries money. A 0 never beats a saved price.
   function _ovrBeaten(ovr,r){
@@ -3852,8 +3872,13 @@ p, span, div, label, h1, h2, h3, h4 {
            total matches its completed appointments to the kuruş — so these are
            clients who did not come. They are closed as no-shows, NEVER completed:
            completing them would invent revenue and commission nobody earned.
-           Today and the future are never touched. This page sits behind the
-           owner PIN, and the button asks for it again before it acts. -->
+           ONLY days older than a week qualify: the last 7 days, today and the
+           future are never touched, because the two-laptop sync lag lives in
+           exactly that window (see 24 Aug 2026, when this button closed 22 Aug
+           bookings reception had really completed — the Done presses were
+           still stuck on the other side of the broken sync). This page sits
+           behind the owner PIN, and the button asks for it again before it
+           acts; the one-off revert of that morning lives here too. -->
       <div class="m-section">
         <div class="m-section-title open">
           🚫 &nbsp;Geçmiş Açık Randevular
@@ -5967,34 +5992,62 @@ function noShowAppt(id){
   toast('🚫','Gelmedi','Randevu gelmedi olarak kapatıldı — ciro ve komisyon yazılmadı. ('+auth.role+')','r');
 }
 
-// ── 🚫 One-off cleanup: past appointments still standing 'confirmed' ─────────
-// Yesterday and earlier only — today's open bookings may still walk in, and
-// the future is nobody's to close.
+// ── 🚫 Cleanup: past appointments still standing 'confirmed' ─────────────────
+// Older than SEVEN DAYS only. It used to be "yesterday and earlier", and on
+// 24 Aug 2026 that closed 22 Aug bookings as no-shows that reception had
+// really completed — the completions just hadn't crossed the broken sync yet.
+// The two-laptop sync lag lives exactly in the last few days, so the last
+// seven are never this button's to touch: a booking still open after a week
+// is a no-show; a booking open for two days may simply be news in transit.
+function staleCutoffStr(){
+  var d = new Date(); d.setDate(d.getDate()-7);
+  var p = function(n){ return String(n).padStart(2,'0'); };
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
 function staleOpenAppts(){
-  const today = todayStr();
-  return appointments.filter(a => a.status==='confirmed' && apptDayStr(a) < today);
+  const cutoff = staleCutoffStr();
+  return appointments.filter(a => a.status==='confirmed' && apptDayStr(a) < cutoff);
 }
 function mRenderStaleAppts(){
   const el = document.getElementById('m-stale-appts');
   if(!el) return;
   const list = staleOpenAppts();
+  let html = '';
   if(!list.length){
-    el.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;padding:10px 0;text-align:center;font-style:italic;">Geçmişte açık kalmış randevu yok. 🎉</div>';
-    return;
+    html = '<div style="color:var(--muted);font-size:0.82rem;padding:10px 0;text-align:center;font-style:italic;">7 günden eski açık randevu yok. 🎉</div>';
+  } else {
+    const days = new Set(list.map(apptDayStr)).size;
+    const noTech = list.filter(a=>!String(a.staff||'').trim()).length;
+    html =
+      '<div style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:12px;">'+
+        '<b>7 günden daha eski</b> tarihlerde hâlâ <b>confirmed</b> duran <b style="color:var(--red);">'+list.length+'</b> randevu var '+
+        '('+days+' güne yayılmış'+(noTech?', '+noTech+' tanesinde teknisyen atanmamış':'')+'). '+
+        'Bunlar gelmeyen müşteriler: paraları Daily Takings\'e hiç girmemiş. '+
+        'Bu yüzden <b>tamamlanmış sayılmazlar</b> — "gelmedi" sebebiyle iptal olarak kapatılırlar; '+
+        'ciroya ve komisyona yazılmaz. <b>Son 7 güne, bugüne ve gelecek tarihlere asla dokunulmaz</b> — '+
+        'iki cihaz arasındaki senkron gecikmesi tam o pencerede yaşanır ve bir cihazın "açık" sandığı '+
+        'randevu diğerinde çoktan tamamlanmış olabilir.'+
+      '</div>'+
+      '<button onclick="mCloseStaleAppts()" style="background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.3);color:var(--red);'+
+        'border-radius:8px;padding:9px 16px;font-size:0.82rem;cursor:pointer;font-family:\'Nunito\',sans-serif;font-weight:800;">'+
+        '🚫 '+list.length+' randevuyu "gelmedi" olarak kapat</button>';
   }
-  const days = new Set(list.map(apptDayStr)).size;
-  const noTech = list.filter(a=>!String(a.staff||'').trim()).length;
-  el.innerHTML =
-    '<div style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:12px;">'+
-      'Bugünden önceki tarihlerde hâlâ <b>confirmed</b> duran <b style="color:var(--red);">'+list.length+'</b> randevu var '+
-      '('+days+' güne yayılmış'+(noTech?', '+noTech+' tanesinde teknisyen atanmamış':'')+'). '+
-      'Bunlar gelmeyen müşteriler: paraları Daily Takings\'e hiç girmemiş. '+
-      'Bu yüzden <b>tamamlanmış sayılmazlar</b> — "gelmedi" sebebiyle iptal olarak kapatılırlar; '+
-      'ciroya ve komisyona yazılmaz. Bugüne ve gelecek tarihlere dokunulmaz.'+
-    '</div>'+
-    '<button onclick="mCloseStaleAppts()" style="background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.3);color:var(--red);'+
-      'border-radius:8px;padding:9px 16px;font-size:0.82rem;cursor:pointer;font-family:\'Nunito\',sans-serif;font-weight:800;">'+
-      '🚫 '+list.length+' randevuyu "gelmedi" olarak kapat</button>';
+  const rn = bulkCloseRevertCount();
+  if(rn){
+    html +=
+      '<div style="margin-top:16px;padding-top:14px;border-top:1px dashed var(--border);">'+
+        '<div style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin-bottom:10px;">'+
+          '<b style="color:var(--red);">24 Ağustos sabahki toplu kapatma</b>, 22 Ağustos Cumartesi\'nin randevularını da '+
+          '"gelmedi" yaptı — oysa çoğu resepsiyon laptopunda tamamlanmıştı ve senkron bozuk olduğu için bu cihaza hiç '+
+          'ulaşmamıştı. Bu tek seferlik düğme o kayıtları <b>confirmed</b> durumuna geri döndürür. '+
+          '<b>Completed YAPMAZ</b> — hangisinin gerçekten yapıldığını sistem bilmiyor; yapılanları tek tek ✓ Done ile kapatın.'+
+        '</div>'+
+        '<button onclick="mRevertBulkClose()" style="background:rgba(120,180,140,0.12);border:1px solid rgba(120,180,140,0.35);color:var(--green,#4a8);'+
+          'border-radius:8px;padding:9px 16px;font-size:0.82rem;cursor:pointer;font-family:\'Nunito\',sans-serif;font-weight:800;">'+
+          '↩ '+rn+' randevuyu (22 Ağustos) geri al</button>'+
+      '</div>';
+  }
+  el.innerHTML = html;
 }
 function mCloseStaleAppts(){
   if(!ownerPin()) return;
@@ -6003,12 +6056,86 @@ function mCloseStaleAppts(){
   if(!confirm(list.length+' geçmiş randevu "GELMEDİ" olarak kapatılacak.\n\n'+
               '· Ciroya girmez, komisyon yazılmaz\n'+
               '· İptal kaydına "toplu kapatma — gelmedi" sebebiyle yazılır\n'+
-              '· Bugüne ve gelecek tarihlere dokunulmaz\n\nDevam?')) return;
+              '· Sadece 7 günden eski randevular — son 7 güne, bugüne ve gelecek tarihlere dokunulmaz\n\nDevam?')) return;
   list.forEach(a => noShowClose(a, 'Patron', 'toplu kapatma — gelmedi'));
   saveAll(); renderDash(); renderAppts(); updateApptBadge();
   mRenderStaleAppts();
   try{ renderMonthly(); }catch(e){}
   toast('🚫','Geçmiş randevular kapatıldı', list.length+' randevu "gelmedi" olarak kapatıldı — ciro ve komisyon yazılmadı.','g');
+}
+
+// ── ↩ ONE-OFF REVERT: the 24 Aug 2026 bulk close ────────────────────────────
+// That morning the button above closed 22 Aug Saturday's 20 open bookings as
+// no-shows. But they were not no-shows: reception had pressed Done on them two
+// days earlier, and the broken sync (fixed that evening) never carried the
+// completions to this laptop. The cancel log remembers exactly which records
+// the sweep took — reason 'toplu kapatma — gelmedi', closed on 24 Aug — so the
+// revert works from that log, touches ONLY the 22 Aug entries in it, and puts
+// them back to 'confirmed'. Never 'completed': the system does not know which
+// ones were really done, so the boss confirms each with ✓ Done by hand.
+// Each reverted record gets the cancel seal lifted (or the merge would reject
+// the comeback) and fresh _ats/_sts stamps (so the comeback travels). The log
+// entry is marked reverted, which is what makes this a one-shot: run it twice
+// and the second run finds nothing.
+function _bulkRevertMatch(e){
+  return !!e && !e.reverted
+    && e.reason==='toplu kapatma — gelmedi'
+    && String(e.cancelledAt||'').slice(0,10)==='2026-08-24'
+    && String(e.apptTime||'').slice(0,10)==='2026-08-22';
+}
+function _bulkRevertTargets(log){
+  var seen={}, out=[];
+  (log.items||[]).forEach(function(e){
+    if(!_bulkRevertMatch(e)) return;
+    var k=String(e.apptId);
+    if(seen[k]) return; seen[k]=1;
+    var a=appointments.find(function(x){ return x && String(x.id)===k; });
+    if(a && a.status==='cancelled' && a.noShow) out.push({a:a, e:e});
+  });
+  return out;
+}
+function bulkCloseRevertCount(){
+  try{
+    var log=JSON.parse(localStorage.getItem('rdns_cancel_log_v1')||'{"items":[]}');
+    return _bulkRevertTargets(log).length;
+  }catch(err){ return 0; }
+}
+function mRevertBulkClose(){
+  if(!ownerPin()) return;
+  var log;
+  try{ log=JSON.parse(localStorage.getItem('rdns_cancel_log_v1')||'{"items":[]}'); }catch(e){ log={items:[]}; }
+  if(!log.items) log.items=[];
+  var targets=_bulkRevertTargets(log);
+  if(!targets.length){
+    toast('↩','Geri alınacak kayıt yok','24 Ağustos toplu kapatmasından 22 Ağustos tarihli açık kayıt kalmamış.','');
+    mRenderStaleAppts();
+    return;
+  }
+  if(!confirm(targets.length+' randevu (22 Ağustos Cumartesi) toplu kapatmadan GERİ ALINACAK.\n\n'+
+              '· Durumları tekrar "confirmed" olur — completed YAPILMAZ\n'+
+              '· Gerçekten yapılanları tek tek ✓ Done ile kapatın\n'+
+              '· Değişiklik diğer cihazlara da gider\n\nDevam?')) return;
+  var now=new Date().toISOString();
+  targets.forEach(function(t){
+    var a=t.a;
+    a.status='confirmed';
+    delete a.noShow;
+    delete a.noShowAt;
+    apptTouch(a);              // fresh _ats + _sts — the revert must out-stamp the close
+    priceOvrLiftCancelSeal(a); // and out-stamp the seal, or the map re-asserts the cancel
+    t.e.reverted=1;
+    t.e.revertedAt=now;
+    console.log('[revert] ↩ #'+a.id+' '+(a.staff||'?')+' '+(a.datetime||'')+' → confirmed (gelmedi geri alındı, _sts='+a._sts+')');
+  });
+  try{
+    localStorage.setItem('rdns_cancel_log_v1', JSON.stringify(log));
+    if(typeof syncPush==='function') syncPush('rdns_cancel_log_v1', log);
+  }catch(e){ console.warn('revert cancel-log persist error:', e); }
+  saveAll(); renderDash(); renderAppts(); updateApptBadge();
+  try{ renderMonthly(); }catch(e){}
+  mRenderStaleAppts();
+  console.log('[revert] toplam '+targets.length+' randevu (2026-08-22) confirmed durumuna döndürüldü — 24 Ağustos toplu kapatma geri alma');
+  toast('↩','Toplu kapatma geri alındı', targets.length+' randevu (22 Ağustos) tekrar "confirmed" oldu. Yapılanları tek tek ✓ Done ile kapatın.','g');
 }
 
 function dedDelete(id){
