@@ -272,6 +272,31 @@
           if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
         }catch(e){console.warn('cancel log sync error:',e);}
       });
+      // Takings correction log — append-only, union-merged by id like the
+      // cancel log, so every device keeps every correction ever made.
+      _fbDb.ref('rdns_takings_editlog_v1').on('value',snap=>{
+        if(_isSyncing['rdns_takings_editlog_v1'])return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          try{
+            const local=JSON.parse(localStorage.getItem('rdns_takings_editlog_v1')||'{"items":[]}');
+            const seen={}; const merged=[];
+            (rObj.items||[]).concat(local.items||[]).forEach(it=>{
+              const k=String(it.id); if(!seen[k]){seen[k]=1;merged.push(it);}
+            });
+            if(merged.length!==(rObj.items||[]).length){
+              rObj.items=merged;
+              setTimeout(()=>{ try{ syncPush('rdns_takings_editlog_v1', rObj); }catch(e){} }, 1200);
+            } else { rObj.items=merged; }
+          }catch(e){}
+          _isSyncing['rdns_takings_editlog_v1']=true;
+          localStorage.setItem('rdns_takings_editlog_v1',JSON.stringify(rObj));
+          setTimeout(()=>{_isSyncing['rdns_takings_editlog_v1']=false;},800);
+          const pg=document.querySelector('.page.active');
+          if(pg&&pg.id==='page-takings')try{dtRenderEditLog();}catch(e){}
+        }catch(e){console.warn('takings edit log sync error:',e);}
+      });
       _fbDb.ref('rdns_recep_pin_v1').on('value',snap=>{
         if(_isSyncing['rdns_recep_pin_v1'])return;
         const val=snap.val();if(!val)return;
@@ -3680,6 +3705,14 @@ p, span, div, label, h1, h2, h3, h4 {
           <button class="btn btn-ghost" style="font-size:0.72rem;padding:5px 10px;" onclick="dtClearHistory()">Clear All</button>
         </div>
         <div id="dtHistoryList"><div class="hist-empty">No history yet — completed days will appear here.</div></div>
+        <!-- Correction log: every past-day edit lands here — which day, which
+             staff, old → new, when. Read-only; the log itself is never edited. -->
+        <div id="dtEditLogWrap" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);display:none;">
+          <div style="font-size:0.78rem;color:var(--muted);font-weight:700;cursor:pointer;user-select:none;" onclick="dtToggleEditLog()">
+            📝 Düzeltme Kaydı (<span id="dtEditLogCount">0</span>) <span id="dtEditLogArrow">▸</span>
+          </div>
+          <div id="dtEditLogList" style="display:none;margin-top:8px;"></div>
+        </div>
       </div>
 
     </div><!-- /page-takings -->
@@ -10061,6 +10094,28 @@ function _dup_downloadTemplate(){
   </div>
 </div>
 
+<!-- DT MODAL: Edit a past day's per-staff totals. The day total is never
+     typed — it is always the sum of what stands in the inputs. -->
+<div class="dt-modal-overlay" id="dtModalEditDay">
+  <div class="dt-modal" style="max-width:440px;">
+    <button class="dt-modal-close" onclick="dtCloseModal('dtModalEditDay')">✕</button>
+    <div class="dt-modal-title">✏ <span id="dtEditDayTitle">Günü Düzelt</span></div>
+    <div style="color:var(--muted);font-size:0.78rem;line-height:1.6;margin-bottom:12px;">
+      Personel tutarlarını düzeltin — gün toplamı otomatik hesaplanır.
+      "Sent" işareti korunur; her değişiklik düzeltme kaydına yazılır.
+    </div>
+    <div id="dtEditDayRows"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+      <span style="font-size:0.78rem;color:var(--muted);font-weight:700;">GÜN TOPLAMI (otomatik)</span>
+      <span id="dtEditDayTotal" style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:700;color:var(--goldLight);">—</span>
+    </div>
+    <div class="dt-modal-actions">
+      <button class="btn btn-ghost" onclick="dtCloseModal('dtModalEditDay')">Vazgeç</button>
+      <button class="btn btn-wa" onclick="dtSaveEditDay()">💾 Kaydet</button>
+    </div>
+  </div>
+</div>
+
 
 <script>
 
@@ -11488,8 +11543,10 @@ function dtRenderHistory(){
         <span class="hist-ops">${h.ops.map(o=>o.name+': '+dtState.currency+o.total.toFixed(2)).join(' · ')}</span>
         <span class="hist-total">${dtState.currency} ${h.total.toFixed(2)}${h.sent?'<span class="hist-sent">✓ Sent</span>':''}</span>
       </div>
+      <button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold);flex:0 0 auto;" onclick="event.stopPropagation();dtEditHistoryDay('${h.date}')" title="Bu günün rakamlarını düzelt (patron şifresi)">✏</button>
       <button class="btn btn-red btn-sm" style="opacity:0.7;flex:0 0 auto;" onclick="event.stopPropagation();dtDeleteHistoryDay('${h.date}')" title="Delete this day">🗑</button>
     </div>`).join('');
+  dtRenderEditLog();
 }
 
 // ── Actions ──
@@ -11608,11 +11665,130 @@ function dtResetDay(){
 
 function dtClearHistory(){ if(!ownerPin()) return; dtState.history=[]; dtSaveState(); dtRender(); toast('🗑','History Cleared','','g'); }
 function dtDeleteHistoryDay(date){
-  if(!confirm('Delete the record for '+date+'? This cannot be undone.')) return;
+  if(!ownerPin()) return;
+  const h = (dtState.history||[]).find(x=>x.date===date);
+  const tot = h ? dtFmt(h.total||0) : '';
+  if(!confirm('⚠ '+date+' günü TAMAMEN silinecek'+(tot?' ('+tot+')':'')+'.\n\n'+
+              'Bu geri alınamaz — sadece rakam düzeltmek için silme yerine ✏ düğmesini kullanın.\n\nSilinsin mi?')) return;
   dtState.history = (dtState.history||[]).filter(h=>h.date!==date);
+  // Without a tombstone the merge resurrects the day from the other device —
+  // the deletion must out-date the row's last edit to travel (see the merge).
+  if(!dtState.tomb) dtState.tomb = {};
+  dtState.tomb[date] = Date.now();
   if(dtViewDate===date) dtViewDate=null; // stop viewing a day that no longer exists
   dtSaveState(); dtRender();
   toast('🗑','Day Deleted',date+' removed from history.','g');
+}
+
+// ── ✏ EDIT a past day in Recent Day History ─────────────────────────────────
+// Owner-PIN only. Amounts are corrected per staff member; the day total is
+// never typed — it is recomputed from the inputs. The sent flag, the payment
+// method breakdown and the archived line items stay exactly as they were.
+// Each changed amount also rewrites op.commission from TECH_COMM_RATES (a
+// stored commission outranks the rate in techCommFromDays, so a stale one
+// would keep paying on the old figure), and the row gets a fresh ts so the
+// correction wins the per-day merge and travels to the other laptop. Every
+// change is appended to rdns_takings_editlog_v1 — which day, which staff,
+// old → new, when — union-merged across devices like the cancel log.
+let _dtEditDate = null;
+function dtEditHistoryDay(date){
+  const h = (dtState.history||[]).find(x=>x.date===date);
+  if(!h){ toast('⚠️','Kayıt yok',date+' için geçmiş kaydı bulunamadı.',''); return; }
+  if(date===dtDateKey()){ toast('⚠️','Bugün canlı','Bugünün rakamları yukarıdaki canlı bölümden düzenlenir — geçmiş düzeltme sadece eski günler için.',''); return; }
+  if(!ownerPin()) return;
+  _dtEditDate = date;
+  const titleEl=document.getElementById('dtEditDayTitle');
+  if(titleEl) titleEl.textContent = date+' — Günü Düzelt'+(h.sent?' (✓ Sent korunur)':'');
+  document.getElementById('dtEditDayRows').innerHTML = (h.ops||[]).map((o,i)=>
+    '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;">'+
+      '<span style="flex:1;font-size:0.85rem;color:var(--soft);font-weight:700;">'+dtEscHtml(o.name||'?')+'</span>'+
+      '<span style="font-size:0.72rem;color:var(--muted);">'+dtState.currency+' '+(o.total||0).toFixed(2)+' →</span>'+
+      '<input type="number" min="0" step="0.01" class="dt-inp" style="width:110px;text-align:right;" id="dtEditAmt'+i+'" value="'+(o.total||0)+'" oninput="dtEditRecalcTotal()"/>'+
+    '</div>').join('');
+  dtEditRecalcTotal();
+  dtOpenModal('dtModalEditDay');
+}
+function dtEditRecalcTotal(){
+  const h = (dtState.history||[]).find(x=>x.date===_dtEditDate);
+  if(!h) return;
+  let t=0;
+  (h.ops||[]).forEach((o,i)=>{
+    const inp=document.getElementById('dtEditAmt'+i);
+    t += inp ? (parseFloat(inp.value)||0) : (o.total||0);
+  });
+  const el=document.getElementById('dtEditDayTotal');
+  if(el) el.textContent = dtState.currency+' '+t.toFixed(2);
+}
+function dtSaveEditDay(){
+  const date=_dtEditDate;
+  const h=(dtState.history||[]).find(x=>x.date===date);
+  if(!h){ dtCloseModal('dtModalEditDay'); return; }
+  // First pass: every input must hold a valid non-negative number, or nothing moves
+  let bad=false;
+  const vals=(h.ops||[]).map((o,i)=>{
+    const inp=document.getElementById('dtEditAmt'+i);
+    if(!inp) return o.total||0;
+    const nv=parseFloat(inp.value);
+    if(isNaN(nv)||nv<0){ inp.style.borderColor='var(--red)'; setTimeout(()=>inp.style.borderColor='',900); bad=true; return null; }
+    return nv;
+  });
+  if(bad){ toast('⚠️','Geçersiz tutar','Kırmızı işaretli alanı düzeltin — negatif veya boş olamaz.',''); return; }
+  const changes=[];
+  (h.ops||[]).forEach((o,i)=>{
+    const old=o.total||0, nv=vals[i];
+    if(Math.abs(nv-old)>0.004) changes.push({op:o, old:old, nv:nv});
+  });
+  if(!changes.length){ dtCloseModal('dtModalEditDay'); _dtEditDate=null; toast('✏','Değişiklik yok','Hiçbir tutar değişmedi.',''); return; }
+  changes.forEach(c=>{
+    c.op.total=c.nv;
+    c.op.commission=Math.round(c.nv*(TECH_COMM_RATES[c.op.name]||0));
+  });
+  h.total=(h.ops||[]).reduce((s,o)=>s+(o.total||0),0);
+  h.ts=Date.now();   // the correction must out-date the old row on the other device
+  dtEditLogAdd(date, changes);
+  dtSaveState(); dtRender();
+  dtCloseModal('dtModalEditDay');
+  _dtEditDate=null;
+  toast('✏','Gün düzeltildi', date+' — '+changes.length+' tutar güncellendi. Yeni toplam: '+dtFmt(h.total)+'.','g');
+}
+function dtEditLogLoad(){
+  try{ const l=JSON.parse(localStorage.getItem('rdns_takings_editlog_v1')||'{"items":[]}'); if(!Array.isArray(l.items)) l.items=[]; return l; }
+  catch(e){ return {items:[]}; }
+}
+function dtEditLogAdd(date, changes){
+  try{
+    const log=dtEditLogLoad();
+    const at=new Date().toISOString();
+    changes.forEach(c=>{
+      log.items.push({ id: Date.now()+Math.random(), date: date, staff: c.op.name||'?', oldTotal: c.old, newTotal: c.nv, at: at });
+    });
+    localStorage.setItem('rdns_takings_editlog_v1', JSON.stringify(log));
+    if(typeof syncPush==='function') try{ syncPush('rdns_takings_editlog_v1', log); }catch(e){}
+  }catch(e){ console.warn('takings edit log error:', e); }
+}
+function dtToggleEditLog(){
+  const l=document.getElementById('dtEditLogList'), a=document.getElementById('dtEditLogArrow');
+  if(!l) return;
+  const open = l.style.display==='none';
+  l.style.display = open?'block':'none';
+  if(a) a.textContent = open?'▾':'▸';
+}
+function dtRenderEditLog(){
+  const wrap=document.getElementById('dtEditLogWrap');
+  const list=document.getElementById('dtEditLogList');
+  const cnt=document.getElementById('dtEditLogCount');
+  if(!wrap||!list) return;
+  const items=dtEditLogLoad().items.slice().sort((a,b)=>String(b.at).localeCompare(String(a.at)));
+  if(!items.length){ wrap.style.display='none'; return; }
+  wrap.style.display='block';
+  if(cnt) cnt.textContent=items.length;
+  list.innerHTML = items.slice(0,40).map(it=>
+    '<div style="font-size:0.74rem;color:var(--soft);padding:4px 0;border-bottom:1px dashed var(--border);display:flex;gap:8px;flex-wrap:wrap;">'+
+      '<span style="color:var(--muted);">'+dtEscHtml(String(it.at||'').slice(0,16).replace('T',' '))+'</span>'+
+      '<span style="color:var(--gold);font-weight:700;">'+dtEscHtml(it.date||'')+'</span>'+
+      '<span style="font-weight:700;">'+dtEscHtml(it.staff||'')+'</span>'+
+      '<span>'+dtState.currency+' '+(+it.oldTotal||0).toFixed(2)+' → <b style="color:var(--goldLight);">'+dtState.currency+' '+(+it.newTotal||0).toFixed(2)+'</b></span>'+
+    '</div>').join('');
 }
 
 // ── Settings ──
