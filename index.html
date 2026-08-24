@@ -89,6 +89,9 @@
       _fbAuth=firebase.auth();
       _fbAuth.onAuthStateChanged(user=>{
         if(user&&user.isAnonymous){ try{_fbAuth.signOut();}catch(e){} return; }
+        // Which login this laptop reads/writes AS — rules judge exactly this.
+        _rdDiag.authUser=user?(user.email||user.uid||'?'):'';
+        console.log('[sync] oturum:', user?(user.email||user.uid):'GİRİŞ YOK', '· cihaz='+_rdDevId, '· sürüm='+RD_BUILD);
         if(user){ _hideLoginOverlay(); _syncEnabled=true; _startSyncListeners(); }
         else { _syncEnabled=false; _showLoginOverlay(); }
       });
@@ -114,6 +117,113 @@
   let _lastMainSnapRx=0;      // last time ANY rdns_main_v1 event reached this device
   let _mainSnapMissed=false;  // a foreign snapshot fell into a suppress window
   let _mainListenerDead=false;
+  // ═══════ 🩺 SYNC DIAGNOSIS — measured on the REAL device, not simulated ═════
+  // 24 Aug, hour two: the boss laptop went a full hour without receiving a
+  // thing while both screens still claimed "Synced". Guessing stops here.
+  // Everything below is MEASURED on this machine and shown on screen (click
+  // the ☁️ badge, owner PIN): when the last snapshot arrived and who wrote it,
+  // whether the socket is up (.info/connected), how the last push ended, and —
+  // decisive for "writes work, reads don't" — a 90-second READ PROBE that
+  // fetches the cloud's _ts by hand, bypassing the listener entirely. If the
+  // probe errors, the rules are refusing READS for this login and the panel
+  // says so verbatim. If the probe sees newer data than the listener ever
+  // delivered, the ear is dead: the probe pulls the data in by force and
+  // re-attaches, so the laptop heals instead of starving quietly.
+  const RD_BUILD='v40 · 24.08.2026 · senkron tanı';
+  let _rdDiag={snapAt:0,snapBy:'',snapTs:0,snapN:0,attachedAt:0,reattach:0,
+               pushAt:0,pushKey:'',pushOk:null,pushErr:'',
+               probeAt:0,probeTs:0,probeErr:'',connected:null,authUser:''};
+  function _rdSyncProbe(){
+    if(!_fbDb||!_syncEnabled) return;
+    _fbDb.ref('rdns_main_v1/_ts').once('value').then(s=>{
+      let cloudTs=Number(s.val())||0;
+      // An ancient client stored the whole DB as a STRING — then the child
+      // path reads null. Fall back to the full node once, so the probe can
+      // never mistake "unreadable shape" for "nothing new out there".
+      if(!cloudTs){
+        return _fbDb.ref('rdns_main_v1').once('value').then(fs=>{
+          try{ const v=fs.val(); const o=typeof v==='string'?JSON.parse(v):v; cloudTs=Number(o&&o._ts)||0; }catch(e){}
+          return cloudTs;
+        });
+      }
+      return cloudTs;
+    }).then(cloudTs=>{
+      if(cloudTs===undefined) return;
+      _rdDiag.probeAt=Date.now(); _rdDiag.probeTs=cloudTs; _rdDiag.probeErr='';
+      // The listener must already have heard this write. Cloud newer than the
+      // last snapshot that reached us, and nothing arriving for 15s? Then the
+      // ear is dead whatever the badge says — fetch by hand, re-attach.
+      if(cloudTs && cloudTs>(_rdDiag.snapTs||0)+2000 && Date.now()-_lastMainSnapRx>15000){
+        console.error('[sync] 🩺 sonda: bulutta daha yeni veri var ('+new Date(cloudTs).toLocaleTimeString('tr-TR')+') ama dinleyici duymadı — elle çekiliyor, dinleyici yeniden bağlanıyor');
+        _rdDiag.reattach++;
+        try{ toast('⚠️','DİNLEYİCİ SAĞIRDI','Bulutta bu ekrana hiç ulaşmamış veri bulundu — şimdi elle çekildi. ☁️ rozetine tıklayıp tanıya bakın.','r'); }catch(e){}
+        try{ syncForceLoad(); }catch(e){}
+        try{ _attachMainApptListener(); }catch(e){}
+      }
+    }).catch(e=>{
+      _rdDiag.probeAt=Date.now();
+      _rdDiag.probeErr=(e&&(e.code||e.message))||String(e);
+      console.error('[sync] 🩺 sonda OKUMA HATASI:', _rdDiag.probeErr, '— Firebase kuralları bu oturum için OKUMAYI reddediyor olabilir');
+      showSyncStatus('error');
+    });
+  }
+  setInterval(function(){ try{_rdSyncProbe();}catch(e){} }, 90000);
+  setTimeout(function(){ try{_rdSyncProbe();}catch(e){} }, 8000);
+  // The panel behind the ☁️ badge (owner PIN): every number above, on screen,
+  // refreshed each second — so "is it syncing" stops being a matter of belief.
+  window.rdSyncDiagClick=function(){
+    try{ if(typeof ownerPin==='function' && !ownerPin()) return; }catch(e){}
+    window.rdShowSyncDiag();
+  };
+  window.rdShowSyncDiag=function(){
+    const old=document.getElementById('rd-syncdiag-ov'); if(old) old.remove();
+    const esc=function(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+    const ov=document.createElement('div');
+    ov.id='rd-syncdiag-ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Nunito,sans-serif;';
+    ov.innerHTML='<div style="background:#fff;color:#1a1a1a;border-radius:14px;max-width:560px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">'+
+      '<div style="padding:13px 15px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;">'+
+        '<b style="font-size:0.95rem;">🩺 Senkron Tanısı</b><span style="color:#888;font-size:0.72rem;">her saniye tazelenir</span>'+
+        '<span style="flex:1;"></span>'+
+        '<button id="rd-syncdiag-probe" style="border:1px solid #d4a96a;background:rgba(212,169,106,0.14);color:#8a6420;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.74rem;font-weight:800;cursor:pointer;">🔄 Şimdi sonda + çek</button>'+
+        '<button id="rd-syncdiag-x" style="border:1px solid #ddd;background:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.8rem;font-weight:800;cursor:pointer;">✕</button>'+
+      '</div>'+
+      '<div id="rd-syncdiag-body" style="overflow-y:auto;padding:6px 0;"></div>'+
+      '<div style="padding:9px 15px;border-top:1px solid #eee;color:#888;font-size:0.68rem;">Bu satırlar BU cihazda ölçülür. İki laptopta yan yana açıp karşılaştırın: sürüm aynı mı, ikisi de snapshot ALIYOR mu, sonda hata veriyor mu.</div>'+
+    '</div>';
+    document.body.appendChild(ov);
+    const D=_rdDiag;
+    const ago=function(t){ if(!t) return ''; const s=Math.round((Date.now()-t)/1000); return s<120?(s+' sn önce'):(Math.round(s/60)+' dk önce'); };
+    const tm=function(t){ try{ return t?new Date(t).toLocaleTimeString('tr-TR'):'—'; }catch(e){ return '—'; } };
+    const row=function(label,value,state){
+      const col=state==='bad'?'#c0392b':(state==='warn'?'#b8860b':'#1b7a3d');
+      return '<div style="display:flex;gap:10px;padding:8px 15px;border-bottom:1px solid #f2f2f2;font-size:0.8rem;align-items:baseline;">'+
+        '<span style="width:150px;flex-shrink:0;color:#888;font-weight:700;">'+label+'</span>'+
+        '<span style="font-weight:700;color:'+col+';line-height:1.5;">'+value+'</span></div>';
+    };
+    function paint(){
+      let h='';
+      h+=row('Sürüm', esc(RD_BUILD)+' <span style="color:#888;font-weight:400;">(iki cihazda AYNI olmalı)</span>','ok');
+      h+=row('Cihaz kimliği', esc(_rdDevId),'ok');
+      h+=row('Oturum', D.authUser?esc(D.authUser):'GİRİŞ YOK — hiçbir şey buluta gitmez/gelmez', D.authUser?'ok':'bad');
+      h+=row('Bağlantı (.info/connected)', D.connected===null?'henüz bilinmiyor':(D.connected?'CANLI':'KOPUK — internet/socket yok'), D.connected===null?'warn':(D.connected?'ok':'bad'));
+      h+=row('Dinleyici', _mainListenerDead?('ÖLÜ — yeniden bağlanma bekleniyor'):('bağlı · '+tm(D.attachedAt)+(D.reattach?(' · '+D.reattach+'× yeniden bağlandı'):'')), _mainListenerDead?'bad':'ok');
+      const snapStale=D.snapAt&&(Date.now()-D.snapAt>10*60000);
+      h+=row('Son gelen snapshot', D.snapAt?(tm(D.snapAt)+' ('+ago(D.snapAt)+') · yazan='+esc(D.snapBy)+' · toplam '+D.snapN+' adet'):'HİÇ GELMEDİ — okuma yönü çalışmıyor', D.snapAt?(snapStale?'warn':'ok'):'bad');
+      h+=row('Snapshot veri damgası', D.snapTs?tm(D.snapTs):'—', D.snapTs?'ok':'warn');
+      h+=row('Son push', D.pushAt?(esc(D.pushKey)+' · '+(D.pushOk?'OK':('FAILED — '+esc(D.pushErr)))+' · '+tm(D.pushAt)+' ('+ago(D.pushAt)+')'):'bu oturumda hiç push olmadı', D.pushAt?(D.pushOk?'ok':'bad'):'warn');
+      h+=row('Okuma sondası (90 sn)', D.probeAt?(D.probeErr?('OKUMA HATASI: '+esc(D.probeErr)+' — kurallar bu oturuma okumayı REDDEDİYOR'):('OK · bulut damgası '+tm(D.probeTs)+' · '+tm(D.probeAt)+' ('+ago(D.probeAt)+')')):'henüz çalışmadı', D.probeAt?(D.probeErr?'bad':'ok'):'warn');
+      if(D.probeTs&&D.probeTs>(D.snapTs||0)+2000)
+        h+=row('TEŞHİS','Bulutta dinleyicinin HİÇ duymadığı daha yeni veri var — okuma yönü kopuk. Sonda otomatik çekip yeniden bağlanacak.','bad');
+      const body=document.getElementById('rd-syncdiag-body');
+      if(body) body.innerHTML=h;
+    }
+    paint();
+    const iv=setInterval(function(){ if(!document.getElementById('rd-syncdiag-ov')){clearInterval(iv);return;} paint(); },1000);
+    ov.addEventListener('click',function(e){ if(e.target===ov){ clearInterval(iv); ov.remove(); } });
+    ov.querySelector('#rd-syncdiag-x').onclick=function(){ clearInterval(iv); ov.remove(); };
+    ov.querySelector('#rd-syncdiag-probe').onclick=function(){ try{_rdSyncProbe();}catch(e){} try{syncForceLoad();}catch(e){} };
+  };
   function _mainSnapRecheck(){
     if(!_mainSnapMissed) return;
     _mainSnapMissed=false;
@@ -122,8 +232,12 @@
   function _attachMainApptListener(){
     try{ _fbDb.ref('rdns_main_v1').off('value'); }catch(e){}
     _mainListenerDead=false;
+    _rdDiag.attachedAt=Date.now();
     _fbDb.ref('rdns_main_v1').on('value',snap=>{
         _lastMainSnapRx=Date.now();   // even a suppressed event proves the line is alive
+        // The diagnosis records EVERY arrival, suppressed echoes included —
+        // arrival is what proves the ear, whoever the writer was.
+        try{ const dv=snap.val(); if(dv){ _rdDiag.snapAt=Date.now(); _rdDiag.snapBy=dv._by||'?'; _rdDiag.snapTs=Number(dv._ts)||0; _rdDiag.snapN++; } }catch(e){}
         if(_isSyncing['rdns_main_v1']){
           // Not our own echo? Then this is another device's edit that 'value'
           // will never hand us again — mark it for a re-read after the window.
@@ -205,16 +319,33 @@
       // the badge stayed green off the other keys, and the two laptops each
       // lived in their own world. A broken EAR is now as loud as a broken hand.
       _mainListenerDead=true;
+      _rdDiag.reattach++;
       console.error('[sync] ✂ DİNLEME KOPTU: rdns_main_v1 buluttan okunamıyor —', err&&(err.code||err.message)||err);
       showSyncStatus('error');
       try{ toast('⚠️','SENKRON DİNLEME KOPTU','Randevular buluttan OKUNAMIYOR ('+(err&&(err.code||err.message)||'?')+') — diğer cihazın kayıtları bu ekrana GELMEZ. 15 sn sonra yeniden bağlanılacak.','r'); }catch(e){}
       setTimeout(_attachMainApptListener,15000);
     });
   }
+  let _rdDiagWired=false;
   function _startSyncListeners(){
     try{
       showSyncStatus('connecting');
       setTimeout(()=>{try{_startBookingRequestListener();publishAvailability();}catch(e){console.warn('OB init:',e);}},4000);
+      // The socket's own word on whether this device is talking to Firebase at
+      // all — independent of any data listener, so a hung connection shows as
+      // KOPUK even while the badge still wears an old green.
+      if(!_rdDiagWired){
+        _rdDiagWired=true;
+        try{
+          _fbDb.ref('.info/connected').on('value',s=>{
+            const up=!!s.val();
+            if(_rdDiag.connected===up) return;
+            _rdDiag.connected=up;
+            console[up?'log':'error']('[sync] ⚡ bağlantı '+(up?'CANLI':'KOPUK')+' (.info/connected)');
+            if(!up) showSyncStatus('error');
+          });
+        }catch(e){ console.warn('.info/connected listener error:',e); }
+      }
       _attachMainApptListener();
       _fbDb.ref('rdns_takings_v3').on('value',snap=>{
         if(_isSyncing['rdns_takings_v3'])return;
@@ -479,6 +610,7 @@
       _fbDb.ref(key).set(payload).then(()=>{
         const was=_pushFail[key]||0;
         _pushFail[key]=0;
+        _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=true; _rdDiag.pushErr='';
         console.log('[sync] ↑ push OK:', key, '('+_rdDevId+')'+((key==='rdns_main_v1'&&Array.isArray(payload.appointments))?(' · '+payload.appointments.length+' randevu'):''));
         if(was){ try{ toast('☁️','Senkron düzeldi',key+' buluta yazıldı — diğer ekranlar birazdan güncellenir.','g'); }catch(e){} }
         showSyncStatus('synced');
@@ -499,6 +631,7 @@
         }
       }).catch(e=>{
         const n=_pushFail[key]=(_pushFail[key]||0)+1;
+        _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false; _rdDiag.pushErr=(e&&(e.code||e.message))||String(e);
         console.error('[sync] ↑ PUSH FAILED ('+n+'×):', key, e&&(e.code||e.message)||e);
         showSyncStatus('error');
         if(n===1){ try{ toast('⚠️','BULUTA YAZILAMADI',key+' — bu cihazdaki değişiklikler diğer ekranlara GİTMİYOR: '+(e&&(e.code||e.message)||'bilinmeyen hata'),'r'); }catch(_){} }
@@ -3002,7 +3135,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v39 · Online Randevu · 08.07.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v40 · Senkron Tanı · 24.08.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
           border-radius:8px;color:var(--waDark);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
@@ -3037,7 +3170,7 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="ch-title" id="page-title">Dashboard</div>
         <div class="ch-sub" id="page-sub">Hoş geldiniz — salonunuza genel bakış</div>
       </div>
-      <div style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,0.07);margin-right:8px;white-space:nowrap;" id="sync-indicator">💾 Local</div>
+      <div style="font-size:0.7rem;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,0.07);margin-right:8px;white-space:nowrap;cursor:pointer;" id="sync-indicator" onclick="rdSyncDiagClick()" title="Senkron tanısı — tıklayın (patron şifresi)">💾 Local</div>
       <div class="ch-actions" id="ch-actions"><button class="btn btn-ghost btn-sm" onclick="openModal(&#39;mClient&#39;)">+ Yeni Müşteri</button><button class="btn btn-rose btn-sm" onclick="openModal(&#39;mAppt&#39;)">+ Randevu</button><button class="btn btn-wa btn-sm" onclick="goto(&#39;whatsapp&#39;,null)">💬 WhatsApp</button></div>
     </div>
 
