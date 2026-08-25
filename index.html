@@ -4520,7 +4520,7 @@ p, span, div, label, h1, h2, h3, h4 {
 <!-- Rebook / Complete -->
 <div class="overlay" id="mRebook">
   <div class="modal">
-    <div class="mhdr"><div class="mtitle" id="modal-rebook-title">✅ Tedavi Tamamlandı</div><button class="mclose" onclick="closeModal(&#39;mRebook&#39;)">✕</button></div>
+    <div class="mhdr"><div class="mtitle" id="modal-rebook-title">✅ Tedavi Tamamlandı</div><button class="mclose" onclick="dpRebookClose()">✕</button></div>
     <div class="rb-banner"><span style="font-size:1.2rem">🔄</span><div class="rb-text"><strong id="rb-banner-text">Otomatik Yeniden Randevu Aktif!</strong> Sonraki randevu 3 hafta sonrası için hazır.</div></div>
     <div id="rb-info" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px;margin-bottom:14px;font-size:0.84rem;line-height:1.8;"></div>
     <div class="form-row fr2">
@@ -4661,6 +4661,23 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="mfoot">
       <button class="btn btn-ghost" onclick="dpSnooze()">⏰ 1 Saat Sonra Hatırlat</button>
       <button class="btn btn-green" onclick="dpOpenList()">📋 Vadeli Ödeme Listesini Aç</button>
+    </div>
+  </div>
+</div>
+
+<!-- Eski borç — kasa anında tahsilat uyarısı (müşterinin günün SON randevusu kapanırken çıkar) -->
+<div class="overlay" id="mDpKasa">
+  <div class="modal" style="max-width:520px;">
+    <div class="mhdr"><div class="mtitle">💰 Ödenmemiş Eski Borç</div><button class="mclose" onclick="closeModal('mDpKasa')">✕</button></div>
+    <div style="background:rgba(230,168,80,0.10);border:1px solid rgba(230,168,80,0.35);border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:0.83rem;line-height:1.55;">
+      <strong id="dp-kasa-client">Bu müşterinin</strong> geçmişten kalan ödenmemiş borcu var.
+      Tutarı bugünkü işlem fiyatına <strong>EKLEMEYİN</strong> — <strong>"✓ Bugün tahsil edildi"</strong> derseniz
+      kasaya ayrı bir işlem olarak yazılır (teknisyen cirosuna ve komisyona girmez).
+    </div>
+    <div id="dp-kasa-list" style="max-height:300px;overflow-y:auto;margin-bottom:14px;"></div>
+    <div class="mfoot">
+      <button class="btn btn-ghost" onclick="dpKasaLater()">Şimdi değil</button>
+      <button class="btn btn-green" onclick="dpKasaCollect()">✓ Bugün tahsil edildi</button>
     </div>
   </div>
 </div>
@@ -5423,6 +5440,10 @@ function renderDashGrid(){
       html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
       html += '<div style="font-size:0.63rem;color:#6b8c70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;">'+a.service+'</div>';
+      // Unpaid old debt on this customer — one small line so reception knows
+      // before the customer reaches the till (the till itself asks at her last
+      // appointment of the day).
+      try{ html += (typeof dpDebtBadge==='function') ? dpDebtBadge(a.clientId) : ''; }catch(e){}
       html += '<div style="display:flex;gap:3px;">';
       if(!isDone){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
@@ -5737,6 +5758,13 @@ function dashEditAppt(id){
         try{ renderAppts(); }catch(e){ console.error('renderAppts error on update:', e); }
         try{ renderDash(); }catch(e){ console.error('renderDash error on update:', e); }
         try{ updateApptBadge(); }catch(e){ console.error('updateApptBadge error on update:', e); }
+        // The "✏ Fix / ✏ Fiyat" path: an already-completed appointment just
+        // had its money recorded, and no rebook popup follows to carry the
+        // old-debt question — ask it here. (The fresh-completion path goes
+        // through showRebookModal, whose close buttons run the same check.)
+        if(enteredPrice>0 && live.staff && wasCompleted){
+          setTimeout(function(){ try{dpKasaCheck(live.id);}catch(e){} },350);
+        }
       };
     }
   }, 100);
@@ -8230,6 +8258,9 @@ function confirmRebook(){
   msgQueue.push(reminderEntry);
 
   closeModal("mRebook");rebookPending=null;
+  // Done flow is over for this visit — if the customer still owes from before,
+  // ask now, while she is standing at the till.
+  setTimeout(function(){ try{dpKasaCheck(appt.id);}catch(e){} },350);
   toast("🔄","Auto-Rebooked!",`${client?.name} → ${fDT(dt)}`,"g");
   renderAppts();renderDash();renderPayments();updateApptBadge();
 
@@ -8258,6 +8289,7 @@ function confirmRebook(){
 }
 
 function skipRebook(){
+  const _dpApptId = (rebookPending&&rebookPending.appt) ? rebookPending.appt.id : null;
   if(rebookPending){
     const appt = apptById(rebookPending.appt.id) || rebookPending.appt;
     const priceEl = document.getElementById("rb-price");
@@ -8273,6 +8305,7 @@ function skipRebook(){
     }
   }
   closeModal("mRebook");rebookPending=null;
+  if(_dpApptId!=null) setTimeout(function(){ try{dpKasaCheck(_dpApptId);}catch(e){} },350);
 }
 
 function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
@@ -11078,10 +11111,18 @@ function dpAdd(){
   if(!(amount>0)){ toast('⚠️','Eksik Bilgi','Lütfen geçerli bir tutar girin.','r'); return; }
   if(!due){ toast('⚠️','Eksik Bilgi','Lütfen ödeme (vade) tarihini seçin.','r'); return; }
   const cleanPhone=(phone&&typeof normalizeWaPhone==='function')?normalizeWaPhone(phone):phone;
+  // Tie the record to a client while the information is fresh: an exact phone
+  // match first, else a name that exactly one client carries. Anything less
+  // certain stays unlinked — the till warning then simply never fires for it.
+  let _cid=null;
+  try{
+    if(cleanPhone){ const m=clients.filter(c=>c&&c.phone&&dpNormPhone(c.phone)===cleanPhone); if(m.length===1) _cid=m[0].id; }
+    if(_cid==null){ const nn=dpNormName(name); const m2=clients.filter(c=>c&&dpNormName(c.name)===nn); if(m2.length===1) _cid=m2[0].id; }
+  }catch(e){}
   dpList().push({
     id:'dp'+Date.now()+Math.floor(Math.random()*1000),
     name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:cleanPhone, note:note,
-    paid:false, created:dpToday()
+    clientId:_cid, paid:false, created:dpToday()
   });
   saveAll();
   ['dp-name','dp-amount','dp-due','dp-phone','dp-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -11233,7 +11274,11 @@ function dpSaveFromAppt(){
   if(!(amount>0)){ toast('⚠️','Eksik Bilgi','Lütfen geçerli bir tutar girin.','r'); return; }
   if(!due){ toast('⚠️','Eksik Bilgi','Lütfen ödeme (vade) tarihini seçin.','r'); return; }
   const apptId=document.getElementById('dpfa-apptid').value||'';
-  dpList().push({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:phone, note:note, paid:false, created:dpToday(), apptId:apptId||null });
+  // The source appointment knows the client — carry the id onto the record so
+  // the till warning matches with certainty, not by name.
+  let _cid=null;
+  try{ const _src=apptId?appointments.find(x=>String(x.id)===String(apptId)):null; if(_src&&_src.clientId!=null) _cid=_src.clientId; }catch(e){}
+  dpList().push({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:phone, note:note, clientId:_cid, paid:false, created:dpToday(), apptId:apptId||null });
   // Flag the source appointment as "deferred" so the Kasa Kontrol day breakdown references it.
   if(apptId){ const a=appointments.find(x=>String(x.id)===String(apptId)); if(a){ a.collect='deferred'; } }
   saveAll();
@@ -11241,6 +11286,164 @@ function dpSaveFromAppt(){
   dpRender();
   try{ if(document.getElementById('page-cashcheck')&&document.getElementById('page-cashcheck').classList.contains('active')) renderCashCheck(); }catch(e){}
   toast('✅','Kaydedildi',name+' için '+dpFmt(cur,amount)+' vadeli ödeme eklendi. Vade: '+dpDateLabel(due,dueTime),'g');
+}
+
+// ── Eski borç ↔ müşteri eşleştirme ──────────────────────────────────────────
+// A deferred payment was, until now, only a name and maybe a phone number in a
+// list nobody opens while the customer is standing at the till. These helpers
+// tie a record to a client with CERTAINTY or not at all: clientId first, then
+// the source appointment, then the phone, and only then the name — and a name
+// match counts only when exactly one client carries that name. A debt shown to
+// the wrong customer is worse than a debt not shown, so anything ambiguous
+// simply stays silent (it still nags through the overdue reminder as before).
+function dpNormName(s){ return String(s||'').trim().replace(/\s+/g,' ').toLocaleUpperCase('tr-TR'); }
+function dpNormPhone(s){ return (s&&typeof normalizeWaPhone==='function')?normalizeWaPhone(s):String(s||''); }
+function dpMatchesClient(p,c){
+  if(!p||!c) return false;
+  if(p.clientId!=null) return String(p.clientId)===String(c.id);
+  if(p.apptId){
+    const a=appointments.find(x=>String(x.id)===String(p.apptId));
+    if(a&&a.clientId!=null) return String(a.clientId)===String(c.id);
+  }
+  const pp=dpNormPhone(p.phone);
+  if(pp&&c.phone&&dpNormPhone(c.phone)===pp) return true;
+  const pn=dpNormName(p.name);
+  if(!pn||dpNormName(c.name)!==pn) return false;
+  return clients.filter(x=>x&&dpNormName(x.name)===pn).length===1;
+}
+function dpDebtsForClient(clientId){
+  const c=cObj(clientId); if(!c) return [];
+  return dpOpen().filter(p=>dpMatchesClient(p,c));
+}
+
+// One quiet line on the appointment card: "⚠ Eski borç: 2.000 ₺". Reception
+// sees it the moment the customer walks in, before any money changes hands.
+function dpDebtBadge(clientId){
+  try{
+    const debts=dpDebtsForClient(clientId);
+    if(!debts.length) return '';
+    const byCur={};
+    debts.forEach(p=>{ const cu=p.cur||'₺'; byCur[cu]=(byCur[cu]||0)+(Number(p.amount)||0); });
+    const s=Object.keys(byCur).map(cu=>dpFmt(cu,byCur[cu])).join(' · ');
+    return '<div style="font-size:0.6rem;font-weight:800;color:#a05c10;background:#fdf3e0;border:1px solid #e8cf9a;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:4px;">⚠ Eski borç: '+dpEsc(s)+'</div>';
+  }catch(e){ return ''; }
+}
+
+// ── Kasa anında tahsilat uyarısı ────────────────────────────────────────────
+// The till prompt fires only while the customer's LAST appointment of that day
+// is being closed out — with two bookings and one payment at the end, the
+// 08:00 card wears the badge but the question waits for the 09:00 one.
+function dpIsLastApptOfDay(a){
+  try{
+    const day=apptDayStr(a);
+    const mine=appointments.filter(x=>x&&String(x.clientId)===String(a.clientId)
+      &&x.status!=='cancelled'&&!x.noShow&&apptDayStr(x)===day);
+    if(!mine.length) return true;
+    let last=mine[0];
+    mine.forEach(x=>{ if(new Date(x.datetime)>new Date(last.datetime)) last=x; });
+    return String(last.id)===String(a.id);
+  }catch(e){ return true; }
+}
+
+let _dpKasaCtx=null;
+function dpKasaCheck(apptId){
+  try{
+    const a=appointments.find(x=>String(x.id)===String(apptId)); if(!a) return;
+    const c=cObj(a.clientId); if(!c) return;
+    const today=dpToday();
+    // "Şimdi değil" holds for the rest of the day and no longer — the record's
+    // kasaSnooze carries the date, so tomorrow the question comes back on its
+    // own. A paid record never comes back at all (dpOpen filters it out).
+    const debts=dpDebtsForClient(a.clientId).filter(p=>p.kasaSnooze!==today);
+    if(!debts.length) return;
+    if(!dpIsLastApptOfDay(a)) return;
+    _dpKasaCtx={apptId:a.id, ids:debts.map(p=>p.id)};
+    const nameEl=document.getElementById('dp-kasa-client');
+    if(nameEl) nameEl.textContent=c.name+'’ın';
+    const list=document.getElementById('dp-kasa-list');
+    if(list){
+      list.innerHTML=debts.map(p=>{
+        const created=p.created?dpDateLabel(p.created):'';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(230,168,80,0.35);background:rgba(230,168,80,0.07);border-radius:10px;margin-bottom:9px;">'
+          +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-weight:800;font-size:0.9rem;">'+dpEsc(p.name)+' <span style="color:var(--goldLight);">'+dpFmt(p.cur,p.amount)+'</span></div>'
+            +'<div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">'
+              +(created?created+' tarihinde girildi · ':'')+'Vade: '+dpDateLabel(p.due,p.dueTime)
+              +(p.note?' · '+dpEsc(p.note):'')
+            +'</div>'
+          +'</div>'
+        +'</div>';
+      }).join('');
+    }
+    openModal('mDpKasa');
+  }catch(e){ console.warn('dpKasaCheck error:',e); }
+}
+
+function dpKasaLater(){
+  try{
+    const today=dpToday();
+    if(_dpKasaCtx) _dpKasaCtx.ids.forEach(id=>{ const p=dpList().find(x=>x.id===id); if(p) p.kasaSnooze=today; });
+    saveAll();
+  }catch(e){}
+  _dpKasaCtx=null;
+  closeModal('mDpKasa');
+}
+
+// The collected money goes onto its OWN Daily Takings card, never a
+// technician's. That card's name is in no commission table (DI_COMM, DI_STAFF,
+// the history fixers all rate unknown names at 0), so the till and the day
+// total gain the cash while today's ciro-per-technician and every commission
+// figure stay exactly as if the old debt had never been collected — it was
+// last month's work, not today's.
+const DP_KASA_OP='Eski Tahsilat';
+function dpKasaEntryAdd(p){
+  if((p.cur||'₺')!=='₺'){
+    toast('⚠️','Elle girin',dpFmt(p.cur,p.amount)+' döviz olarak alındı — kasaya TL karşılığını Daily Takings’ten elle girin.','r');
+    return null;
+  }
+  let op=(dtState.operators||[]).find(o=>o&&o.name===DP_KASA_OP);
+  if(!op){ op={id:Date.now(),name:DP_KASA_OP,entries:[],active:true}; dtState.operators.push(op); }
+  op.active=true;
+  if(!op.entries) op.entries=[];
+  const now=new Date();
+  const time=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  const e={service:'💰 Eski borç — '+p.name+' (vade '+dpDateLabel(p.due,p.dueTime)+')', amount:Number(p.amount)||0, time:time, apptId:null};
+  op.entries.push(e);
+  return e;
+}
+
+function dpKasaCollect(){
+  if(!_dpKasaCtx){ closeModal('mDpKasa'); return; }
+  const today=dpToday();
+  let collected=0, cur='₺', firstEntry=null, n=0;
+  _dpKasaCtx.ids.forEach(id=>{
+    const p=dpList().find(x=>x.id===id); if(!p||p.paid) return;
+    p.paid=true; p.paidAt=today;
+    dpClearApptFlag(p);
+    const e=dpKasaEntryAdd(p);
+    if(e&&!firstEntry) firstEntry=e;
+    collected+=Number(p.amount)||0; cur=p.cur||'₺'; n++;
+  });
+  _dpKasaCtx=null;
+  closeModal('mDpKasa');
+  saveAll();
+  try{ dtSaveState(); }catch(e){}
+  try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+  try{ if(typeof renderDashTakings==='function') renderDashTakings(); }catch(e){}
+  try{ dpRender(); dpUpdateBadges(); }catch(e){}
+  try{ renderDashGrid(); }catch(e){}
+  try{ if(document.getElementById('page-cashcheck')&&document.getElementById('page-cashcheck').classList.contains('active')) renderCashCheck(); }catch(e){}
+  if(n) toast('✅','Eski Borç Tahsil Edildi',dpFmt(cur,collected)+' kasaya "'+DP_KASA_OP+'" olarak yazıldı — bugünkü ciro ve komisyonlara girmedi.','g');
+  // Ask how the money was taken, same as any other till entry.
+  if(firstEntry){ try{ pmAsk(firstEntry); }catch(e){} }
+}
+
+// mRebook's ✕ also ends the Done flow — the debt question must not be lost
+// behind it, so the close button runs the same check as Atla / Onayla.
+function dpRebookClose(){
+  const id=(typeof rebookPending!=='undefined'&&rebookPending&&rebookPending.appt)?rebookPending.appt.id:null;
+  closeModal('mRebook'); rebookPending=null;
+  if(id!=null) setTimeout(function(){ try{dpKasaCheck(id);}catch(e){} },250);
 }
 
 // ── Reminder engine ──
