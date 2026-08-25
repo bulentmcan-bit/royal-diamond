@@ -92,7 +92,19 @@
         // Which login this laptop reads/writes AS — rules judge exactly this.
         _rdDiag.authUser=user?(user.email||user.uid||'?'):'';
         console.log('[sync] oturum:', user?(user.email||user.uid):'GİRİŞ YOK', '· cihaz='+_rdDevId, '· sürüm='+RD_BUILD);
-        if(user){ _hideLoginOverlay(); _syncEnabled=true; _startSyncListeners(); }
+        if(user){
+          _hideLoginOverlay(); _syncEnabled=true; _startSyncListeners();
+          // Login'den ÖNCE atılan push'lar (açılıştaki fixer IIFE'leri) "oturum
+          // yok" diye sayaca yazılır ve bir daha o anahtar push edilmezse rozet
+          // sonsuza dek kırmızı kalırdı — 25 Ağustos'un asılı "Sync Error"u.
+          // Yol artık açık: kaçan ne varsa şimdi gerçekten gönderilsin.
+          try{
+            let _d=1500;
+            for(const k in _pushFail){
+              if(_pushFail[k]>0){ const kk=k; setTimeout(()=>{ _syncRetry(kk); }, _d); _d+=500; }
+            }
+          }catch(e){}
+        }
         else { _syncEnabled=false; _showLoginOverlay(); }
       });
     }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
@@ -150,6 +162,8 @@
     }).then(cloudTs=>{
       if(cloudTs===undefined) return;
       _rdDiag.probeAt=Date.now(); _rdDiag.probeTs=cloudTs; _rdDiag.probeErr='';
+      // Sonda okuyabildiyse okuma yönü sağlıklı — düzelmişse rozet de düzelsin.
+      try{ const s=_rdSyncHealth(); if(s) showSyncStatus(s); }catch(e){}
       // The listener must already have heard this write. Cloud newer than the
       // last snapshot that reached us, and nothing arriving for 15s? Then the
       // ear is dead whatever the badge says — fetch by hand, re-attach.
@@ -343,6 +357,7 @@
             _rdDiag.connected=up;
             console[up?'log':'error']('[sync] ⚡ bağlantı '+(up?'CANLI':'KOPUK')+' (.info/connected)');
             if(!up) showSyncStatus('error');
+            else { try{ const s=_rdSyncHealth(); if(s) showSyncStatus(s); }catch(e){} }
           });
         }catch(e){ console.warn('.info/connected listener error:',e); }
       }
@@ -614,7 +629,26 @@
     }catch(e){ return 'anon'; }
   })();
   const _pushFail={};      // key -> consecutive failed pushes (0 = healthy)
-  function _pushBroken(){ for(const k in _pushFail){ if(_pushFail[k]>0) return true; } return false; }
+  // Tek titreme rozeti kırmızıya boyamaz: bir anahtar ancak ARKA ARKAYA iki
+  // kez yazamadıysa bozuk sayılır — ilk başarısızlık retry'a emanettir.
+  function _pushBroken(){ for(const k in _pushFail){ if(_pushFail[k]>=2) return true; } return false; }
+  // ── ROZET ANLIK GERÇEĞİ SÖYLER ─────────────────────────────────────────
+  // 25 Ağustos: tanı ekranındaki her satır yeşilken rozet "Sync Error"da
+  // asılı kalmıştı — hata bayrağı bir kez basılınca hiçbir şey geri almıyordu
+  // ve gerçek bir arızada kırmızının inandırıcılığı kalmamıştı. Artık rozet
+  // şu tablodan boyanır ve 20 saniyede bir yeniden bakılır: oturum açık,
+  // soket canlı, dinleyici bağlı, okuma sondası hatasız, hiçbir anahtar üst
+  // üste yazamıyor değil → yeşil. Herhangi biri bozuk → kırmızı. Düzelen
+  // durum rozeti kendiliğinden yeşile döndürür; sıkışıp kalamaz.
+  function _rdSyncHealth(){
+    if(!_syncEnabled) return null;                    // login yokken karar bu tablonun değil
+    if(_rdDiag.connected===false) return 'error';
+    if(_pushBroken()) return 'error';
+    if(_rdDiag.probeErr) return 'error';
+    if(typeof _mainListenerDead!=='undefined' && _mainListenerDead) return 'error';
+    return 'synced';
+  }
+  setInterval(function(){ try{ const s=_rdSyncHealth(); if(s) showSyncStatus(s); }catch(e){} }, 20000);
   function _syncRetry(key){
     // localStorage can hold the literal text "undefined" from an old bad
     // write — retrying that string forever is how a push loop dies quietly.
@@ -708,7 +742,7 @@
       _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false;
       _rdDiag.pushErr='veri yok ('+(data===null?'null':(typeof data==='string'?'"'+data+'"':'undefined'))+') — çağıran hata';
       console.error('[sync] ↑ push İPTAL:', key, '— gönderilecek veri yok:', data, '\nçağıran:\n'+(new Error().stack||'?'));
-      showSyncStatus('error');
+      if(_pushFail[key]>=2) showSyncStatus('error');
       return;
     }
     if(!_syncEnabled){
@@ -717,7 +751,10 @@
       // machine. That must never be silent again.
       _pushFail[key]=(_pushFail[key]||0)+1;
       console.warn('[sync] ↑ SKIPPED (oturum yok):', key, '— bu cihazdaki değişiklik buluta GİTMİYOR');
-      showSyncStatus('error');
+      // Açılıştaki fixer'lar login'den önce push atar ve buraya düşer; login
+      // gelince hepsi yeniden denenir (auth bloğu) — o yüzden ilk kaçırma
+      // rozeti boyamaz, ısrarcı olan boyar.
+      if(_pushFail[key]>=2) showSyncStatus('error');
       return;
     }
     _isSyncing[key]=true;
@@ -740,6 +777,16 @@
         _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=true; _rdDiag.pushErr='';
         console.log('[sync] ↑ push OK:', key, '('+_rdDevId+')'+((key==='rdns_main_v1'&&Array.isArray(payload.appointments))?(' · '+payload.appointments.length+' randevu'):''));
         if(was){ try{ toast('☁️','Senkron düzeldi',key+' buluta yazıldı — diğer ekranlar birazdan güncellenir.','g'); }catch(e){} }
+        // Yol açıksa açıktır: BAŞKA bir anahtarın eski başarısızlığı sayaçta
+        // asılı kalıp rozeti kırmızı tutmasın — bekleyen ne varsa şimdi
+        // gerçekten yeniden denensin. Geçerse sayacı kendisi sıfırlar;
+        // geçmezse kırmızı hak edilmiş demektir.
+        try{
+          let _d=400;
+          for(const k in _pushFail){
+            if(k!==key && _pushFail[k]>0){ const kk=k; setTimeout(()=>{ _syncRetry(kk); }, _d); _d+=400; }
+          }
+        }catch(e){}
         showSyncStatus('synced');
         // ═══ THE ECHO TEST ═══ Our own .set() must fire our own listener —
         // even a suppressed event stamps _lastMainSnapRx. A landed push with
@@ -760,7 +807,7 @@
         const n=_pushFail[key]=(_pushFail[key]||0)+1;
         _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false; _rdDiag.pushErr=(e&&(e.code||e.message))||String(e);
         console.error('[sync] ↑ PUSH FAILED ('+n+'×):', key, e&&(e.code||e.message)||e);
-        showSyncStatus('error');
+        if(n>=2) showSyncStatus('error');
         if(n===1){ try{ toast('⚠️','BULUTA YAZILAMADI',key+' — bu cihazdaki değişiklikler diğer ekranlara GİTMİYOR: '+(e&&(e.code||e.message)||'bilinmeyen hata'),'r'); }catch(_){} }
         if(n<=6) setTimeout(()=>{ _syncRetry(key); }, Math.min(30000, 1500*Math.pow(2,n-1)));
       });
@@ -773,7 +820,7 @@
       _rdDiag.pushAt=Date.now(); _rdDiag.pushKey=key; _rdDiag.pushOk=false;
       _rdDiag.pushErr='hazırlanamadı: '+String(e&&e.message||e);
       console.error('[sync] ↑ push HAZIRLANAMADI:', key, e, '\nçağıran:\n'+(new Error().stack||'?'));
-      showSyncStatus('error');
+      if(_pushFail[key]>=2) showSyncStatus('error');
     }
     // When the deaf window closes, anything a foreign device pushed into it is
     // fetched back — 'value' events are not replayed, so a dropped one would
