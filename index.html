@@ -5701,6 +5701,19 @@ function dashEditAppt(id){
         live.datetime  = document.getElementById('a-dt').value;
         live.duration  = parseInt(document.getElementById('a-dur').value)||60;
         let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
+        // 😊 MANDATORY: a price that will complete this appointment or put its
+        // money in the till for the first time is a checkout — and a checkout
+        // does not finish until the satisfaction question is answered. Park
+        // this very click and re-run it whole once a button is pressed; a
+        // price CORRECTION (money already recorded) asks nothing again.
+        {
+          const _staffPick=document.getElementById('a-staff').value||live.staff;
+          const _moneyAlready=(live._takingsAmount||0)>0 || (wasCompleted && priorKnown>0);
+          if(enteredPrice>0 && _staffPick && !_moneyAlready && !live.sat){
+            satAsk(live, function(){ saveBtn.onclick(); });
+            return;
+          }
+        }
         // The Fiyat box is pre-filled with the price already recorded. Only run
         // the discount maths when a genuinely new figure was typed, otherwise
         // simply reopening and pressing Update would shave 30% off every time.
@@ -6012,6 +6025,9 @@ function undoComplete(id){
   // The money is being taken back off the record, so how it was paid no longer
   // describes anything. It is asked again the next time the job is completed.
   delete a.pay; delete a.splits; delete a.payNote; delete a._payTs;
+  // The satisfaction answer belonged to the checkout being undone — the next
+  // completion is a new checkout and asks its own question.
+  delete a.sat; delete a.satAt;
   payOvrDrop(a.id);
   saveAll();renderAppts();renderDash();renderPayments();updateApptBadge();
   toast("↩️","Geri Alındı",`${cObj(a.clientId)?.name} tekrar Onaylandı durumunda.`,"g");
@@ -8157,8 +8173,66 @@ function showRebookModal(a, c){
 }
 
 
+// ── 😊 MANDATORY SATISFACTION STEP ──────────────────────────────────────────
+// Checkout does not finish until one of three answers is given: Memnun /
+// Memnun değil / Sormadım. The window is built like the payment-method one —
+// its own fixed div, NOT a .overlay — precisely so none of the generic escape
+// hatches exist: no ✕, no backdrop click, no Escape handler. The only way
+// through is a button, and the moment one is pressed the held-up completion
+// runs to the end on its own — no second confirmation.
+// Until then the appointment is NOT completed and NO money reaches the till:
+// every caller checks the flag BEFORE mutating anything and simply parks its
+// own continuation in _satCtx. The answer lands on the appointment record
+// (a.sat + a.satAt) and rides the normal sync.
+let _satCtx=null;
+function satAsk(a, cb){
+  if(!a || a.sat){ if(cb) cb(); return; }
+  _satCtx={ id:a.id, cb:cb };
+  var m=document.getElementById('satModal');
+  if(!m){
+    m=document.createElement('div'); m.id='satModal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(8,9,8,.82);backdrop-filter:blur(4px);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px;';
+    m.innerHTML='<div style="background:#fff;border-radius:16px;padding:24px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35);text-align:center;">'
+      +'<div style="font-weight:800;font-size:1.1rem;margin-bottom:4px;">Müşteri memnun kaldı mı?</div>'
+      +'<div id="satSub" style="color:#888;font-size:.85rem;margin-bottom:16px;"></div>'
+      +'<div style="display:grid;gap:10px;">'
+      +'<button onclick="satPick(\'happy\')" style="border:1.5px solid #5fcb8c;background:rgba(95,203,140,.12);border-radius:12px;padding:15px 6px;font-family:inherit;font-weight:800;font-size:1rem;cursor:pointer;">😊 Memnun</button>'
+      +'<button onclick="satPick(\'unhappy\')" style="border:1.5px solid #e87a7a;background:rgba(232,122,122,.12);border-radius:12px;padding:15px 6px;font-family:inherit;font-weight:800;font-size:1rem;cursor:pointer;">😕 Memnun değil</button>'
+      +'<button onclick="satPick(\'not_asked\')" style="border:1.5px solid #ccc;background:#f5f5f5;border-radius:12px;padding:13px 6px;font-family:inherit;font-weight:700;font-size:.9rem;color:#777;cursor:pointer;">Sormadım</button>'
+      +'</div>'
+      +'<div style="margin-top:12px;font-size:.7rem;color:#aaa;">Kaydı tamamlamak için birini seçin — bu pencere seçim yapılmadan kapanmaz.</div>'
+      +'</div>';
+    document.body.appendChild(m);
+    // Deliberately NO backdrop-click listener and NO key handler — see above.
+  }
+  try{
+    var c=cObj(a.clientId);
+    var bits=[(c&&c.name)||'',a.service||''].filter(Boolean).join(' — ');
+    var pr=(parseFloat(a.price)||0)>0?(' · ₺'+Number(a.price).toLocaleString('tr-TR')):'';
+    document.getElementById('satSub').textContent=bits+pr;
+  }catch(e){}
+  m.style.display='flex';
+}
+function satPick(val){
+  var ctx=_satCtx; _satCtx=null;
+  var m=document.getElementById('satModal'); if(m) m.style.display='none';
+  if(!ctx) return;
+  // A cloud snapshot can swap the array while the window is open — re-find.
+  var a=(typeof apptById==='function'?apptById(ctx.id):null)
+        ||appointments.find(function(x){return String(x.id)===String(ctx.id);});
+  if(a){ a.sat=val; a.satAt=new Date().toISOString(); }
+  if(ctx.cb) ctx.cb();   // the parked checkout finishes NOW — nothing else is asked
+}
+
 function completeAppt(id){
   const a=appointments.find(x=>x.id===id);const c=cObj(a.clientId);
+  // A price already on the record means Done IS the checkout — hold the
+  // completion itself until the satisfaction answer is in. (Done with no
+  // price completes as before; the gate then sits on the price entry.)
+  if((parseFloat(a.price)||0)>0 && !a.sat){
+    satAsk(a, function(){ completeAppt(id); });
+    return;
+  }
   a.status="completed";
   apptTouch(a);   // stamp the status itself, so the Done survives every merge
   const ci=clients.findIndex(x=>x.id===a.clientId);
@@ -8282,6 +8356,12 @@ function confirmRebook(){
   let dt=document.getElementById("rb-dt").value;
   const price = parseInt(document.getElementById("rb-price").value)||0;
   if(!dt){toast("⚠️","Set a date","","r");return;}
+  // 😊 MANDATORY: money about to reach the till for the first time — the
+  // satisfaction answer comes first, then this whole click re-runs itself.
+  if(price>0 && appt.staff && !appt._takingsAmount && !appt.sat){
+    satAsk(appt, function(){ confirmRebook(); });
+    return;
+  }
   // Save price to the completed appointment and add to daily takings
   if(price > 0){ appt.price = price; appt._pts = Date.now(); }
   if(price > 0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount = price; appt._pts = Date.now(); }
@@ -8340,6 +8420,12 @@ function skipRebook(){
     const appt = apptById(rebookPending.appt.id) || rebookPending.appt;
     const priceEl = document.getElementById("rb-price");
     const price = parseInt(priceEl?.value)||0;
+    // 😊 MANDATORY — same gate as confirmRebook: no till entry before the
+    // satisfaction answer; the button press re-runs this whole function.
+    if(price > 0 && appt.staff && !appt._takingsAmount && !appt.sat){
+      satAsk(appt, function(){ skipRebook(); });
+      return;
+    }
     if(price > 0 && appt.staff && !appt._takingsAmount){
       appt.price = price;
       diAutoAdd(appt.staff, price, appt.datetime, appt.id);
