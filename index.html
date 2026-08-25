@@ -3952,7 +3952,7 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
 
       <!-- Message type tabs -->
-            <div class="card" style="margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 14px;">
+            <div class="card" id="wa-camp-tools" style="margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 14px;">
         <div style="display:flex;align-items:center;gap:7px;">
           <span style="font-size:0.75rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:1px;">💔 Geri Kazanım:</span>
           <select class="fctrl" style="width:auto;padding:6px 9px;font-size:0.8rem;" id="wb-weeks" onchange="setWinbackWeeks(this.value)">
@@ -4751,6 +4751,35 @@ function fDT(dt){return new Date(dt).toLocaleString("tr-TR",{day:"2-digit",month
 function fDate(dt){return new Date(dt).toLocaleDateString("tr-TR",{day:"2-digit",month:"long",year:"numeric"});}
 function isBday(b){if(!b)return false;const d=new Date(b);return d.getMonth()===NOW.getMonth()&&d.getDate()===NOW.getDate();}
 function isBdaySoon(b,days=7){if(!b)return false;const d=new Date(b);d.setFullYear(NOW.getFullYear());const diff=(d-NOW)/86400000;return diff>=0&&diff<=days;}
+
+// ── UI SWITCHES — OFF hides and stops calculating; nothing is ever deleted ──
+// The loyalty side (points, Bronze/Silver/Gold tiers) and the campaign lists
+// (Referans / Geri-Kazanım / Reaktivasyon / Özel Günler) are retired from the
+// screens, but every client's stored points and tier stays exactly where it is
+// in the records. To bring one back, flip its flag to true — one line, done.
+// (Doğum günü indirimleri ayrı bir konu ve zaten kapalı — bu bayraklar ona
+// dokunmaz.)
+var RD_UI = { loyalty:false, campaigns:false };
+function uiOn(k){ try{ return !RD_UI || RD_UI[k]!==false; }catch(e){ return true; } }
+// The chrome that is plain HTML — form fields, tabs, the campaign tool bar —
+// is switched off here once, so no render function has to remember it.
+function applyUiFlags(){
+  try{
+    var hideFg=function(id){ var el=document.getElementById(id); var fg=el&&el.closest? el.closest('.fg'):null; if(fg) fg.style.display='none'; };
+    if(!uiOn('loyalty')){ hideFg('c-tier'); hideFg('c-points'); }
+    if(!uiOn('campaigns')){
+      var tools=document.getElementById('wa-camp-tools'); if(tools) tools.style.display='none';
+      ['winback','react','occasion','referral'].forEach(function(t){
+        var n=document.getElementById('wt-'+t);
+        if(n&&n.parentElement) n.parentElement.style.display='none';
+      });
+      hideFg('c-ref');
+    }
+  }catch(e){}
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',applyUiFlags);
+else applyUiFlags();
+
 function getTier(clientId){
   // Automatic tier — counts visits within the last 10 months only
   const tenMonthsAgo=new Date();
@@ -4868,8 +4897,9 @@ function dbSave(){
 }
 
 function saveAll(){
-  // Recalculate tiers then persist
-  clients.forEach(c=>{ c.tier = getTier(c.id); });
+  // Recalculate tiers then persist — only while the loyalty side is on; off,
+  // the stored tier is left untouched in the records, neither shown nor moved.
+  if(uiOn('loyalty')) clients.forEach(c=>{ c.tier = getTier(c.id); });
   dbSave();
 }
 
@@ -5955,11 +5985,16 @@ function undoComplete(id){
   if(!confirm("Bu randevuyu geri al? (Tamamlandı işareti kaldırılacak, puan ve kazanç geri alınacak)")) return;
   const ci=clients.findIndex(x=>x.id===a.clientId);
   if(ci>=0){
-    const ptsAdded = (typeof a._ptsAdded==="number") ? a._ptsAdded : Math.floor((a.price||200)/10);
-    clients[ci].points = Math.max(0, clients[ci].points - ptsAdded);
+    // Points a completion actually added (stamped in _ptsAdded) come back off
+    // even while the loyalty side is switched off — a flag must not strand
+    // phantom points on the record. What the flag stops is the ESTIMATED
+    // fallback and the tier recalculation, i.e. any fresh loyalty maths.
+    const ptsAdded = (typeof a._ptsAdded==="number") ? a._ptsAdded
+                   : (uiOn('loyalty') ? Math.floor((a.price||200)/10) : 0);
+    if(ptsAdded) clients[ci].points = Math.max(0, (clients[ci].points||0) - ptsAdded);
     clients[ci].visits = Math.max(0, (clients[ci].visits||0) - 1);
     if(a._prevLastVisit !== undefined) clients[ci].lastVisit = a._prevLastVisit;
-    clients[ci].tier = getTier(a.clientId);
+    if(uiOn('loyalty')) clients[ci].tier = getTier(a.clientId);
   }
   if(a.price>0 && a.staff){
     diAutoRemove(a.staff, a.price, a.datetime, a.id);
@@ -7552,10 +7587,11 @@ function renderDash(){
   bb.innerHTML=bdayC.length?`<div class="bday-alert">🎂 <strong>Birthday Today!</strong> ${bdayC.map(c=>c.name).join(", ")} — send them wishes!
     <button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="goto('whatsapp',null)">💬 Send Wishes</button></div>`:"";
 
-  // 🎊 Occasion campaign banner (shows 7 days before each special day)
+  // 🎊 Occasion campaign banner (shows 7 days before each special day) —
+  // silent while ui.campaigns is off
   const ob=document.getElementById("occasion-banner");
   if(ob){
-    const ups=occUpcoming();
+    const ups=uiOn('campaigns')?occUpcoming():[];
     ob.innerHTML=ups.map(u=>`<div class="bday-alert">${u.occ.emoji} <strong>${u.occ.name}</strong> — ${u.daysLeft===0?"BUGÜN!":u.daysLeft+" gün kaldı"} (${u.date.toLocaleDateString("tr-TR",{day:"numeric",month:"long"})})
       <button class="btn btn-gold btn-sm" style="margin-left:auto" onclick="queueOccasion('${u.occ.key}')">📢 Kampanya Mesajlarını Hazırla</button></div>`).join("");
   }
@@ -7576,9 +7612,10 @@ function renderDash(){
     </div>`;
   }).join(""):`<p style="color:var(--muted);font-size:0.83rem">No auto-rebooked appointments yet.</p>`;
 
-  // Loyalty
+  // Loyalty — the card is already hidden in the HTML; behind the flag the
+  // leaderboard is not even computed.
   const dashLoyaltyEl = document.getElementById("dash-loyalty");
-  if(dashLoyaltyEl) dashLoyaltyEl.innerHTML=[...clients].sort((a,b)=>b.points-a.points).slice(0,4).map(c=>`
+  if(dashLoyaltyEl && uiOn('loyalty')) dashLoyaltyEl.innerHTML=[...clients].sort((a,b)=>b.points-a.points).slice(0,4).map(c=>`
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px">
       <div class="avatar" style="background:${avC(c.name)};width:32px;height:32px;font-size:0.78rem">${avI(c.name)}</div>
       <div style="flex:1"><div style="font-size:0.84rem;font-weight:600">${c.name}${isBday(c.birthday)?" 🎂":""}</div>
@@ -7779,11 +7816,14 @@ function showClientDetail(id){
         <div style="font-size:0.83rem;margin-bottom:4px">📞 ${c.phone}</div>
         <div style="font-size:0.83rem">🎂 ${c.birthday?fDate(c.birthday+"T00:00"):"—"}</div>
       </div>
-      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
+      ${uiOn('loyalty')?`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
         <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Loyalty</div>
         ${tierBadge(c.tier)}<span style="font-size:0.81rem;color:var(--muted);margin-left:7px">${c.points} pts · ${c.visits} visits</span>
         <div class="lbar" style="margin-top:8px"><div class="lbar-fill" style="width:${Math.min(c.points/4,100)}%"></div></div>
-      </div>
+      </div>`:`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
+        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Ziyaret</div>
+        <span style="font-size:0.81rem;color:var(--muted)">${c.visits} ziyaret · son: ${c.lastVisit||"—"}</span>
+      </div>`}
     </div>
     ${c.notes?`<div style="background:rgba(212,169,106,0.07);border:1px solid rgba(212,169,106,0.2);border-radius:8px;padding:9px 13px;font-size:0.81rem;color:var(--gold);margin-bottom:14px">📝 ${c.notes}</div>`:""}
     <div style="font-weight:700;font-size:0.95rem;color:var(--soft);margin-bottom:11px">Appointment History</div>
@@ -8123,21 +8163,26 @@ function completeAppt(id){
   apptTouch(a);   // stamp the status itself, so the Done survives every merge
   const ci=clients.findIndex(x=>x.id===a.clientId);
   if(ci>=0){
-    const ptsAdded=Math.floor((a.price||200)/10);
-    const pts=clients[ci].points+ptsAdded;
-    const oldTier=clients[ci].tier;
+    // Visits and last-visit always count — reminders and win-back depend on
+    // them. Points and tier are the loyalty side: behind the flag, neither is
+    // calculated, and the stored figures sleep untouched in the record.
     const prevLastVisit=clients[ci].lastVisit;
-    clients[ci]={...clients[ci],points:pts,visits:clients[ci].visits+1,lastVisit:new Date().toISOString().slice(0,10)};
-    a._ptsAdded=ptsAdded;
+    clients[ci]={...clients[ci],visits:clients[ci].visits+1,lastVisit:new Date().toISOString().slice(0,10)};
     a._prevLastVisit=prevLastVisit;
-    const newTier=getTier(a.clientId);
-    clients[ci].tier=newTier;
-    if(newTier!==oldTier){
-      toast("🎉","Tier Upgrade!",`${clients[ci].name} is now ${newTier}! 🎊`,"g");
-      // Auto-generate tier upgrade WA message
-      const upgradeEntry={id:a.clientId+"_tierup_"+Date.now(),clientId:a.clientId,type:"loyalty",subtype:"",text:"",status:"pending",appt:null};
-      msgQueue.push(upgradeEntry);
-      genMsg(upgradeEntry).then(txt=>{upgradeEntry.text=txt;updateWACounts();});
+    if(uiOn('loyalty')){
+      const ptsAdded=Math.floor((a.price||200)/10);
+      clients[ci].points=(clients[ci].points||0)+ptsAdded;
+      const oldTier=clients[ci].tier;
+      a._ptsAdded=ptsAdded;
+      const newTier=getTier(a.clientId);
+      clients[ci].tier=newTier;
+      if(newTier!==oldTier){
+        toast("🎉","Tier Upgrade!",`${clients[ci].name} is now ${newTier}! 🎊`,"g");
+        // Auto-generate tier upgrade WA message
+        const upgradeEntry={id:a.clientId+"_tierup_"+Date.now(),clientId:a.clientId,type:"loyalty",subtype:"",text:"",status:"pending",appt:null};
+        msgQueue.push(upgradeEntry);
+        genMsg(upgradeEntry).then(txt=>{upgradeEntry.text=txt;updateWACounts();});
+      }
     }
   }
   // ⭐ GOOGLE REVIEW — queued to the Dashboard card (no popup); sent by reception when free
@@ -8148,7 +8193,7 @@ function completeAppt(id){
   }catch(e){}
   showRebookModal(a, c);
   saveAll();renderAppts();renderDash();updateApptBadge();
-  toast("✅","Treatment Done!",`+${Math.floor((a.price||200)/10)} points for ${c?.name}`,"g");
+  toast("✅","Treatment Done!",uiOn('loyalty')?`+${Math.floor((a.price||200)/10)} points for ${c?.name}`:`${c?.name||''}`,"g");
 
   // 3rd visit milestone message
   const updatedVisits = clients.find(x=>x.id===a.clientId)?.visits||0;
@@ -8172,8 +8217,9 @@ function completeAppt(id){
   }
 
   // 🤝 Referral reward — first completed visit of a referred client
+  // (a campaign — sleeps while ui.campaigns is off, referredBy data kept)
   const cliNow = clients.find(x=>x.id===a.clientId);
-  if((cliNow?.visits===1) && cliNow?.referredBy){
+  if(uiOn('campaigns') && (cliNow?.visits===1) && cliNow?.referredBy){
     const ref=cObj(cliNow.referredBy);
     if(ref&&ref.phone){
       const rid=ref.id+"_refthx_"+a.clientId;
@@ -8345,7 +8391,7 @@ function saveClient(){
     const c={id:Date.now(),name,phone,birthday:document.getElementById("c-bday").value,visits:0,points:parseInt(document.getElementById("c-points").value)||0,tier:document.getElementById("c-tier").value,lastVisit:"—",notes:document.getElementById("c-notes").value.trim(),referredBy:parseInt(document.getElementById("c-ref")?.value)||null};
     clients.push(c);
     if(!c.birthday)toast("🎂","Doğum günü eksik!",`${c.name} için doğum gününü sorup kaydedin — otomatik kutlama ve %20 indirim mesajı için gerekli.`,"");
-    if(c.referredBy)toast("🤝","Referans Kaydedildi",`İlk randevusu tamamlanınca ${cName(c.referredBy)}'e teşekkür + %15 indirim mesajı otomatik hazırlanacak.`,"g");
+    if(c.referredBy&&uiOn('campaigns'))toast("🤝","Referans Kaydedildi",`İlk randevusu tamamlanınca ${cName(c.referredBy)}'e teşekkür + %15 indirim mesajı otomatik hazırlanacak.`,"g");
     ["c-name","c-phone","c-bday","c-notes","c-points","c-ref"].forEach(i=>{const el=document.getElementById(i);if(el)el.value="";});
     closeModal("mClient");
     toast("✅","Client Added!",`${c.name} is now in the system.`,"g");
@@ -8424,7 +8470,7 @@ function renderTx(){
         <span style="font-size:0.83rem">${s}</span>
         <span class="badge badge-wa">${n}×</span>
       </div>`).join("")}
-    <div style="margin-top:13px">${tierBadge(c.tier)} <span style="font-size:0.81rem;color:var(--muted);margin-left:7px">${c.points} loyalty points</span></div>`;
+    ${uiOn('loyalty')?`<div style="margin-top:13px">${tierBadge(c.tier)} <span style="font-size:0.81rem;color:var(--muted);margin-left:7px">${c.points} loyalty points</span></div>`:''}`;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -8543,7 +8589,7 @@ const WB_KEY='rdns_winback_weeks', SENT_KEY='rdns_wa_sent_ids';
 let winbackWeeks = parseInt(localStorage.getItem(WB_KEY))||6;
 let waSentIds = new Set(JSON.parse(localStorage.getItem(SENT_KEY)||"[]"));
 function markSentPersist(id){waSentIds.add(id);try{localStorage.setItem(SENT_KEY,JSON.stringify(Array.from(waSentIds)));}catch(e){}}
-function setWinbackWeeks(v){winbackWeeks=parseInt(v)||6;localStorage.setItem(WB_KEY,winbackWeeks);buildWAQueue();renderWA();updateWACounts();toast("💔","Geri Kazanım",`Süre güncellendi: son ${winbackWeeks} haftada gelmeyen müşteriler taranıyor.`,"g");}
+function setWinbackWeeks(v){if(!uiOn('campaigns')){toast("ℹ️","Kampanyalar kapalı","ui.campaigns bayrağı ile açılabilir.","");return;}winbackWeeks=parseInt(v)||6;localStorage.setItem(WB_KEY,winbackWeeks);buildWAQueue();renderWA();updateWACounts();toast("💔","Geri Kazanım",`Süre güncellendi: son ${winbackWeeks} haftada gelmeyen müşteriler taranıyor.`,"g");}
 function lastVisitDate(c){if(!c.lastVisit||c.lastVisit==="—")return null;const d=new Date(String(c.lastVisit).slice(0,10)+"T00:00");return isNaN(d)?null:d;}
 function hasUpcomingAppt(cid){return appointments.some(a=>a.clientId===cid&&a.status==="confirmed"&&hrs(a.datetime)>0);}
 setTimeout(()=>{const s=document.getElementById("wb-weeks");if(s)s.value=String(winbackWeeks);},80);
@@ -8563,6 +8609,7 @@ const OCCASIONS=[
 function occDates(o){const y=new Date().getFullYear();return o.fixed?o.fixed.map(s=>new Date(s+"T00:00")):o.when(y).concat(o.when(y+1));}
 function occUpcoming(){const now=new Date();now.setHours(0,0,0,0);const out=[];OCCASIONS.forEach(o=>{occDates(o).forEach(d=>{const dl=Math.round((d-now)/86400000);if(dl>=0&&dl<=7)out.push({occ:o,date:d,daysLeft:dl});});});return out.sort((a,b)=>a.daysLeft-b.daysLeft);}
 function queueOccasion(key){
+  if(!uiOn('campaigns')){toast("ℹ️","Kampanyalar kapalı","ui.campaigns bayrağı ile açılabilir.","");return;}
   const o=OCCASIONS.find(x=>x.key===key);if(!o)return;
   const yr=new Date().getFullYear();
   let n=0;
@@ -8584,6 +8631,7 @@ function reactEligible(c){
   return true;
 }
 function launchReactivation(){
+  if(!uiOn('campaigns')){toast("ℹ️","Kampanyalar kapalı","ui.campaigns bayrağı ile açılabilir.","");return;}
   // Remove previously queued (unsent) reactivation messages so the list is rebuilt with the strict rules
   const before=msgQueue.filter(m=>m.type==="react"&&m.status!=="sent").length;
   msgQueue=msgQueue.filter(m=>!(m.type==="react"&&m.status!=="sent"));
@@ -8633,8 +8681,9 @@ function buildWAQueue(){
     if(isBday(c.birthday)){const id=c.id+"_bday";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"today",text:"",status:"pending",appt:null});existing.add(id);}}
     else if(isBdaySoon(c.birthday,7)){const id=c.id+"_bdaySoon";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"soon",text:"",status:"pending",appt:null});existing.add(id);}}
     // Win-back — no visit for winbackWeeks+, no upcoming appointment
+    // (a campaign — the scan itself sleeps while ui.campaigns is off)
     const _lv=lastVisitDate(c);
-    if(c.phone&&c.visits>0&&_lv&&!hasUpcomingAppt(c.id)&&((new Date()-_lv)/86400000)>=winbackWeeks*7){
+    if(uiOn('campaigns')&&c.phone&&c.visits>0&&_lv&&!hasUpcomingAppt(c.id)&&((new Date()-_lv)/86400000)>=winbackWeeks*7){
       const id=c.id+"_winback_"+String(c.lastVisit).slice(0,10);
       if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"winback",subtype:"",text:"",status:"pending",appt:null});existing.add(id);}
     }
@@ -8668,8 +8717,8 @@ Royal Diamond Nail Studio 👑
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
     reminder_1h:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a short bubbly WhatsApp message telling the client their ${a?.service||"appointment"} is in about 1 hour at ${a?fDT(a.datetime):"soon"}. Brief, warm, excited. 1 paragraph. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
-    birthday_today:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a heartfelt birthday WhatsApp message for a nail salon customer. They are ${c.tier} tier with ${c.points} loyalty points. Offer a special 20% birthday discount valid this week. 2 paragraphs. Birthday and nail emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
-    birthday_soon:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm WhatsApp message telling the client their birthday is coming soon! Invite them to book a birthday treatment, offer 15% off. ${c.tier} member. 2 short paragraphs. Fun tone. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
+    birthday_today:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a heartfelt birthday WhatsApp message for a nail salon customer. ${uiOn('loyalty')?`They are ${c.tier} tier with ${c.points} loyalty points. `:''}Offer a special 20% birthday discount valid this week. 2 paragraphs. Birthday and nail emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
+    birthday_soon:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm WhatsApp message telling the client their birthday is coming soon! Invite them to book a birthday treatment, offer 15% off.${uiOn('loyalty')?` ${c.tier} member.`:''} 2 short paragraphs. Fun tone. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
     loyalty_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a celebratory WhatsApp loyalty message for a client. They are now ${c.tier} tier at Royal Diamond Nail Studio. Tier benefits: Diamond (40+ visits)=exclusive monthly gift+25% off+top priority, Platinum (30+ visits)=20% off+free nail art+VIP treatment, Gold (20+ visits)=15% off+complimentary nail art, Silver (10+ visits in 10 months)=10% off+priority booking, Bronze=welcome member pricing. Celebrate their achievement warmly. 2 paragraphs. Use fitting emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
     promo_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write an enticing personalised WhatsApp promotional offer for a ${c.tier} loyalty member at Royal Diamond Nail Studio. Tier rewards: Diamond=exclusive monthly gift treatment+25% off; Platinum=20% off+free nail art; Gold=15% off any service; Silver=10% off+priority booking (Silver requires 10 visits in 10 months); Bronze=5% welcome discount on next visit. Write a warm offer tailored EXACTLY to their ${c.tier} tier benefit. 2 short paragraphs. Max 2 emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
     visit3_:`Write a warm, celebratory WhatsApp message in ${currentLang==='tr'?'Turkish':currentLang==='vi'?'Vietnamese':currentLang==='el'?'Greek':'English'} to a client celebrating their 3rd visit to Royal Diamond Nail Studio! IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead.  
@@ -8778,7 +8827,7 @@ function renderWA(){
         <div class="mc-client">
           <div class="avatar" style="background:${avC(c?.name)};width:36px;height:36px;font-size:0.8rem">${avI(c?.name)}</div>
           <div><div style="font-weight:700;font-size:0.92rem">${c?.name}</div><div style="font-size:0.73rem;color:var(--muted)">+${c?.phone}</div></div>
-          <div class="mc-badges">${waTypeBadge(m.type)}${tierBadge(c?.tier||"Bronze")}</div>
+          <div class="mc-badges">${waTypeBadge(m.type)}${uiOn('loyalty')?tierBadge(c?.tier||"Bronze"):""}</div>
         </div>
         ${m.type==="reminder"?`<div style="font-size:0.74rem;color:var(--muted)">📅 ${m.appt?fDT(m.appt.datetime):"—"} · ${m.appt?.service||"—"}</div>`:""}
       </div>
@@ -10247,8 +10296,8 @@ clients.forEach(c=>{if(isBday(c.birthday))setTimeout(()=>toast("🎂","Birthday 
 // ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════// Recalculate all tiers on load based on visit history
-// Load saved client tiers
-clients.forEach(c=>{ c.tier=getTier(c.id); });
+// Load saved client tiers — skipped while ui.loyalty is off (data left as is)
+if(uiOn('loyalty')) clients.forEach(c=>{ c.tier=getTier(c.id); });
 // Init — defer renderDash until all scripts parsed (fixes mobile)
 if(typeof dtLoadState === "function"){ dtState = dtLoadState(); }
 setLang("tr");
