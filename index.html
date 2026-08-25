@@ -566,6 +566,33 @@
           if(typeof renderDash24h==='function') renderDash24h();
         }catch(e){}
       });
+      // Gap Report temas günlüğü — arama/mesaj/sonuç olayları. Advances ile
+      // aynı kalıp: kayıtlar id ile birleşir, yeni ts kazanır, iki laptop
+      // birbirinin aramasını görür ve hiçbiri diğerininkini silemez.
+      _fbDb.ref('rdns_fcl_log_v1').on('value',snap=>{
+        if(_isSyncing['rdns_fcl_log_v1'])return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          if(!Array.isArray(rObj.items)) rObj.items=[];
+          try{
+            const local=JSON.parse(localStorage.getItem('rdns_fcl_log_v1')||'{"items":[]}');
+            const byId={};
+            (rObj.items||[]).forEach(it=>{ if(it&&it.id!=null) byId[it.id]=it; });
+            (local.items||[]).forEach(it=>{
+              if(!it||it.id==null) return;
+              const r=byId[it.id];
+              if(!r || (it.ts||0)>(r.ts||0)) byId[it.id]=it;
+            });
+            rObj.items=Object.values(byId);
+          }catch(e){}
+          _isSyncing['rdns_fcl_log_v1']=true;
+          localStorage.setItem('rdns_fcl_log_v1',JSON.stringify(rObj));
+          setTimeout(()=>{_isSyncing['rdns_fcl_log_v1']=false;},800);
+          const pg=document.querySelector('.page.active');
+          if(pg&&pg.id==='page-gapreport')try{ if(typeof renderFillCallList==='function') renderFillCallList(); }catch(e){}
+        }catch(e){console.warn('fcl log sync error:',e);}
+      });
       showSyncStatus('synced');
     }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
   }
@@ -14913,6 +14940,118 @@ window.addEventListener('load',function(){
     return { short:full.toUpperCase(), full:full, dative:full+' gününe', offer:full+' günü' };
   }
 
+  /* ── TEMAS GÜNLÜĞÜ ─────────────────────────────────────────────────────
+     Every contact from this list is written down BEFORE anything opens:
+     who pressed (owner/reception, from the messaging role), when, which
+     customer, what kind — call, message, or an outcome (✅ randevu aldı /
+     ✋ ilgilenmedi). Events are append-only rows in rdns_fcl_log_v1
+     (localStorage + the advances-style id-merge sync), so two laptops see
+     each other's calls. The row colours read TODAY's events only — at
+     midnight every row is white again on its own, while the log keeps the
+     history for the report. */
+  var FCL_LOG_KEY='rdns_fcl_log_v1';
+  function fclLog(){
+    try{ var d=JSON.parse(localStorage.getItem(FCL_LOG_KEY)||'{"items":[]}');
+      if(!d||typeof d!=='object') d={items:[]};
+      if(!Array.isArray(d.items)) d.items=[];
+      return d;
+    }catch(e){ return {items:[]}; }
+  }
+  function fclSaveLog(d){
+    if(d.items.length>2000) d.items=d.items.slice(-2000);  // yıllar birikmesin
+    try{ localStorage.setItem(FCL_LOG_KEY,JSON.stringify(d)); }catch(e){}
+    try{ syncPush(FCL_LOG_KEY, JSON.parse(localStorage.getItem(FCL_LOG_KEY)||'{"items":[]}')); }catch(e){}
+  }
+  function fclRole(){ try{ var r=localStorage.getItem('rdns_msg_role'); return (r==='owner'||r==='reception')?r:''; }catch(e){ return ''; } }
+  function fclWho(r){ return r==='owner'?'Bülent':(r==='reception'?'Resepsiyon':''); }
+  function fclAddEvent(clientId, kind){
+    var d=fclLog(), now=new Date();
+    d.items.push({
+      id:(typeof rdNewId==='function'?rdNewId():Date.now()),
+      day:key(now), clientId:String(clientId), kind:kind,
+      by:fclRole(), at:fmt(now.getHours()*60+now.getMinutes()), ts:Date.now()
+    });
+    fclSaveLog(d);
+  }
+  // Bugünün durumu, tek müşteri için: son arama, son mesaj, son sonuç.
+  function fclStateFor(clientId, dayKey){
+    var st={call:null,msg:null,outcome:null,outcomeEv:null};
+    fclLog().items.forEach(function(e){
+      if(!e||String(e.clientId)!==String(clientId)||e.day!==dayKey) return;
+      if(e.kind==='call'&&(!st.call||(e.ts||0)>(st.call.ts||0))) st.call=e;
+      if(e.kind==='msg' &&(!st.msg ||(e.ts||0)>(st.msg.ts||0)))  st.msg=e;
+      if((e.kind==='booked'||e.kind==='no'||e.kind==='clear')
+        &&(!st.outcomeEv||(e.ts||0)>(st.outcomeEv.ts||0))) st.outcomeEv=e;
+    });
+    if(st.outcomeEv&&st.outcomeEv.kind!=='clear') st.outcome=st.outcomeEv.kind;
+    return st;
+  }
+  function fclEvInfo(e){ return e?(' '+(e.at||'')+(e.by?' · '+fclWho(e.by):'')):''; }
+
+  /* Ara: kayıt ÖNCE yazılır — arama açılamasa bile temas tutulmuş olur.
+     Telefonda tel: doğrudan çevirir; masaüstünde numara büyük punto ile
+     gösterilir, Kopyala düğmesi ve yine de denemek için tel: bağlantısı olur. */
+  window.fclCall=function(cid){
+    var c=_clis().find(function(x){ return String(x.id)===String(cid); });
+    if(!c||!c.phone) return;
+    fclAddEvent(cid,'call');
+    try{ renderFillCallList(); }catch(e){}
+    var tel='tel:+'+(typeof normalizeWaPhone==='function'?normalizeWaPhone(c.phone):String(c.phone).replace(/\D/g,''));
+    var mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+    if(mobile){ try{ location.href=tel; }catch(e){} return; }
+    fclShowNumber(c.name, c.phone, tel);
+  };
+  window.fclMsgLog=function(cid){
+    fclAddEvent(cid,'msg');
+    // the wa.me tab is already opening — repaint after this click finishes
+    setTimeout(function(){ try{ renderFillCallList(); }catch(e){} },50);
+  };
+  window.fclOutcome=function(cid, kind){
+    var st=fclStateFor(cid, key(new Date()));
+    fclAddEvent(cid, st.outcome===kind ? 'clear' : kind);   // aynı düğme ikinci kez = geri al
+    try{ renderFillCallList(); }catch(e){}
+  };
+  function fclShowNumber(name, phone, tel){
+    var m=document.getElementById('fclNumModal');
+    if(!m){
+      m=document.createElement('div'); m.id='fclNumModal';
+      m.style.cssText='position:fixed;inset:0;background:rgba(8,9,8,.7);z-index:9997;display:none;align-items:center;justify-content:center;padding:16px;';
+      m.innerHTML='<div style="background:#fff;border-radius:16px;padding:26px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3);text-align:center;">'
+        +'<div id="fclNumName" style="font-weight:800;font-size:1rem;margin-bottom:10px;"></div>'
+        +'<div id="fclNumBig" style="font-size:2.1rem;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums;margin-bottom:16px;"></div>'
+        +'<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'
+        +'<button id="fclNumCopy" style="border:1.5px solid #d4a96a;background:rgba(212,169,106,.12);border-radius:12px;padding:12px 20px;font-family:inherit;font-weight:800;font-size:.95rem;cursor:pointer;">📋 Kopyala</button>'
+        +'<a id="fclNumTel" href="#" style="text-decoration:none;border:1.5px solid #5fcb8c;background:rgba(95,203,140,.12);border-radius:12px;padding:12px 20px;font-weight:800;font-size:.95rem;color:#1a1a1a;">📞 Aramayı dene</a>'
+        +'</div>'
+        +'<button onclick="document.getElementById(\'fclNumModal\').style.display=\'none\'" style="margin-top:14px;width:100%;border:none;background:#f0f0f0;border-radius:10px;padding:9px;font-family:inherit;font-weight:700;color:#888;cursor:pointer;">Kapat</button>'
+        +'</div>';
+      document.body.appendChild(m);
+      m.addEventListener('click',function(ev){ if(ev.target===m) m.style.display='none'; });
+    }
+    document.getElementById('fclNumName').textContent=name||'';
+    document.getElementById('fclNumBig').textContent=phone||'';
+    document.getElementById('fclNumTel').setAttribute('href',tel||'#');
+    var cp=document.getElementById('fclNumCopy');
+    cp.onclick=function(){
+      var txt=String(phone||'');
+      function ok(){ try{ toast('📋','Kopyalandı',txt,'g'); }catch(e){} }
+      try{
+        if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok,function(){ fclCopyFallback(txt); ok(); }); }
+        else { fclCopyFallback(txt); ok(); }
+      }catch(e){}
+    };
+    m.style.display='flex';
+  }
+  function fclCopyFallback(txt){
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=txt; ta.style.cssText='position:fixed;opacity:0;';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }catch(e){}
+  }
+
   window.renderFillCallList = function(){
     var body = document.getElementById('fcl-body');
     var head = document.getElementById('fcl-free');
@@ -14927,6 +15066,10 @@ window.addEventListener('load',function(){
     var days = fclDays();
     var used = {};      // aynı randevu iki ayrı güne teklif edilmesin
     var out  = '';
+    // Üst satır sayacı: "55 müşteri · 12 arandı · 8 mesaj · 3 randevu".
+    // Distinct müşteri sayılır — iki randevosu listelenen kadın bir kişidir.
+    var _cnt = { all:new Set(), call:new Set(), msg:new Set(), booked:new Set() };
+    var _todayK = key(new Date());
 
     days.forEach(function(base, idx){
       var win = freeWindows(base);
@@ -14972,9 +15115,23 @@ window.addEventListener('load',function(){
         });
       }
 
+      // Bugünün temas durumu — satır rengi, durum satırı ve sıralama buradan.
+      var stMap = {};
+      cands.forEach(function(x){
+        var cid=String(x.c.id);
+        if(!stMap[cid]) stMap[cid]=fclStateFor(cid, _todayK);
+        var s=stMap[cid];
+        _cnt.all.add(cid);
+        if(s.call) _cnt.call.add(cid);
+        if(s.msg) _cnt.msg.add(cid);
+        if(s.outcome==='booked') _cnt.booked.add(cid);
+      });
+
       cands.sort(function(x,y){
+        // ✅ randevu alanlar listenin altına iner — iş bitmiş, göz önünde durmasın
+        function bk(v){ var s=stMap[String(v.c.id)]; return (s&&s.outcome==='booked')?1:0; }
         function slotMin(v){ var p = String(v.same||v.other||'99:99').split(':'); return (+p[0])*60 + (+p[1]); }
-        return slotMin(x)-slotMin(y) || (x.same?0:1)-(y.same?0:1) || x.off-y.off || new Date(x.a.datetime)-new Date(y.a.datetime);
+        return bk(x)-bk(y) || slotMin(x)-slotMin(y) || (x.same?0:1)-(y.same?0:1) || x.off-y.off || new Date(x.a.datetime)-new Date(y.a.datetime);
       });
       // bu güne teklif edilenler bir sonraki günde tekrar çıkmasın
       cands.forEach(function(x){ used[apptKey(x.a)] = 1; });
@@ -15023,7 +15180,22 @@ window.addEventListener('load',function(){
         var wa = 'https://wa.me/' + (typeof normalizeWaPhone==='function' ? normalizeWaPhone(x.c.phone) : String(x.c.phone).replace(/\D/g,''))
                + '?text=' + encodeURIComponent(msg);
 
-        return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;">'
+        // ── temas durumu: şerit rengi + satır içi bilgi ──
+        var cid=String(x.c.id), st=stMap[cid]||{};
+        var stripe='';
+        if(st.outcome==='booked')      stripe='border-left:4px solid #1ea34f;background:rgba(30,163,79,0.08);';
+        else if(st.outcome==='no')     stripe='border-left:4px solid #9a9a9a;background:rgba(150,150,150,0.07);opacity:0.55;';
+        else if(st.msg)                stripe='border-left:4px solid #2f7fe0;background:rgba(47,127,224,0.06);';   // mesaj (tek başına veya aramayla birlikte) → mavi
+        else if(st.call)               stripe='border-left:4px solid #e6a850;background:rgba(230,168,80,0.08);';
+        var stBits=[];
+        if(st.outcome==='booked') stBits.push('✅ Randevu aldı'+fclEvInfo(st.outcomeEv));
+        else if(st.outcome==='no') stBits.push('✋ İlgilenmedi'+fclEvInfo(st.outcomeEv));
+        if(st.call) stBits.push('📞 Arandı'+fclEvInfo(st.call));
+        if(st.msg)  stBits.push('💬 Mesaj'+fclEvInfo(st.msg));
+        var stCol = st.outcome==='booked' ? '#1ea34f' : st.outcome==='no' ? '#8a8a8a' : st.msg ? '#2f7fe0' : '#c4863a';
+        var stLine = stBits.length ? '<div style="font-size:0.72rem;font-weight:700;margin-top:3px;color:'+stCol+';">'+stBits.join(' · ')+'</div>' : '';
+
+        return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;'+stripe+'">'
           + '<div style="flex:1;min-width:210px;">'
           +   '<div style="font-weight:700;font-size:0.9rem;">'+esc(x.c.name)
           +     (isSame ? '' : ' <span style="font-size:0.68rem;color:var(--orange);font-weight:600;">· personel değişir</span>')
@@ -15031,15 +15203,18 @@ window.addEventListener('load',function(){
           +   '<div style="font-size:0.75rem;color:var(--wa);font-weight:700;margin-top:2px;">📞 '+esc(x.c.phone)+'</div>'
           +   '<div style="font-size:0.74rem;color:var(--muted);margin-top:3px;">'
           +     'Mevcut: '+gun+' · '+saat+' · '+esc(x.a.service)+(x.tech?' · '+x.tech:'')+'</div>'
+          +   stLine
           + '</div>'
           + '<div style="text-align:right;min-width:120px;">'
           +   '<div style="font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">'+esc(L.short)+' teklif</div>'
           +   '<div style="font-size:1.05rem;font-weight:800;color:var(--wa);">'+slot+'</div>'
           +   '<div style="font-size:0.7rem;color:var(--muted);">'+withTech+' · '+x.dur+' dk</div>'
           + '</div>'
-          + '<div style="display:flex;gap:6px;">'
-          +   '<a href="tel:'+esc(x.c.phone)+'" style="text-decoration:none;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 12px;font-size:0.78rem;font-weight:700;">📞 Ara</a>'
-          +   '<a href="'+wa+'" target="_blank" rel="noopener" style="text-decoration:none;background:var(--wa);color:#0a1a0a;border-radius:8px;padding:7px 12px;font-size:0.78rem;font-weight:700;">💬 WhatsApp</a>'
+          + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+          +   '<button onclick="fclCall(\''+cid+'\')" style="background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 12px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">📞 Ara</button>'
+          +   '<a href="'+wa+'" target="_blank" rel="noopener" onclick="fclMsgLog(\''+cid+'\')" style="text-decoration:none;background:var(--wa);color:#0a1a0a;border-radius:8px;padding:7px 12px;font-size:0.78rem;font-weight:700;">💬 WhatsApp</a>'
+          +   '<button onclick="fclOutcome(\''+cid+'\',\'booked\')" title="Randevu aldı — ikinci basış geri alır" style="background:'+(st.outcome==='booked'?'#1ea34f':'rgba(30,163,79,0.12)')+';border:1px solid rgba(30,163,79,0.45);color:'+(st.outcome==='booked'?'#fff':'#1ea34f')+';border-radius:8px;padding:7px 10px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">✅</button>'
+          +   '<button onclick="fclOutcome(\''+cid+'\',\'no\')" title="İlgilenmedi — ikinci basış geri alır" style="background:'+(st.outcome==='no'?'#8a8a8a':'rgba(150,150,150,0.12)')+';border:1px solid rgba(150,150,150,0.45);color:'+(st.outcome==='no'?'#fff':'#777')+';border-radius:8px;padding:7px 10px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">✋</button>'
           + '</div>'
           + '</div>';
       }).join('');
@@ -15049,6 +15224,14 @@ window.addEventListener('load',function(){
 
     if(!out){
       out = '<div style="color:var(--muted);font-size:0.85rem;padding:16px;text-align:center;font-style:italic;">Listelenecek gün bulunamadı.</div>';
+    } else {
+      // Tek satır sayaç — bugünün temasları, distinct müşteri üzerinden.
+      out = '<div style="padding:10px 14px;border-bottom:2px solid var(--border);font-size:0.85rem;font-weight:800;background:rgba(212,169,106,0.06);">'
+        + _cnt.all.size+' müşteri'
+        + ' · <span style="color:#c4863a;">'+_cnt.call.size+' arandı</span>'
+        + ' · <span style="color:#2f7fe0;">'+_cnt.msg.size+' mesaj</span>'
+        + ' · <span style="color:#1ea34f;">'+_cnt.booked.size+' randevu</span>'
+        + '</div>' + out;
     }
 
     body.innerHTML = out;
