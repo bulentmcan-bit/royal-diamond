@@ -17583,6 +17583,32 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 /* Only bad news lives here — a send that failed. Good news is on the bubble. */
 #msg-status{padding:4px 2px 0;color:#f2708b;font-size:.7rem;font-weight:700}
 #msg-status:empty{display:none}
+/* A picture in a bubble: small in the flow, full-size on a tap. */
+.msg-img{display:block;max-width:100%;max-height:150px;border-radius:8px;cursor:zoom-in;
+  border:1px solid rgba(212,169,106,.25)}
+.msg-b .msg-img+.meta,.msg-b span+ .msg-img{margin-top:4px}
+.msg-img-gone{color:#8d8574;font-size:.72rem;font-weight:700;font-style:italic}
+/* The picture waiting beside the text box until Gönder — with a way out. */
+#msg-pending{display:none;align-items:center;gap:8px;margin-bottom:7px;padding:5px 7px;
+  border:1px dashed rgba(212,169,106,.5);border-radius:9px;background:rgba(212,169,106,.07)}
+#msg-pending.on{display:flex}
+#msg-pending img{height:40px;max-width:70px;object-fit:cover;border-radius:6px}
+#msg-pending .lbl{flex:1;min-width:0;color:#d4a96a;font-size:.68rem;font-weight:800;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#msg-pending .rm{cursor:pointer;color:#f2708b;font-weight:800;font-size:.9rem;
+  padding:2px 7px;border-radius:6px;user-select:none}
+#msg-pending .rm:hover{background:rgba(242,112,139,.14)}
+#msg-attach{flex:none;padding:10px 11px;border-radius:9px;cursor:pointer;font-size:.86rem;
+  border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#d4a96a;font-family:inherit}
+#msg-attach:hover{background:rgba(212,169,106,.14)}
+/* Dropping a file anywhere on the panel says so. */
+#msg-panel.dragging{border-color:#5fcb8c;box-shadow:0 0 0 3px rgba(95,203,140,.25)}
+/* Full-size view. Above the panel, below nothing that matters; any tap closes. */
+#msg-imgview{position:fixed;inset:0;z-index:100002;display:none;align-items:center;
+  justify-content:center;background:rgba(8,9,8,.94);cursor:zoom-out;padding:14px}
+#msg-imgview.on{display:flex}
+#msg-imgview img{max-width:96vw;max-height:96vh;border-radius:10px;
+  box-shadow:0 14px 50px rgba(0,0,0,.6)}
 @media(max-width:560px){
   #msg-panel{right:0;top:auto;bottom:0;transform:none;width:100vw;max-width:100vw;
     height:88vh;border-radius:14px 14px 0 0;border-left:none;border-right:none}
@@ -17601,13 +17627,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   <div id="msg-chat"></div>
   <div id="msg-foot">
     <div id="msg-presets"></div>
+    <div id="msg-pending"><img id="msg-pending-img" alt=""><span class="lbl">📷 Görsel hazır — Gönder’e basın</span><span class="rm" id="msg-pending-rm" title="Görseli kaldır">✕</span></div>
     <div id="msg-row">
+      <button id="msg-attach" title="Görsel ekle (veya kutuya Ctrl+V ile yapıştırın)">📎</button>
       <textarea id="msg-text" maxlength="500" rows="1" placeholder="Mesaj yazın…"></textarea>
       <button id="msg-send" onclick="msgSend()">Gönder</button>
     </div>
+    <input type="file" id="msg-file" accept="image/*" style="display:none">
     <div id="msg-status"></div>
   </div>
 </div>
+<div id="msg-imgview"><img id="msg-imgview-img" alt="Görsel"></div>
 <script>
 (function(){
   var C = window.CROWN || {};
@@ -17716,7 +17746,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(!m){ queue.shift(); return showNext(); }
     showingKey=key;
     document.getElementById('msg-ovl-who').textContent=NAMES[m.from]||m.from;
-    document.getElementById('msg-ovl-txt').textContent=m.text||'';
+    // The delivery screen stays text-only on purpose: a picture is opened from
+    // the chat, deliberately — the ambush screen just says one arrived.
+    var ovlTxt=m.text||'';
+    if(m.img||m.hadImg) ovlTxt=ovlTxt?(ovlTxt+'\n📷 Görsel'):'📷 Görsel';
+    document.getElementById('msg-ovl-txt').textContent=ovlTxt;
     document.getElementById('msg-ovl-tm').textContent=fmtT(m.ts);
     document.getElementById('msg-ovl').classList.add('on');
   }
@@ -17767,31 +17801,37 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var el=document.getElementById('msg-status');
     if(el) el.textContent=text||'';
   }
-  function send(text){
+  function send(text, img){
     text=String(text||'').trim();
-    if(!text) return;
-    if(!db){ setStatus('Giriş yapılmadan gönderilemez'); return; }
+    if(!text && !img) return false;
+    if(!db){ setStatus('Giriş yapılmadan gönderilemez'); return false; }
     var ref;
-    try{ ref=db.ref(PATH).push(); }catch(e){ setStatus('Gönderilemedi'); return; }
+    try{ ref=db.ref(PATH).push(); }catch(e){ setStatus('Gönderilemedi'); return false; }
     setStatus('');
     stickBottom=true;   // your own words always come into view
-    ref.set({
+    var rec={
       from: ROLE,
       text: text.slice(0,500),
       ts:   firebase.database.ServerValue.TIMESTAMP,   // the server's clock, never this device's
       seen: 0
-    }).then(function(){
+    };
+    if(img) rec.img=img;   // already shrunk and size-checked — raw files never get here
+    ref.set(rec).then(function(){
       prune();
+      cleanImages();   // the sender tidies pictures after itself, like messages
     }).catch(function(e){
       console.warn('[msg] send failed:',e);
       setStatus('Gönderilemedi — bağlantıyı kontrol edin');
     });
     var ta=document.getElementById('msg-text');
     if(ta) ta.value='';
+    return true;
   }
   window.msgSend=function(){
     var ta=document.getElementById('msg-text');
-    send(ta?ta.value:'');
+    // The staged picture leaves the strip only if the send actually started —
+    // a "not signed in yet" must not eat the screenshot.
+    if(send(ta?ta.value:'', pendingImg)) clearPending();
   };
   // Keep the last KEEP and no more. The sender tidies after itself: one read
   // straight after a successful send, and anything past the newest fifty goes.
@@ -17804,6 +17844,117 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       keys.slice(0,keys.length-KEEP).forEach(function(k){ upd[k]=null; });
       db.ref(PATH).update(upd).catch(function(e){ console.warn('[msg] prune failed:',e); });
     }).catch(function(e){ console.warn('[msg] prune read failed:',e); });
+  }
+
+  /* ── pictures ──────────────────────────────────────────────────────────
+     A screenshot pasted straight into the box, dropped on the panel, or
+     picked with 📎 — all three land in the same funnel: shrink on a canvas
+     (long edge ≤ 1400px, JPEG), step the quality down 0.6 → 0.5 → 0.4 until
+     it fits in 300 KB, and refuse it loudly if it still doesn't. Nothing
+     unshrunk can reach Firebase, because send() only ever gets the funnel's
+     output. Pictures ride inside the message record itself (a data URL in
+     rdns_msg_v1) — no separate storage service, and never anywhere the wall
+     boards can read. */
+  var IMG_MAX_EDGE=1400, IMG_MAX_BYTES=300*1024, IMG_TTL=7*86400000, IMG_KEEP=20;
+  var pendingImg=null;
+
+  function b64Bytes(dataUrl){
+    var i=String(dataUrl||'').indexOf(',');
+    return i<0?0:Math.floor((dataUrl.length-i-1)*3/4);
+  }
+  function shrinkImage(file, cb){
+    if(!file || !/^image\//.test(file.type||'')){ cb(null,'Bu bir görsel değil'); return; }
+    var fr=new FileReader();
+    fr.onerror=function(){ cb(null,'Görsel okunamadı'); };
+    fr.onload=function(){
+      var img=new Image();
+      img.onerror=function(){ cb(null,'Görsel okunamadı'); };
+      img.onload=function(){
+        try{
+          var sc=Math.min(1, IMG_MAX_EDGE/Math.max(img.width,img.height,1));
+          var cw=Math.max(1,Math.round(img.width*sc)), ch=Math.max(1,Math.round(img.height*sc));
+          var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+          var cx=cv.getContext('2d');
+          cx.fillStyle='#fff'; cx.fillRect(0,0,cw,ch);   // PNG transparency → white, not JPEG black
+          cx.drawImage(img,0,0,cw,ch);
+          var out=null, bytes=Infinity;
+          [0.6,0.5,0.4].some(function(q){
+            out=cv.toDataURL('image/jpeg',q);
+            bytes=b64Bytes(out);
+            return bytes<=IMG_MAX_BYTES;
+          });
+          if(bytes>IMG_MAX_BYTES){ cb(null,'Görsel çok büyük — gönderilemedi'); return; }
+          cb(out,null);
+        }catch(e){ cb(null,'Görsel işlenemedi'); }
+      };
+      img.src=fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+
+  /* The shrunk picture waits in a little strip above the box until Gönder —
+     so a caption can be typed next to it, and a wrong paste has a ✕. */
+  function stagePending(dataUrl){
+    pendingImg=dataUrl;
+    var box=document.getElementById('msg-pending');
+    var im=document.getElementById('msg-pending-img');
+    if(im) im.src=dataUrl;
+    if(box) box.classList.add('on');
+    setStatus('');
+    try{ document.getElementById('msg-text').focus(); }catch(e){}
+  }
+  function clearPending(){
+    pendingImg=null;
+    var box=document.getElementById('msg-pending');
+    var im=document.getElementById('msg-pending-img');
+    if(im) im.removeAttribute('src');
+    if(box) box.classList.remove('on');
+  }
+  function takeImageFile(file){
+    setStatus('Görsel küçültülüyor…');
+    shrinkImage(file,function(dataUrl,err){
+      if(err){ setStatus(err); return; }
+      stagePending(dataUrl);
+    });
+  }
+
+  /* Sync is paid for by the byte, so pictures do not linger: any picture
+     older than seven days loses its data (the text and a "there was a
+     picture" mark stay), and only the newest twenty keep theirs regardless
+     of age. Runs at start and after every send — whichever side is alive
+     does the sweeping. */
+  function cleanImages(){
+    if(!db) return;
+    db.ref(PATH).once('value').then(function(s){
+      var v=s.val()||{}, upd={}, withImg=[];
+      Object.keys(v).forEach(function(k){
+        var m=v[k]||{};
+        if(!m.img) return;
+        var age=(Date.now()+offset)-(Number(m.ts)||0);
+        if(age>IMG_TTL){ upd[k+'/img']=null; upd[k+'/hadImg']=1; }
+        else withImg.push(k);
+      });
+      withImg.sort();   // push keys sort chronologically — oldest first
+      if(withImg.length>IMG_KEEP)
+        withImg.slice(0,withImg.length-IMG_KEEP).forEach(function(k){ upd[k+'/img']=null; upd[k+'/hadImg']=1; });
+      if(Object.keys(upd).length)
+        db.ref(PATH).update(upd).catch(function(e){ console.warn('[msg] img clean failed:',e); });
+    }).catch(function(e){ console.warn('[msg] img clean read failed:',e); });
+  }
+
+  /* Full-size view — any tap closes it. Only data:image/… URLs are ever fed
+     in, and only ones that passed the render()'s shape check. */
+  function viewImage(src){
+    var v=document.getElementById('msg-imgview');
+    var im=document.getElementById('msg-imgview-img');
+    if(!v||!im) return;
+    im.src=src;
+    v.classList.add('on');
+  }
+  // A data URL a bubble is allowed to show: JPEG/PNG/WebP base64 and nothing
+  // else — anything strange renders as the "picture expired" line instead.
+  function imgOk(s){
+    return typeof s==='string' && /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(s);
   }
 
   /* ── the conversation + the badge ── */
@@ -17832,13 +17983,21 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       else if(isUnread) rd='<span class="rd unread">Okunmadı</span>';
       // The stale ones the overlay never showed still need a way to be read.
       var mini=isUnread ? '<button class="ok-mini" data-k="'+esc(m.key)+'">OKUNDU</button>' : '';
+      // A live picture shows small and opens on a tap; a swept one leaves its
+      // one-line gravestone so the conversation still reads whole.
+      var pic='';
+      if(imgOk(m.img)) pic='<img class="msg-img" src="'+m.img+'" alt="Görsel" title="Tam boy için tıklayın">';
+      else if(m.hadImg||m.img) pic='<div class="msg-img-gone">📷 Görsel (süresi doldu)</div>';
       return '<div class="msg-b '+(mine?'mine':'their')+(isUnread?' unread':'')+'">'+
-        esc(m.text)+
+        esc(m.text)+pic+
         '<div class="meta">'+rd+'<span>'+esc(fmtT(m.ts))+'</span></div>'+mini+
         '</div>';
     }).join('');
     Array.prototype.forEach.call(chat.querySelectorAll('.ok-mini'),function(btn){
       btn.onclick=function(){ markSeen(btn.getAttribute('data-k')); };
+    });
+    Array.prototype.forEach.call(chat.querySelectorAll('.msg-img'),function(im){
+      im.onclick=function(){ viewImage(im.src); };
     });
     // Pinned to the newest message, the way a chat is read — but never yanked
     // down while somebody has deliberately scrolled up into the past.
@@ -17857,10 +18016,14 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     started=true;
     db=firebase.database();
     try{ db.ref('.info/serverTimeOffset').on('value',function(s){ offset=Number(s.val())||0; }); }catch(e){}
+    // Sweep expired pictures once per session too — a quiet week must not
+    // leave a week of pictures sitting in the sync. (Minutes of clock offset
+    // do not matter against a 7-day fuse, so no need to wait for the offset.)
+    setTimeout(cleanImages, 4000);
     db.ref(PATH).limitToLast(KEEP).on('value',function(snap){
       var v=snap.val()||{};
       msgs=Object.keys(v).sort().map(function(k){
-        var m=v[k]||{}; return { key:k, from:m.from, text:m.text, ts:m.ts, seen:m.seen };
+        var m=v[k]||{}; return { key:k, from:m.from, text:m.text, ts:m.ts, seen:m.seen, img:m.img, hadImg:m.hadImg };
       });
       var arrived=false;
       msgs.forEach(function(m){
@@ -17891,6 +18054,51 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(ta) ta.addEventListener('keydown',function(e){
       if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); window.msgSend(); }
     });
+    // ── the three ways a picture arrives, all into the same funnel ──
+    // (a) Ctrl+V straight into the box — the most important path
+    if(ta) ta.addEventListener('paste',function(e){
+      try{
+        var items=(e.clipboardData||{}).items||[];
+        for(var i=0;i<items.length;i++){
+          if(/^image\//.test(items[i].type||'')){
+            e.preventDefault();
+            takeImageFile(items[i].getAsFile());
+            return;
+          }
+        }
+      }catch(err){}
+    });
+    // (b) drag & drop anywhere on the panel
+    var panel=document.getElementById('msg-panel');
+    if(panel){
+      ['dragover','dragenter'].forEach(function(ev){
+        panel.addEventListener(ev,function(e){ e.preventDefault(); panel.classList.add('dragging'); });
+      });
+      ['dragleave','dragend'].forEach(function(ev){
+        panel.addEventListener(ev,function(){ panel.classList.remove('dragging'); });
+      });
+      panel.addEventListener('drop',function(e){
+        e.preventDefault();
+        panel.classList.remove('dragging');
+        try{
+          var f=(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0])||null;
+          if(f) takeImageFile(f);
+        }catch(err){}
+      });
+    }
+    // (c) the 📎 button
+    var att=document.getElementById('msg-attach'), fi=document.getElementById('msg-file');
+    if(att&&fi){
+      att.onclick=function(){ fi.click(); };
+      fi.addEventListener('change',function(){
+        if(fi.files&&fi.files[0]) takeImageFile(fi.files[0]);
+        fi.value='';   // the same file picked twice must fire twice
+      });
+    }
+    var rm=document.getElementById('msg-pending-rm');
+    if(rm) rm.onclick=clearPending;
+    var iv=document.getElementById('msg-imgview');
+    if(iv) iv.onclick=function(){ iv.classList.remove('on'); };
     (function waitFb(){
       try{
         if(window.firebase && firebase.apps && firebase.apps.length){
