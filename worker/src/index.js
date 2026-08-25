@@ -4,10 +4,18 @@
    One Shelly Button1 on the wall by each technician's station. A press starts
    or finishes her job on the Crown Board, with no phone and no screen.
 
-       double press   start a manicure
-       triple press   start a pedicure
+       single press   start a manicure
+       double press   start a pedicure
+       triple press   start the eyelashes
        hold ~2s       finish the job she is on
-       single press   NOTHING, on purpose, so a knock or a lean cannot file a job
+
+   (Remapped 25 Aug — no dead gesture any more. Until then single did nothing,
+   double was the manicure and triple the pedicure; every button URL configured
+   before that date shifts one place and must be re-entered when the buttons
+   arrive.) The mapping itself lives on the boards (CrownBoard.onButton in
+   timers.html) — this relay only checks the gesture is one it knows and
+   passes it through. An unknown gesture is ignored quietly: logged here,
+   answered politely, never written to the database.
 
    WHY THIS FILE EXISTS. The Button1 is a first-generation Shelly: the only
    thing it can do when pressed is fetch one fixed web address. It cannot POST,
@@ -29,7 +37,7 @@
 
    Only `who=` differs between buttons. Six technicians, six buttons, one
    address. Adding a technician is: her line in crown-config.js, her key in
-   PEOPLE below, and her three URLs typed into her button. No change to the
+   PEOPLE below, and her four URLs typed into her button. No change to the
    board.
 
    THE TWO SECRETS are wrangler secrets and are never in this repo — this folder
@@ -41,7 +49,7 @@
 // has left cannot quietly file jobs for her.
 const PEOPLE = ['helen', 'hannah', 'lissa'];
 
-const GESTURES = ['double', 'triple', 'long'];
+const GESTURES = ['single', 'double', 'triple', 'long'];
 
 const DB = 'https://royal-diamond-1031c-default-rtdb.firebaseio.com';
 
@@ -256,7 +264,13 @@ export default {
     // the key never reaches the database at all.
     if (!env.BTN_KEY || !sameKey(k, env.BTN_KEY)) return reply('no',  403);
     if (!PEOPLE.includes(who))                    return reply('who', 400);
-    if (!GESTURES.includes(g))                    return reply('g',   400);
+    // An unknown gesture — a firmware oddity, a mistyped URL — is ignored
+    // quietly: logged so it can be found, answered 200 so the button does not
+    // retry, and never written to the database.
+    if (!GESTURES.includes(g)) {
+      console.log('[btn] unknown gesture ignored:', JSON.stringify(g), 'who:', who);
+      return reply('ignored', 200);
+    }
 
     const id = crypto.randomUUID();
     const body = JSON.stringify({

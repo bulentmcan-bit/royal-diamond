@@ -125,12 +125,17 @@ confirm every screen still files jobs, and only then tighten the rules — and s
 In the Shelly app: the device → the chain-link icon (Actions). The Button1 is
 first-generation, so the events are named:
 
-| Shelly event | URL to set |
-|---|---|
-| `double_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=double&k=<BTN_KEY>` |
-| `triple_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=triple&k=<BTN_KEY>` |
-| `longpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=long&k=<BTN_KEY>` |
-| `shortpush` | **leave empty** |
+| Shelly event | URL to set | What it does |
+|---|---|---|
+| `shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=single&k=<BTN_KEY>` | starts a manicure |
+| `double_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=double&k=<BTN_KEY>` | starts a pedicure |
+| `triple_shortpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=triple&k=<BTN_KEY>` | starts the eyelashes |
+| `longpush` | `https://rd-buttons.royaldiamond.workers.dev/p?who=lissa&g=long&k=<BTN_KEY>` | finishes her job |
+
+(Remapped 25 Aug 2026 — every gesture now does something. A button configured
+to the OLD mapping — single empty, double=manicure, triple=pedicure — files the
+wrong kind of job on every press, so when the buttons arrive they are set up to
+THIS table, all four URLs.)
 
 Only `who=` changes from button to button. Also set **long push duration to
 about 2000 ms** in the device settings, so "hold it for two seconds" is what
@@ -140,7 +145,7 @@ actually happens.
 
 1. Her line in `crown-config.js`, the same as always.
 2. Her key in `PEOPLE` at the top of `src/index.js`, then `wrangler deploy`.
-3. Her three URLs typed into her button, with her `who=`.
+3. Her four URLs typed into her button, with her `who=`.
 
 The board is not redeployed and nothing in Firebase changes shape.
 

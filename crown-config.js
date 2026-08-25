@@ -70,10 +70,18 @@ window.CROWN = {
   slotDefault: 60,
   slotMins: {},        // key -> 60, filled from Firebase at runtime
 
-  // The two kinds of job. A board is one of these; so is a tile's colour.
+  /* The kinds of job. Manicure and pedicure each have a wall screen of their
+     own (?area=…); eyelashes do not — a lash job shows on BOTH boards the way
+     an other-screen job always has, counting down with its own colour. That
+     colour is the `color` field: any type carrying one gets its job label
+     tinted with it on the wall boards and on reception's panel alike, so
+     "kirpik rengi" is the same purple everywhere it appears. Every screen
+     walks this object rather than naming types, so adding one here is the
+     whole of adding it. */
   types: {
-    manicure: { label:'Manicure', short:'Mani', icon:'💅' },
-    pedicure: { label:'Pedicure', short:'Pedi', icon:'🦶' }
+    manicure: { label:'Manicure',  short:'Mani',   icon:'💅' },
+    pedicure: { label:'Pedicure',  short:'Pedi',   icon:'🦶' },
+    lash:     { label:'Eyelashes', short:'Kirpik', icon:'👁', color:'#b8a0d8' }
   },
 
   warnMs: 15*60000,   // amber, and the two-note chime, at fifteen minutes left

@@ -16436,9 +16436,14 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       var left=cur.startAt+(cur.limitMin||60)*60000-now();
       var cls=left<=0?'cbm-over':(left<=C.warnMs?'cbm-warn':'cbm-run');
       var ty=C.types[cur.type]||{label:cur.type,icon:''};
+      // The job line reads the SHORT name, Turkish-uppercased — "KİRPİK · 60
+      // DK", "MANİ · 60 DK" — and a type with its own colour (eyelashes)
+      // wears it here exactly as on the wall boards.
+      var tyName=String(ty.short||ty.label).toLocaleUpperCase('tr-TR');
+      var tyCol=ty.color?('color:'+ty.color+';'):'';
       return '<div class="cbm-row '+cls+'" onclick="cbmFinish(\''+o.key+'\')">'+
         '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
-        '<div class="jb">'+ty.icon+' '+esc(ty.label)+' · '+(cur.limitMin||60)+' dk</div></div>'+
+        '<div class="jb" style="'+tyCol+'">'+ty.icon+' '+esc(tyName)+' · '+(cur.limitMin||60)+' DK</div></div>'+
         '<div class="tm">'+(left<=0?'+'+fmt(-left):fmt(left))+'</div>'+
         limitBtn(o,true)+'</div>';
     }
@@ -16447,9 +16452,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     Object.keys(last).forEach(function(k){ if(!best||(last[k].endAt||0)>(best.endAt||0)) best=last[k]; });
     if(best){
       var t2=C.types[best.type]||{label:best.type,icon:''};
+      var t2Col=t2.color?('color:'+t2.color+';'):'';
       return '<div class="cbm-row '+(best.crown?'cbm-crown':'cbm-sad')+'" onclick="cbmType(\''+o.key+'\')">'+
         '<div class="who"><div class="nm">'+esc(o.name)+'</div>'+pic(o)+
-        '<div class="jb">'+t2.icon+' '+esc(t2.label)+' · '+
+        '<div class="jb" style="'+t2Col+'">'+t2.icon+' '+esc(t2.label)+' · '+
           (best.noPress?'basılmadı':Math.round((best.elapsed||0)/60000)+'dk')+'</div></div>'+
         '<div class="tm">'+(best.crown?'👑':'😢')+'</div>'+
         limitBtn(o,false)+'</div>';

@@ -286,7 +286,7 @@ const firebaseConfig = {
    Firebase layout, all under the 'timers' path the screens share:
      timers/ops/<key>/name            who she is
      timers/ops/<key>/current         the job running right now (one at a time)
-     timers/ops/<key>/last/<type>     her last finished manicure / pedicure
+     timers/ops/<key>/last/<type>     her last finished manicure / pedicure / eyelashes
      timers/sessions/<pushId>         one permanent record per finished job
      timers/limits/<key>              her limit in minutes: 60 (a stale 90
                                       left over falls back to 60 via normSlot)
@@ -408,6 +408,7 @@ function paint(){
     ui.time.classList.add('hidden');
     ui.free.classList.add('hidden');
     ui.bar.style.width = '0';
+    ui.job.style.color = '';   // type tint is re-decided every paint
 
     // 1. she is working on THIS kind of job — the countdown this screen is for
     if (cur && cur.type === AREA) {
@@ -447,6 +448,8 @@ function paint(){
       const leftMs = cur.startAt + limitMs - t;
       ui.el.classList.add('elsewhere');
       ui.job.textContent = C.types[cur.type].icon + ' ' + C.types[cur.type].label;
+      // A type with its own colour (eyelashes) wears it on every board alike.
+      ui.job.style.color = (C.types[cur.type] || {}).color || '';
       ui.time.classList.remove('hidden');
       ui.time.textContent = leftMs <= 0 ? '+' + fmt(-leftMs) : fmt(leftMs);
       ui.foot.textContent = 'On a ' + C.types[cur.type].label.toLowerCase() + ' · tap to finish';
@@ -517,19 +520,25 @@ function startSheet(){
     <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
 }
 
-// Manicure or pedicure — this screen's kind first, because that is usually it.
+// Every kind of job, this screen's own kind first because that is usually it —
+// the rest (pedicure or manicure, and eyelashes) follow in config order.
+function typeOrder(){
+  const all = Object.keys(C.types);
+  const mine = (AREA && all.includes(AREA)) ? AREA : all[0];
+  return [mine].concat(all.filter(t => t !== mine));
+}
 function whichType(key){
   const o = C.find(key);
   if (!o) return closeSheet();
-  const mine = AREA || 'manicure', other = AREA ? OTHER : 'pedicure';
+  const tys = typeOrder();
   openSheet(`
     <h2>${o.name}</h2>
     <p class="sub">What is she starting?</p>
-    <button class="btn primary" onclick="startJob('${o.key}','${mine}')">
-      ${C.types[mine].icon} ${C.types[mine].label} — ${o[mine]} min</button>
-    <button class="btn gold" onclick="startJob('${o.key}','${other}')">
-      ${C.types[other].icon} ${C.types[other].label} — ${o[other]} min
-      <small>Shows on the ${C.types[other].label.toLowerCase()} screen</small></button>
+    ${tys.map((ty, i) => `<button class="btn ${i ? 'gold' : 'primary'}" onclick="startJob('${o.key}','${ty}')">
+      ${C.types[ty].icon} ${C.types[ty].label} — ${C.slotFor(o.key)} min
+      ${!i ? '' : (ty === 'lash'
+        ? '<small>Counts down on both screens</small>'
+        : `<small>Shows on the ${C.types[ty].label.toLowerCase()} screen</small>`)}</button>`).join('')}
     <button class="btn gold" onclick="customType('${o.key}')">
       ⏱ Set the limit (Manager)<small>15 / 30 / 45 / 60 or any number of minutes · owner password</small></button>
     <button class="btn danger" onclick="noPressSheet('${o.key}')">
@@ -551,11 +560,10 @@ function customType(key){
   const o = C.find(key);
   if (!o) return closeSheet();
   askOwner(() => {
-    const mine = AREA || 'manicure', other = AREA ? OTHER : 'pedicure';
     openSheet(`
       <h2>${o.name}</h2>
       <p class="sub">Custom limit — which job is she starting?</p>
-      ${[mine, other].map((ty, i) => `<button class="btn ${i ? 'gold' : 'primary'}" onclick="customLimitSheet('${o.key}','${ty}')">
+      ${typeOrder().map((ty, i) => `<button class="btn ${i ? 'gold' : 'primary'}" onclick="customLimitSheet('${o.key}','${ty}')">
         ${C.types[ty].icon} ${C.types[ty].label}<small>Normally ${C.slotFor(o.key)} min</small></button>`).join('')}
       <button class="btn quiet" onclick="closeSheet()">Cancel</button>`);
   });
@@ -671,8 +679,9 @@ function noPressSheet(key){
 /* ── the one way in and out of a job ──────────────────────────────────────────
    Every start and finish goes through these, and they are published on
    window.CrownBoard at the bottom of this file. The Wi-Fi buttons will call the
-   same functions — double press starts a manicure, triple press a pedicure and
-   a long press finishes — so there is never a second copy of the rules. ---- */
+   same functions — single press starts a manicure, double a pedicure, triple
+   the eyelashes, and a long press finishes — so there is never a second copy
+   of the rules. ---- */
 // Filing a job that is over: the verdict on her tile, and the permanent session
 // the commission is paid from. Both ways out of a job go through here — the
 // Finish press, and a start that arrives while she still has one open — so a job
@@ -1332,13 +1341,14 @@ if ($('soundBtn')) $('soundBtn').classList.add('on');
    One button per technician, on the wall by her station. The listener below
    turns a press into one of these calls, and nothing else does:
 
-       CrownBoard.start('Helen','manicure')   double press
-       CrownBoard.start('Helen','pedicure')   triple press
+       CrownBoard.start('Helen','manicure')   single press
+       CrownBoard.start('Helen','pedicure')   double press
+       CrownBoard.start('Helen','lash')       triple press
        CrownBoard.finish('Helen')             long press
 
    or hand the gesture over and let the board map it:
 
-       CrownBoard.onButton('Helen','double' | 'triple' | 'long')
+       CrownBoard.onButton('Helen','single' | 'double' | 'triple' | 'long')
 
    Names are matched case-insensitively against crown-config.js, so the button
    can be configured with 'Helen' or 'helen'.
@@ -1351,9 +1361,15 @@ window.CrownBoard = {
   noPress: noPress,
   state: who => { const o = C.find(who); return o ? (ops[o.key] || null) : null; },
   onButton: (who, gesture) => {
-    if (gesture === 'double') return startJob(who, 'manicure');
-    if (gesture === 'triple') return startJob(who, 'pedicure');
+    // The wall-button mapping, remapped 25 Aug — no dead gesture any more:
+    //   single → manicure · double → pedicure · triple → lash · long → finish
+    if (gesture === 'single') return startJob(who, 'manicure');
+    if (gesture === 'double') return startJob(who, 'pedicure');
+    if (gesture === 'triple') return startJob(who, 'lash');
     if (gesture === 'long')   return finishJob(who);
+    // Anything else is ignored quietly — logged, never acted on, never an
+    // error box on a wall screen.
+    console.warn('[buttons] unknown gesture ignored:', gesture, 'for', who);
   }
 };
 
