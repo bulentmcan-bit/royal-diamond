@@ -1293,6 +1293,9 @@
       console.log('[appt-removed]', rec.id, rec.name, '·', rec.reason, rec.note||'');
     }catch(e){}
   }
+  // The one-time fixers in later script blocks (e.g. the 60-minute duration
+  // cap) log through this too — the diary's paper trail lives in one place.
+  window.apptDropLog=apptDropLog;
   function _apptDropFmt(r){
     let d='';
     try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
@@ -4563,10 +4566,11 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="form-row fr2">
       <div class="fg"><label class="flabel" id="flabel-a-dt">Tarih &amp; Saat *</label><input class="fctrl" type="datetime-local" id="a-dt"></div>
       <div class="fg"><label class="flabel" id="flabel-a-dur">Süre</label>
+        <!-- 60 is the ceiling now: the salon runs entirely on the hour, and a
+             longer entry here is what used to eat the NEXT client's slot. -->
         <select class="fctrl" id="a-dur">
           <option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option>
-          <option value="60" selected="">60 min</option><option value="75">75 min</option><option value="90">90 min</option>
-          <option value="105">105 min</option><option value="120">120 min</option><option value="150">150 min</option><option value="180">180 min</option>
+          <option value="60" selected="">60 min</option>
         </select>
         <div id="a-dur-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
     </div>
@@ -5708,7 +5712,13 @@ function dashEditAppt(id){
     const dt = document.getElementById('a-dt');
     if(dt) dt.value = dtLocal(new Date(a.datetime));
     const dur = document.getElementById('a-dur');
-    if(dur) dur.value = a.duration || 60;
+    // The list stops at 60 now. An old record still carrying 75/90/120 must
+    // not leave the select on nothing (Update would then write the fallback
+    // silently) — show it as the 60 it will become.
+    if(dur){
+      dur.value = String(Math.min(60, parseInt(a.duration)||60));
+      if(dur.selectedIndex<0) dur.value='60';
+    }
     const pr = document.getElementById('a-price');
     // Show the price that was recorded for this appointment. Old appointments
     // may have lost it off the record itself, so look everywhere the money can
@@ -5773,7 +5783,7 @@ function dashEditAppt(id){
         const _svcVal = document.getElementById('a-service').value;
         if(_svcVal) live.service = _svcVal;
         live.datetime  = document.getElementById('a-dt').value;
-        live.duration  = parseInt(document.getElementById('a-dur').value)||60;
+        live.duration  = Math.min(60, parseInt(document.getElementById('a-dur').value)||60);
         let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
         // 😊 MANDATORY: a price that will complete this appointment or put its
         // money in the till for the first time is a checkout — and a checkout
@@ -8192,7 +8202,7 @@ function saveAppt(){
   let dt=document.getElementById("a-dt").value;
   if(!cid||!svc||!dt){toast("⚠️","Missing Fields","Fill in all required fields.","r");return;}
   // Block Sunday bookings
-  const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:parseInt(document.getElementById("a-dur").value),price:parseInt(document.getElementById("a-price").value)||0,staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
+  const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:Math.min(60, parseInt(document.getElementById("a-dur").value)||60),price:parseInt(document.getElementById("a-price").value)||0,staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
   if(isBirthdayAppt(cid, dt)){ a.birthday = true; }
   appointments.push(a);
   try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
@@ -14762,6 +14772,39 @@ function rvSendAll(){
     return fixed;
   };
 
+  // 1b) 60 dakika tavanı — salon tamamen saat başı çalışıyor. Formlar artık
+  // 60'tan uzununu teklif etmiyor; bu, ESKİDEN alınmış ve hâlâ önümüzde duran
+  // 75/90/120'lik randevuları 60'a çeker ki sonraki saati işgal etmesinler.
+  // Sadece HENÜZ BAŞLAMAMIŞ randevular: geçmiş tarihî kayıttır, dokunulmaz.
+  // Her yüklemede çalışır (damga yok): ucuz, idempotent, ve eski sürümdeki
+  // bir cihazdan senkronla gelen uzun kayıt da bir sonraki açılışta düzelir.
+  // Değişen her kayıt droploga yazılır; damga makinesi (apptStampSync,
+  // saveAll içinde) hash farkını görüp _ats basar, düzeltme diğer cihaza
+  // kendiliğinden taşınır.
+  window.rdCapFutureDurations=function(){
+    let capped=0; const now=Date.now();
+    _ap().forEach(a=>{
+      if(!a||a.status==='cancelled')return;
+      const t=new Date(a.datetime).getTime(); if(isNaN(t)||t<=now)return;
+      const d=parseInt(a.duration);
+      if(d>60){
+        try{ if(typeof apptDropLog==='function') apptDropLog(a, a.id, "süre 60'a çekildi", d+' dk → 60 dk'); }catch(e){}
+        a.duration=60; capped++;
+      }
+    });
+    if(capped){
+      try{saveAll();}catch(e){}
+      try{publishAvailability();}catch(e){}
+      try{toast('⏱','Süre 60 dakikaya çekildi', capped+' gelecek randevu 60 dk üzerinden güncellendi (droploga yazıldı).','g');}catch(e){}
+    }
+    return capped;
+  };
+  window.addEventListener('DOMContentLoaded',function(){
+    // Firebase'in ilk birleşmesinden sonra — dpCheckReminders ile aynı sebep,
+    // aynı bekleme: buluttan gelen kopya da taransın.
+    setTimeout(function(){ try{ rdCapFutureDurations(); }catch(e){} }, 6000);
+  });
+
   // 2) Gelecek 14 günde üst üste binen randevuları bul
   window.rdFindConflicts=function(){
     const now=Date.now(), horizon=now+14*86400000, out=[];
@@ -15611,7 +15654,10 @@ window.addEventListener('load',function(){
   function _ap(){ try{ return appointments || []; }catch(e){ return []; } }
   function _cl(){ try{ return clients || []; }catch(e){ return []; } }
 
-  // Hizmet adından süre bul (en uzun eşleşme kazanır)
+  // Hizmet adından süre bul (en uzun eşleşme kazanır). 60 dakikadan uzunu
+  // yok artık: salon tamamen saat başı çalışıyor, ve buradan dönen 75/90/120
+  // rebook'a, bul-yerleştir'e ve otomatik doldurmaya sızıp sonraki saati
+  // işgal ediyordu. Tablo eski süreleri belge olarak tutar; cevap 60'ı aşmaz.
   window.rdSvcDur = function(service){
     const s = String(service||'').toLowerCase();
     if(/pedik|pedic/.test(s)) return 60;   // her pedikür 60 dk
@@ -15619,7 +15665,7 @@ window.addEventListener('load',function(){
     Object.keys(RD_SVC_DUR).forEach(function(k){
       if(s.indexOf(k) !== -1 && k.length > len){ len = k.length; best = RD_SVC_DUR[k]; }
     });
-    return best || 60;
+    return Math.min(60, best || 60);
   };
 
   function addonMins(){
@@ -15627,13 +15673,15 @@ window.addEventListener('load',function(){
     return el ? (parseInt(el.value)||0) : 0;
   }
 
-  // Hizmet veya ek seçilince süreyi otomatik doldur
+  // Hizmet veya ek seçilince süreyi otomatik doldur — ek hizmet dahil hiçbir
+  // toplam 60'ı geçemez; geçecek olsa 60'a iner ve ipucu satırı bunu söyler.
   window.rdAutoDur = function(){
     const sv = document.getElementById('a-service');
     const du = document.getElementById('a-dur');
     if(!sv || !du) return;
-    const total = rdSvcDur(sv.value) + addonMins();
-    // listede yoksa seçeneği ekle
+    const base = rdSvcDur(sv.value), add = addonMins();
+    const total = Math.min(60, base + add);
+    // listede yoksa seçeneği ekle (60'ın altındaki ara değerler için)
     if(![].slice.call(du.options).some(function(o){ return parseInt(o.value)===total; })){
       const o = document.createElement('option');
       o.value = total; o.textContent = total + ' min';
@@ -15642,8 +15690,8 @@ window.addEventListener('load',function(){
     du.value = String(total);
     const hint = document.getElementById('a-dur-hint');
     if(hint){
-      const base = rdSvcDur(sv.value), add = addonMins();
-      hint.textContent = add ? (base+' dk + '+add+' dk ek = '+total+' dk') : (base+' dk');
+      hint.textContent = (base+add>60) ? (base+' dk + '+add+' dk ek → en fazla 60 dk')
+        : add ? (base+' dk + '+add+' dk ek = '+total+' dk') : (base+' dk');
     }
   };
 
