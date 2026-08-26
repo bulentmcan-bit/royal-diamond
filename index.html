@@ -6854,7 +6854,48 @@ function rdRevertBulkClose20260826(){
   try{ mRenderStaleAppts(); }catch(e){}
   console.log('[revert-2608] toplam '+hit.length+' randevu confirmed durumuna döndürüldü — 26.08 18:48:26 toplu kapatma geri alma');
   toast('↩','26 Ağustos toplu kapatması geri alındı', hit.length+' randevu tekrar "confirmed" oldu (bugünün randevuları dahil). Gerçekten yapılanları ✓ Done ile kapatın.','g');
+  try{ _rdRevert2608Report(hit); }catch(e){ console.warn('revert-2608 report:', e); }
   return hit.length;
+}
+// The receipt on the screen: which bookings came back — time, client, staff —
+// so the boss can walk the list and press ✓ Done on the ones that really
+// happened, instead of hunting them across the calendar.
+function _rdRevert2608Report(hit){
+  var esc=function(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+  var nameOf=function(a){
+    try{ if(typeof cName==='function' && a.clientId){ var n=cName(a.clientId); if(n && n!=='Unknown') return n; } }catch(e){}
+    return a.clientName||a.client||'?';
+  };
+  var whenOf=function(a){
+    var d=new Date(a.datetime);
+    if(isNaN(d)) return String(a.datetime||'?');
+    var p=function(n){ return String(n).padStart(2,'0'); };
+    return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes());
+  };
+  var rows=hit.slice().sort(function(x,y){ return String(x.datetime||'').localeCompare(String(y.datetime||'')); })
+    .map(function(a){
+      return '<div style="display:flex;gap:10px;padding:8px 12px;border-bottom:1px solid #eee;font-size:0.82rem;align-items:baseline;">'+
+        '<b style="white-space:nowrap;color:#0f8a7e;">'+esc(whenOf(a))+'</b>'+
+        '<span style="flex:1;font-weight:700;">'+esc(nameOf(a))+'</span>'+
+        '<span style="color:#888;">'+esc(a.staff||'—')+'</span>'+
+      '</div>';
+    }).join('');
+  var old=document.getElementById('rd-revert2608-ov'); if(old) old.remove();
+  var ov=document.createElement('div');
+  ov.id='rd-revert2608-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Nunito,sans-serif;';
+  ov.innerHTML='<div style="background:#fff;color:#1a1a1a;border-radius:14px;max-width:560px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;">'+
+    '<div style="padding:13px 15px;border-bottom:1px solid #eee;">'+
+      '<b style="font-size:0.95rem;">↩ 26 Ağustos toplu kapatması geri alındı</b>'+
+      '<div style="color:#666;font-size:0.76rem;margin-top:3px;">'+hit.length+' randevu tekrar <b>confirmed</b> oldu — completed YAPILMADI. '+
+      'Gerçekten yapılanları listeden bulup tek tek ✓ Done ile kapatın.</div>'+
+    '</div>'+
+    '<div style="overflow-y:auto;">'+rows+'</div>'+
+    '<div style="padding:11px 15px;border-top:1px solid #eee;text-align:right;">'+
+      '<button onclick="document.getElementById(\'rd-revert2608-ov\').remove()" style="background:#0f8a7e;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:0.84rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">Tamam</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(ov);
 }
 window.rdRevertBulkClose20260826=rdRevertBulkClose20260826;
 window.addEventListener('DOMContentLoaded', function(){
