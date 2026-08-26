@@ -199,7 +199,7 @@ window.CROWN = {
      the next morning. Nothing streams, nothing needs the wifi, and there is
      nothing to sign into.  */
   music: {
-    shuffle:   true,
+    shuffle:   true,    // the DEFAULT only — the panel's 🔀 button decides per laptop
     loop:      true,
     volume:    21,      // 0-100, what it plays at normally — under the room, not in it
     duckTo:     0,      // silent, not merely quiet: nothing plays under an announcement
@@ -211,7 +211,11 @@ window.CROWN = {
     // art, a stray document, the player software that came with it — is ignored.
     types:     ['mp3','m4a','aac','wav','ogg','oga','opus','flac','weba','webm','mp4'],
     maxTracks: 2000,    // a stick with more than this on it is scanned this far and no further
-    maxDepth:  6        // album folders inside artist folders inside a year — but not forever
+    maxDepth:  6,       // album folders inside artist folders inside a year — but not forever
+    // The permanent library: tracks are copied off the stick into the page's
+    // own storage (OPFS) so the music survives every refresh without asking
+    // for the folder again. Copying stops at this many megabytes and says so.
+    maxLibraryMB: 2048
   },
 
   // Helpers both pages use, so the lookup rules live here too.

@@ -16379,6 +16379,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 #cbm-music button:hover{background:rgba(212,169,106,.24)}
 #mus-title{flex:1;min-width:0;font-size:.68rem;color:#8d8574;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
+#mus-shuf.off{opacity:.38;border-color:rgba(212,169,106,.3);color:#8d8574}
+#cbm-music #mus-clear{border-color:rgba(232,122,122,.4);color:#c98a8a;background:rgba(232,122,122,.06)}
+#cbm-music #mus-clear:hover{background:rgba(232,122,122,.14)}
 #mus-vol{width:100%;margin-top:7px;accent-color:#d4a96a;height:16px}
 #cbm-music .mus-set{display:block;width:100%;margin-top:6px;border-radius:8px;padding:7px 9px;
   cursor:pointer;border:1px solid rgba(212,169,106,.55);background:rgba(212,169,106,.12);
@@ -16466,10 +16469,12 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     <div class="mus-top">
       <button id="mus-play" onclick="musToggle()" title="Çal / duraklat">▶</button>
       <button id="mus-next" onclick="musNext()" title="Sonraki">⏭</button>
+      <button id="mus-shuf" onclick="musShuffle()" title="Karışık çalma — açıkken hiçbir parça tekrarlanmadan hepsi bir kez çalar">🔀</button>
       <div id="mus-title">Müzik kapalı</div>
     </div>
     <input id="mus-vol" type="range" min="0" max="100" step="1" oninput="musVol(this.value)">
     <button class="mus-set" onclick="musPickFolder()">🎵 Müzik klasörü seç</button>
+    <button class="mus-set" id="mus-clear" style="display:none" onclick="musClearLib()">🗑 Kütüphaneyi temizle</button>
     <div class="mus-where" id="mus-where"></div>
     <!-- The fallback for a browser without the folder picker. It cannot be
          remembered between visits, so it is only reached if the good one is
@@ -16832,6 +16837,8 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var fade=null, cur=0;
     var tracks=[], order=[], at=-1, url=null, dirName='', fails=0, scanning=false;
     var note='', noteT=null;   // a short-lived line in the title slot: what just went wrong
+    var lib=false;             // true when the tracks come from the permanent library (OPFS)
+    var copying=null;          // {done,total} while the stick is being copied in
 
     function audio(){
       if(el) return el;
@@ -16894,10 +16901,145 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       });
     }
 
+    /* ── the permanent library (OPFS) ────────────────────────────────────── */
+    // The folder permission was the thing that kept dying: every refresh the
+    // browser forgot it, the panel sat on "izin gerekiyor", and the salon went
+    // quiet until somebody found the stick again. So the tracks themselves are
+    // copied — once — into the page's own private storage (OPFS), and playback
+    // runs off that copy for good. The stick is only needed again to CHANGE
+    // what is in the library, never to play it.
+    function opfsRoot(create){
+      if(!(navigator.storage&&navigator.storage.getDirectory))
+        return Promise.reject(new Error('no-opfs'));
+      return navigator.storage.getDirectory()
+        .then(function(r){ return r.getDirectoryHandle('music',{create:!!create}); });
+    }
+    function libMeta(){ try{ return JSON.parse(localStorage.getItem('rdns_cbm_musiclib')||'null'); }catch(e){ return null; } }
+    function libMetaSave(m){ try{ if(m) localStorage.setItem('rdns_cbm_musiclib', JSON.stringify(m)); else localStorage.removeItem('rdns_cbm_musiclib'); }catch(e){} }
+    function libList(dir){
+      var out=[], it=dir.values ? dir.values() : null;
+      if(!it) return Promise.resolve(out);
+      function nx(){ return it.next().then(function(r){
+        if(r.done){ out.sort(function(a,b){ return a.name.localeCompare(b.name); }); return out; }
+        if(r.value.kind==='file' && C.isMusicFile(r.value.name)) out.push(r.value);
+        return nx();
+      }); }
+      return nx();
+    }
+    // Switch playback onto the library without dropping the song mid-note: the
+    // track playing now keeps its place in the new order, everything else
+    // reshuffles (or resorts) around it.
+    function adoptLib(files){
+      var curName=(tracks[order[at]]||{}).name;
+      tracks=files; lib=true; fails=0;
+      order=shuffle(tracks.length);
+      var idx=-1, i;
+      if(curName) for(i=0;i<tracks.length;i++) if(tracks[i].name===curName){ idx=i; break; }
+      if(idx<0) at=-1;
+      else if(!shufOn()) at=idx;   // identity order: the track's own index IS its place
+      else { var p=order.indexOf(idx); if(p>0){ order.splice(p,1); order.unshift(idx); } at=0; }
+      paintMusic();
+      if(wanted && tracks.length && (!el || el.paused)) step(1);
+    }
+    // Bring the library up to date with what was just picked: copy what is new
+    // or changed, drop what the folder no longer has, and stop at the size cap
+    // rather than silently filling the disk. One unreadable file is skipped,
+    // not fatal — the same rule the player itself lives by.
+    function libSync(src){
+      if(!(navigator.storage&&navigator.storage.getDirectory)) return Promise.resolve(0);
+      var maxBytes=(C.music.maxLibraryMB||2048)*1024*1024;
+      var capHit=false, bytes=0;
+      copying={done:0,total:src.length}; paintMusic();
+      return opfsRoot(true).then(function(dir){
+        return libList(dir).then(function(have){
+          var haveBy={}; have.forEach(function(f){ haveBy[f.name]=f; });
+          // Two albums can both hold an "01 Intro.mp3" — the scan flattens
+          // folders away, so twins are kept apart by a numbered suffix.
+          var want={};
+          src.forEach(function(s){
+            var n=s.name, base=n, k=2;
+            while(want[n]){ n=base.replace(/(\.[^.]+)?$/,' ('+k+')$1'); k++; }
+            want[n]=s;
+          });
+          var names=Object.keys(want);
+          var gone=Object.keys(haveBy).filter(function(n){ return !want[n]; });
+          function removeNext(i){
+            if(i>=gone.length) return Promise.resolve();
+            return Promise.resolve().then(function(){ return dir.removeEntry(gone[i]); })
+              .catch(function(){}).then(function(){ return removeNext(i+1); });
+          }
+          function copyNext(i){
+            if(i>=names.length) return Promise.resolve();
+            var n=names[i], s=want[n];
+            copying={done:i+1,total:names.length}; paintMusic();
+            return Promise.resolve().then(function(){ return s.getFile ? s.getFile() : s; })
+              .then(function(f){
+                if(bytes+f.size>maxBytes){ capHit=true; return; }
+                var keep=haveBy[n];
+                var sameQ = keep
+                  ? keep.getFile().then(function(kf){ return kf.size===f.size; }).catch(function(){ return false; })
+                  : Promise.resolve(false);
+                return sameQ.then(function(same){
+                  if(same){ bytes+=f.size; return; }
+                  return dir.getFileHandle(n,{create:true})
+                    .then(function(fh){ return fh.createWritable(); })
+                    .then(function(w){ return w.write(f).then(function(){ return w.close(); }); })
+                    .then(function(){ bytes+=f.size; });
+                });
+              })
+              .catch(function(){})
+              .then(function(){ return copyNext(i+1); });
+          }
+          return removeNext(0).then(function(){ return copyNext(0); });
+        }).then(function(){
+          copying=null;
+          // Ask the browser to treat this origin's storage as worth keeping —
+          // the whole point is that it survives cleanup sweeps.
+          try{ if(navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+          return opfsRoot(false).then(libList).then(function(files){
+            libMetaSave({n:files.length, mb:Math.round(bytes/1048576)});
+            if(files.length) adoptLib(files);
+            if(capHit) Music.note('⚠ '+(C.music.maxLibraryMB||2048)+' MB sınırı aşıldı — bazı parçalar kopyalanmadı');
+            return files.length;
+          });
+        });
+      }).catch(function(){ copying=null; paintMusic(); return 0; });
+    }
+    // On load: the library, if there is one, needs no folder and no permission.
+    function libLoad(){
+      return opfsRoot(false).then(libList).then(function(files){
+        if(!files.length) return 0;
+        adoptLib(files);
+        return files.length;
+      }).catch(function(){ return 0; });
+    }
+    function libClear(){
+      libMetaSave(null);
+      lib=false;
+      return opfsRoot(false).then(function(dir){
+        return libList(dir).then(function(files){
+          function rmNext(i){
+            if(i>=files.length) return Promise.resolve();
+            return Promise.resolve().then(function(){ return dir.removeEntry(files[i].name); })
+              .catch(function(){}).then(function(){ return rmNext(i+1); });
+          }
+          return rmNext(0);
+        });
+      }).catch(function(){});
+    }
+
+    // Shuffle is reception's choice now, not the config's: the 🔀 button flips
+    // it and the laptop remembers. On, the order is random but complete — no
+    // track repeats until every one has played, then the deck is cut again
+    // (see step()). Off, the list plays straight through in file order.
+    function shufOn(){
+      var s=localStorage.getItem('rdns_cbm_shuffle');
+      return s===null ? !!C.music.shuffle : s==='1';
+    }
     function shuffle(n){
       var a=[], i, j, t;
       for(i=0;i<n;i++) a.push(i);
-      if(C.music.shuffle)
+      if(shufOn())
         for(i=a.length-1;i>0;i--){ j=Math.floor(Math.random()*(i+1)); t=a[i]; a[i]=a[j]; a[j]=t; }
       return a;
     }
@@ -16923,11 +17065,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     }
 
     function adopt(found, name){
-      tracks=found; dirName=name||'';
+      tracks=found; dirName=name||''; lib=false;
       order=shuffle(tracks.length); at=-1; fails=0;
       try{ localStorage.setItem('rdns_cbm_musicdir', dirName); }catch(e){}
       paintMusic();
       if(wanted && tracks.length) step(1);
+      // Every successful scan feeds the permanent library in the background:
+      // a fresh pick, a morning reconnect, even the fallback input. The music
+      // starts off the stick right away and quietly moves onto the copy —
+      // which is also how laptops from before the library get one without
+      // anybody re-picking anything.
+      if(found.length) libSync(found.slice());
     }
 
     function useHandle(h, ask){
@@ -17057,13 +17205,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
           name=files[0].webkitRelativePath.split('/')[0];
         adopt(found,name);
       },
-      // On the next morning's load: the folder is still known, and all the
-      // browser wants is permission to read it again.
+      // On the next morning's load: the library first — it needs no folder, no
+      // permission and no stick. Only a laptop with no library yet falls back
+      // to the old remembered-folder dance.
       restore:function(){
-        savedDir(function(h){
-          if(!h){ paintMusic(); return; }
-          dirName=localStorage.getItem('rdns_cbm_musicdir')||h.name||'';
-          useHandle(h,false);
+        libLoad().then(function(n){
+          if(n) return;
+          savedDir(function(h){
+            if(!h){ paintMusic(); return; }
+            dirName=localStorage.getItem('rdns_cbm_musicdir')||h.name||'';
+            useHandle(h,false);
+          });
         });
       },
       // Answers with the truth: true only if the saved folder came back AND
@@ -17119,6 +17271,28 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       },
       hasList:function(){ return !!list(); },
       reload:function(){ this.reconnect(); },
+      /* ── shuffle, reception's switch ── */
+      shuffled: shufOn,
+      setShuffle:function(on){
+        try{ localStorage.setItem('rdns_cbm_shuffle', on?'1':'0'); }catch(e){}
+        var curT=(at>=0 && at<order.length) ? order[at] : -1;
+        order=shuffle(tracks.length);
+        if(curT<0) at=-1;
+        else if(!on) at=curT;   // straight order: a track's own index is its place
+        else { var p=order.indexOf(curT); if(p>0){ order.splice(p,1); order.unshift(curT); } at=0; }
+        paintMusic();
+      },
+      /* ── the permanent library ── */
+      copying:function(){ return copying; },
+      isLib:function(){ return lib; },
+      libInfo:function(){ return libMeta(); },
+      clearLib:function(){
+        var self=this;
+        this.pause();
+        return libClear().then(function(){
+          self.forget();   // name and handle too — a cleared library starts from nothing
+        });
+      },
       duck:function(){
         ducks++;
         duckedAt=Date.now();
@@ -17209,14 +17383,30 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     else t.textContent=Music.title()||'Yükleniyor…';
     var v=document.getElementById('mus-vol');
     if(v && document.activeElement!==v) v.value=Music.volume();
+    // The line underneath: copy progress while the library is being filled,
+    // then the library itself — "kalıcı", because that word is the whole fix —
+    // and only a laptop with no library still names the stick's folder.
     var w=document.getElementById('mus-where');
     if(w){
-      var f=Music.folder();
-      w.textContent = f ? (f + (Music.count()? ' · '+Music.count()+' parça' : '')) : '';
+      var cp=Music.copying();
+      if(cp) w.textContent='⏳ Kütüphaneye kopyalanıyor… '+cp.done+' / '+cp.total+' parça';
+      else if(Music.isLib()){
+        var mi=Music.libInfo()||{};
+        w.textContent='Müzik kütüphanesi: '+Music.count()+' parça · kalıcı'+(mi.mb?' · '+mi.mb+' MB':'');
+      }
+      else{
+        var f=Music.folder();
+        w.textContent = f ? (f + (Music.count()? ' · '+Music.count()+' parça' : '')) : '';
+      }
     }
     var pickBtn=document.querySelector('#cbm-music .mus-set');
-    if(pickBtn) pickBtn.textContent = Music.needsPermission()
-      ? '🎵 Klasörü yeniden bağla' : '🎵 Müzik klasörü seç';
+    if(pickBtn) pickBtn.textContent = Music.copying() ? '⏳ Kopyalanıyor…'
+      : Music.isLib() ? '⟳ Kütüphaneyi güncelle'
+      : Music.needsPermission() ? '🎵 Klasörü yeniden bağla' : '🎵 Müzik klasörü seç';
+    var sh=document.getElementById('mus-shuf');
+    if(sh) sh.classList.toggle('off', !Music.shuffled());
+    var cl=document.getElementById('mus-clear');
+    if(cl) cl.style.display = (Music.isLib() && !Music.copying()) ? 'block' : 'none';
     // The big start bar shows whenever the room is quiet, and only then —
     // while the music is actually playing (or the folder is mid-scan) it is
     // out of the way.
@@ -17225,6 +17415,11 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   }
   window.musToggle  =function(){ if(Music.wanted()) Music.pause(); else { unlockAudio(); Music.play(); } };
   window.musNext    =function(){ Music.next(); };
+  window.musShuffle =function(){ Music.setShuffle(!Music.shuffled()); };
+  window.musClearLib=function(){
+    if(!confirm('Müzik kütüphanesi tamamen silinsin mi?\n\nKopyalanan bütün parçalar bu bilgisayardan kaldırılır; müzik çalmak için klasörü yeniden seçmek gerekir.')) return;
+    Music.clearLib();
+  };
   // A slider that reports something unreadable is not a request for silence.
   // It used to fall back to zero, which wrote zero away and left the salon with
   // no music and nothing on screen to say why.
