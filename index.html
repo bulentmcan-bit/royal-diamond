@@ -141,7 +141,11 @@
   // says so verbatim. If the probe sees newer data than the listener ever
   // delivered, the ear is dead: the probe pulls the data in by force and
   // re-attaches, so the laptop heals instead of starving quietly.
-  const RD_BUILD='v40 · 24.08.2026 · senkron tanı';
+  const RD_BUILD='v41 · 26.08.2026 · toplu kapatma güvenliği';
+  // The bulk-close gate (rdBulkCloseGate, later script block) compares the
+  // build this page is RUNNING against the one the server is serving, so the
+  // running one must be readable from outside this closure.
+  window.RD_BUILD=RD_BUILD;
   let _rdDiag={snapAt:0,snapBy:'',snapTs:0,snapN:0,attachedAt:0,reattach:0,
                pushAt:0,pushKey:'',pushOk:null,pushErr:'',
                probeAt:0,probeTs:0,probeErr:'',connected:null,authUser:''};
@@ -3412,7 +3416,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v40 · Senkron Tanı · 24.08.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v41 · Toplu Kapatma Güvenliği · 26.08.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
           border-radius:8px;color:var(--waDark);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
@@ -6648,19 +6652,77 @@ function mRenderStaleAppts(){
   }
   el.innerHTML = html;
 }
+// ── The gate this button must pass before it may touch anything ──────────────
+// Born of the 26 Aug 2026 sweep at 18:48:26, which closed TODAY's bookings —
+// Lissa's 10:00, 11:30 and 13:00 among them. No committed version of this
+// button can do that: every version compared day strings, and today is never
+// smaller than today. The sweep came from a device still running a stale
+// cached build and/or living on a wrong clock — the auto-updater only offers
+// a "Yenile" pill and waits, so a build can sit outdated for days. Two checks:
+//   1. fetch the deployed index.html and compare its RD_BUILD with the one
+//      this page is running — a stale build refuses outright;
+//   2. compare the server's Date header with this device's clock — a device
+//      living in the wrong day (which turns "7 days ago" into "today") refuses.
+// No answer from the server = no sweep. The button can wait; wrongly closed
+// bookings cannot be un-closed so easily.
+function rdBulkCloseGate(){
+  if(!/^https?:$/.test(location.protocol))
+    return Promise.resolve({ok:false, why:'Sunucu doğrulaması yapılamıyor (yerel dosya) — toplu kapatma yalnızca canlı sürümde çalışır.'});
+  var url=location.pathname.replace(/[^/]*$/,'')+'index.html';
+  return fetch(url+'?v='+Date.now(), {cache:'no-store'}).then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var srvDate=r.headers.get('date');
+    return r.text().then(function(html){
+      var m=html.match(/const RD_BUILD='([^']+)'/);
+      var server=(m&&m[1])||'';
+      var running=(typeof RD_BUILD==='string')?RD_BUILD:(window.RD_BUILD||'');
+      if(server && running && server!==running)
+        return {ok:false, why:'Bu cihaz ESKİ sürümü çalıştırıyor.\nÇalışan: '+running+'\nSunucudaki: '+server+'\nSayfayı yenileyin, sonra tekrar deneyin.'};
+      if(srvDate){
+        var st=new Date(srvDate).getTime();
+        var drift=st?Math.abs(Date.now()-st):0;
+        if(drift>10*60*1000)
+          return {ok:false, why:'Bu cihazın saati sunucudan '+Math.round(drift/60000)+' dakika sapmış. Saat yanlışken "7 gün önce" hesabı da yanlıştır — önce cihaz saatini düzeltin.'};
+      }
+      return {ok:true};
+    });
+  }).catch(function(e){
+    return {ok:false, why:'Sunucuya ulaşılamadı ('+((e&&e.message)||e)+') — sürüm doğrulanamadığı için toplu kapatma yapılmadı.'};
+  });
+}
 function mCloseStaleAppts(){
-  if(!ownerPin()) return;
-  const list = staleOpenAppts();
-  if(!list.length){ mRenderStaleAppts(); return; }
-  if(!confirm(list.length+' geçmiş randevu "GELMEDİ" olarak kapatılacak.\n\n'+
-              '· Ciroya girmez, komisyon yazılmaz\n'+
-              '· İptal kaydına "toplu kapatma — gelmedi" sebebiyle yazılır\n'+
-              '· Sadece 7 günden eski randevular — son 7 güne, bugüne ve gelecek tarihlere dokunulmaz\n\nDevam?')) return;
-  list.forEach(a => noShowClose(a, 'Patron', 'toplu kapatma — gelmedi'));
-  saveAll(); renderDash(); renderAppts(); updateApptBadge();
-  mRenderStaleAppts();
-  try{ renderMonthly(); }catch(e){}
-  toast('🚫','Geçmiş randevular kapatıldı', list.length+' randevu "gelmedi" olarak kapatıldı — ciro ve komisyon yazılmadı.','g');
+  rdBulkCloseGate().then(function(gate){
+    if(!gate.ok){ toast('⛔','Toplu kapatma reddedildi', gate.why,'r'); return; }
+    if(!ownerPin()) return;
+    const cutoff = staleCutoffStr();
+    const list = staleOpenAppts();
+    if(!list.length){ mRenderStaleAppts(); return; }
+    const days = list.map(apptDayStr).sort();
+    const range = days[0]+' → '+days[days.length-1];
+    if(!confirm(list.length+' geçmiş randevu "GELMEDİ" olarak kapatılacak.\n\n'+
+                '· Etkilenen tarih aralığı: '+range+'\n'+
+                '· Yalnızca '+cutoff+' tarihinden ÖNCEKİ günler — son 7 gün, bugün ve gelecek dokunulmaz\n'+
+                '· Ciroya girmez, komisyon yazılmaz\n'+
+                '· İptal kaydına "toplu kapatma — gelmedi" sebebiyle yazılır\n\nDevam?')) return;
+    var dev='?'; try{ dev=localStorage.getItem('rdns_device_id_v1')||'?'; }catch(e){}
+    // The boundary once more, per record, at the moment of closing — whatever
+    // the list held, nothing on or after the cutoff day is closed.
+    var closed=0;
+    list.forEach(function(a){
+      if(!(apptDayStr(a) < cutoff)) return;
+      noShowClose(a, 'Patron', 'toplu kapatma — gelmedi');
+      closed++;
+    });
+    // The paper trail the 26 Aug night was missing: every sweep writes itself
+    // into the droplog — when, how many, which device, which date range.
+    try{ apptDropLog(null,'toplu-kapatma',
+      'TOPLU KAPATMA — '+closed+' randevu gelmedi olarak kapatıldı',
+      'cihaz='+dev+' · aralık '+range+' · eşik <'+cutoff+' · '+((typeof RD_BUILD==='string')?RD_BUILD:(window.RD_BUILD||'?'))); }catch(e){}
+    saveAll(); renderDash(); renderAppts(); updateApptBadge();
+    mRenderStaleAppts();
+    try{ renderMonthly(); }catch(e){}
+    toast('🚫','Geçmiş randevular kapatıldı', closed+' randevu "gelmedi" olarak kapatıldı — ciro ve komisyon yazılmadı, droploga işlendi.','g');
+  });
 }
 
 // ── ↩ ONE-OFF REVERT: the 24 Aug 2026 bulk close ────────────────────────────
@@ -6736,6 +6798,72 @@ function mRevertBulkClose(){
   console.log('[revert] toplam '+targets.length+' randevu (2026-08-22) confirmed durumuna döndürüldü — 24 Ağustos toplu kapatma geri alma');
   toast('↩','Toplu kapatma geri alındı', targets.length+' randevu (22 Ağustos) tekrar "confirmed" oldu. Yapılanları tek tek ✓ Done ile kapatın.','g');
 }
+
+// ── ↩ ONE-OFF REVERT: the 26 Aug 2026 sweep at 18:48:26 ─────────────────────
+// A device pressed the bulk-close button at 18:48:26 and 21 records went to
+// 'cancelled' in that one second — TODAY's bookings among them (Lissa's 10:00,
+// 11:30 and 13:00). The sweep stamped every record it took through apptTouch,
+// so they all carry an _ats inside that exact second; that stamp is the most
+// precise fingerprint the sweep left, tighter than the cancel log (whose
+// entries only carry the day). So the revert selects on it: _ats within
+// 18:48:26 local time and status still 'cancelled' → back to 'confirmed'.
+// Never 'completed' — the system does not know which ones were really done.
+// Each record gets fresh _ats/_sts (the comeback must out-stamp the close on
+// every device) and the cancel seal lifted (or the override map re-asserts
+// the cancel on the next merge). Runs on every load like the 60-minute cap:
+// cheap, idempotent — a reverted record's _ats moves out of the window, so
+// the second run finds nothing — and a cancelled copy arriving later by sync
+// from the sweeping device is caught on the next open. Matching cancel-log
+// entries are marked reverted so the 24 Aug-style bookkeeping stays true.
+function rdRevertBulkClose20260826(){
+  var t0=new Date(2026,7,26,18,48,26).getTime(), t1=t0+1000;
+  var hit=(appointments||[]).filter(function(a){
+    if(!a||a.status!=='cancelled') return false;
+    var ts=Number(a._ats)||0;
+    return ts>=t0 && ts<t1;
+  });
+  if(!hit.length) return 0;
+  var dev='?'; try{ dev=localStorage.getItem('rdns_device_id_v1')||'?'; }catch(e){}
+  var now=new Date().toISOString();
+  hit.forEach(function(a){
+    a.status='confirmed';
+    delete a.noShow;
+    delete a.noShowAt;
+    apptTouch(a);              // fresh _ats + _sts — the revert must out-stamp the close
+    priceOvrLiftCancelSeal(a); // and out-stamp the seal, or the map re-asserts the cancel
+    try{ apptDropLog(a, a.id, '26.08 18:48 toplu kapatması geri alındı', '→ confirmed · cihaz='+dev); }catch(e){}
+    console.log('[revert-2608] ↩ #'+a.id+' '+(a.staff||'?')+' '+(a.datetime||'')+' → confirmed (_sts='+a._sts+')');
+  });
+  try{
+    var log=JSON.parse(localStorage.getItem('rdns_cancel_log_v1')||'{"items":[]}');
+    if(!log.items) log.items=[];
+    var ids={}; hit.forEach(function(a){ ids[String(a.id)]=1; });
+    var marked=0;
+    log.items.forEach(function(e){
+      if(e && !e.reverted && ids[String(e.apptId)] && String(e.cancelledAt||'').slice(0,10)==='2026-08-26'){
+        e.reverted=1; e.revertedAt=now; marked++;
+      }
+    });
+    if(marked){
+      localStorage.setItem('rdns_cancel_log_v1', JSON.stringify(log));
+      if(typeof syncPush==='function') syncPush('rdns_cancel_log_v1', log);
+    }
+  }catch(e){ console.warn('revert-2608 cancel-log error:', e); }
+  saveAll(); renderDash(); renderAppts(); updateApptBadge();
+  try{ renderMonthly(); }catch(e){}
+  try{ mRenderStaleAppts(); }catch(e){}
+  console.log('[revert-2608] toplam '+hit.length+' randevu confirmed durumuna döndürüldü — 26.08 18:48:26 toplu kapatma geri alma');
+  toast('↩','26 Ağustos toplu kapatması geri alındı', hit.length+' randevu tekrar "confirmed" oldu (bugünün randevuları dahil). Gerçekten yapılanları ✓ Done ile kapatın.','g');
+  return hit.length;
+}
+window.rdRevertBulkClose20260826=rdRevertBulkClose20260826;
+window.addEventListener('DOMContentLoaded', function(){
+  // Firebase'in ilk birleşmesinden sonra — rdCapFutureDurations ile aynı sebep,
+  // aynı bekleme: buluttan gelen kopya da taransın. İkinci tarama, yavaş açılan
+  // senkronun getirdiği kopyayı da yakalamak için.
+  setTimeout(function(){ try{ rdRevertBulkClose20260826(); }catch(e){ console.warn('revert-2608:', e); } }, 6000);
+  setTimeout(function(){ try{ rdRevertBulkClose20260826(); }catch(e){} }, 30000);
+});
 
 function dedDelete(id){
   if(!ownerPin()) return;
