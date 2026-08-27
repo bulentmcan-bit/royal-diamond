@@ -612,6 +612,29 @@
           if(pg&&pg.id==='page-gapreport')try{ if(typeof renderFillCallList==='function') renderFillCallList(); }catch(e){}
         }catch(e){console.warn('fcl log sync error:',e);}
       });
+      // Sonraki randevu (ön randevu) kayıtları — items is an OBJECT keyed by
+      // rebook id, merged PER ITEM by _uts: the newer side of each item wins,
+      // an item missing on one side is an addition, never a deletion.
+      _fbDb.ref('rdns_rebook_v1').on('value',snap=>{
+        if(_isSyncing['rdns_rebook_v1'])return;
+        const val=snap.val();if(!val)return;
+        try{
+          const rObj=typeof val==='string'?JSON.parse(val):val;
+          let localWon=false;
+          _isSyncing['rdns_rebook_v1']=true;
+          try{ if(typeof rbMergeRemote==='function') localWon=rbMergeRemote(rObj); }catch(e){console.warn('rebook merge error:',e);}
+          setTimeout(()=>{_isSyncing['rdns_rebook_v1']=false;},800);
+          // If local held items the cloud lacked (or newer versions), push the
+          // merged truth back once so no device's answer is ever lost.
+          if(localWon){
+            setTimeout(()=>{ try{ syncPush('rdns_rebook_v1', JSON.parse(localStorage.getItem('rdns_rebook_v1')||'{"items":{}}')); }catch(e){} }, 1200);
+          }
+          try{ if(typeof renderRebookQueue==='function') renderRebookQueue(); }catch(e){}
+          try{ if(typeof renderRebookTiles==='function') renderRebookTiles(); }catch(e){}
+          const pg2=document.querySelector('.page.active');
+          if(pg2&&pg2.id==='page-calendar')try{ renderCalendar(); }catch(e){}
+        }catch(e){console.warn('rebook sync error:',e);}
+      });
       showSyncStatus('synced');
     }catch(e){showSyncStatus('error');console.error('Sync error:',e);}
   }
@@ -3416,7 +3439,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <div class="sb-footer">
       <div class="sb-status" data-i18n="sys_active">Sistem Aktif</div>
-      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v41 · Toplu Kapatma Güvenliği · 26.08.2026</span>
+      Gönyeli, K.K.T.C.<br>0548 893 3333<br><br>Auto-reminders ON<br>Auto-rebook ON<br><span style="color:#0f8a7e;font-weight:700;">Sürüm v42 · Sonraki Randevu & Müşteri Zaman Çizelgesi · 27.08.2026</span>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
         <button onclick="rdnsExportData()" style="width:100%;padding:7px 10px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);
           border-radius:8px;color:var(--waDark);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:&#39;Nunito&#39;,sans-serif;text-align:left;">
@@ -3493,6 +3516,15 @@ p, span, div, label, h1, h2, h3, h4 {
         <input type="file" accept=".json" style="display:none;" onchange="rdnsImportData(event)">
       </label>
 
+      <!-- KESİNLEŞTİRİLECEK RANDEVULAR — pending rebooks that still need a time -->
+      <div class="r24-panel" id="rbq-panel" style="border-color:rgba(217,164,65,.55);">
+        <div class="r24-header">
+          <div class="r24-title" id="rbq-title">📌 Kesinleştirilecek Randevular <span class="r24-count" id="rbq-count" style="background:#d9a441;">0</span></div>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;" id="rbq-sub">Çıkışta gün alındı, saat alınmadı. Müşteri gittikten sonra ara, saati burada ver — rozet kuyruk boşalana kadar silinmez.</div>
+        <div id="rbq-list"><div class="r24-empty">✅ Bekleyen ön randevu yok.</div></div>
+      </div>
+
       <!-- 24-HOUR WHATSAPP REMINDERS PANEL -->
       <div class="r24-panel">
         <div class="r24-header">
@@ -3561,6 +3593,13 @@ p, span, div, label, h1, h2, h3, h4 {
         <!-- The number the WhatsApp reminders will be judged against: no-shows
              per day before the reminders go live, and after. -->
         <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-val" id="s-noshow">0</div><div class="stat-lbl">Gelmedi Bugün</div><div class="stat-change">No-show</div></div>
+      </div>
+      <!-- Sonraki randevu ölçümü — the numbers that change desk behaviour -->
+      <div class="grid-4 stats-5">
+        <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-val" id="s-rb-rate">—</div><div class="stat-lbl" id="s-rb-rate-lbl">Sonraki randevu oranı</div><div class="stat-change" id="s-rb-rate-sub">bugün</div></div>
+        <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-val" id="s-rb-ratio">0 / 0</div><div class="stat-lbl" id="s-rb-ratio-lbl">Çıkış / randevu</div><div class="stat-change">bugün</div></div>
+        <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-val" id="s-rb-pending">0</div><div class="stat-lbl" id="s-rb-pending-lbl">Saat verilmemiş</div><div class="stat-change">kuyrukta</div></div>
+        <div class="stat-card" style="cursor:pointer;" onclick="rbShowDeclineBreakdown()"><div class="stat-icon">🙅‍♀️</div><div class="stat-val" id="s-rb-declined">0</div><div class="stat-lbl" id="s-rb-declined-lbl">İstemiyor</div><div class="stat-change">bugün · nedenler için dokun</div></div>
       </div>
       <div class="grid-2">
         <div>
@@ -4599,20 +4638,59 @@ p, span, div, label, h1, h2, h3, h4 {
   </div>
 </div>
 
-<!-- Rebook / Complete -->
+<!-- Checkout panel — the third mandatory gate: intent only, a date, never a time -->
+<style>
+/* ── Sonraki randevu (checkout) ── */
+.rbk-btn{flex:1;min-width:0;border:1.5px solid var(--border);background:rgba(255,255,255,.03);border-radius:12px;padding:14px 4px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer;color:var(--text);transition:border-color .15s, background .15s;}
+.rbk-btn.rbk-suggest{border-color:#d9a441;box-shadow:0 0 0 2px rgba(217,164,65,.4);}
+.rbk-btn.rbk-sel{border-color:#25d366;background:rgba(37,211,102,.16);box-shadow:none;}
+.rbk-chip{border:1.5px solid var(--border);background:rgba(255,255,255,.03);border-radius:20px;padding:9px 14px;font-family:inherit;font-weight:700;font-size:.82rem;cursor:pointer;color:var(--text);}
+.rbk-chip.rbk-sel{border-color:#e87a7a;background:rgba(232,122,122,.16);}
+.rbk-cal-day{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:9px;font-weight:800;font-size:.92rem;cursor:pointer;background:var(--card);color:var(--text);position:relative;}
+.rbk-cal-day.rbk-off{opacity:.28;cursor:not-allowed;background:rgba(255,255,255,.02);}
+.rbk-cal-day.rbk-3w{outline:2px solid #d9a441;outline-offset:-2px;}
+.rbk-prov{border:1.5px dashed #d9a441;background:rgba(217,164,65,.10);color:#d9a441;opacity:.85;border-radius:7px;font-size:.62rem;font-weight:800;padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+</style>
 <div class="overlay" id="mRebook">
   <div class="modal">
-    <div class="mhdr"><div class="mtitle" id="modal-rebook-title">✅ Tedavi Tamamlandı</div><button class="mclose" onclick="dpRebookClose()">✕</button></div>
-    <div class="rb-banner"><span style="font-size:1.2rem">🔄</span><div class="rb-text"><strong id="rb-banner-text">Otomatik Yeniden Randevu Aktif!</strong> Sonraki randevu 3 hafta sonrası için hazır.</div></div>
+    <div class="mhdr"><div class="mtitle" id="modal-rebook-title">✅ Tedavi Tamamlandı</div></div>
     <div id="rb-info" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px;margin-bottom:14px;font-size:0.84rem;line-height:1.8;"></div>
-    <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-rb-dt">Sonraki Randevu</label><input class="fctrl" type="datetime-local" id="rb-dt"></div>
-      <div class="fg" style="display:none;"><label class="flabel">Fiyat (₺)</label><input class="fctrl" type="number" id="rb-price" placeholder="0"></div>
+    <input type="hidden" id="rb-price">
+    <div class="fg" style="margin-bottom:6px;">
+      <label class="flabel" id="flabel-rb-next">Sonraki randevu *</label>
+      <div id="rbk-btns" style="display:flex;gap:8px;margin-top:6px;">
+        <button type="button" class="rbk-btn" id="rbk-3w" onclick="rdCkPick('3w')">3 hafta</button>
+        <button type="button" class="rbk-btn" id="rbk-4w" onclick="rdCkPick('4w')">4 hafta</button>
+        <button type="button" class="rbk-btn" id="rbk-pick" onclick="rdCkPick('pick')">📅 Tarih seç</button>
+        <button type="button" class="rbk-btn" id="rbk-no" onclick="rdCkPick('no')">İstemiyor</button>
+      </div>
+      <div id="rbk-target" style="margin-top:9px;font-size:.85rem;font-weight:700;color:var(--gold);min-height:1.2em;"></div>
+      <div id="rbk-decline" style="display:none;margin-top:9px;">
+        <div style="font-size:.75rem;color:var(--muted);margin-bottom:7px;" id="rbk-decline-why">Neden istemiyor? (zorunlu)</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;">
+          <button type="button" class="rbk-chip" data-r="tasindi" onclick="rdCkReason('tasindi')">Taşındı</button>
+          <button type="button" class="rbk-chip" data-r="fiyat" onclick="rdCkReason('fiyat')">Fiyat</button>
+          <button type="button" class="rbk-chip" data-r="memnun_degil" onclick="rdCkReason('memnun_degil')">Memnun değil</button>
+          <button type="button" class="rbk-chip" data-r="dusunecek" onclick="rdCkReason('dusunecek')">Düşünecek</button>
+          <button type="button" class="rbk-chip" data-r="diger" onclick="rdCkReason('diger')">Diğer</button>
+        </div>
+        <input id="rbk-decline-note" maxlength="120" placeholder="Kısa not…" style="display:none;margin-top:8px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-family:inherit;font-size:.85rem;background:var(--card);color:var(--text);">
+      </div>
     </div>
     <div class="mfoot">
-      <button class="btn btn-ghost" id="btn-skip-rebook" onclick="skipRebook()">Atla</button>
-      <button class="btn btn-green" id="btn-confirm-rebook" onclick="confirmRebook()">🔄 Onayla &amp; Yeniden Randevu Al</button>
+      <button class="btn btn-green" id="btn-checkout-done" onclick="rdCheckoutDone()" disabled style="width:100%;opacity:.45;">✓ Çıkışı Tamamla</button>
     </div>
+  </div>
+</div>
+
+<!-- Tarih seç — 8 weeks, date only, no time asked anywhere -->
+<div id="rbkCalOv" style="display:none;position:fixed;inset:0;background:rgba(8,9,8,.82);backdrop-filter:blur(4px);z-index:9997;align-items:center;justify-content:center;padding:14px;">
+  <div style="background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:18px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.4);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-weight:800;font-size:1rem;" id="rbk-cal-title">📅 Tarih seç — müşterinin gösterdiği gün</div>
+      <button class="mclose" onclick="rdCkCalClose()">✕</button>
+    </div>
+    <div id="rbk-cal-grid"></div>
   </div>
 </div>
 
@@ -5359,6 +5437,9 @@ function openModal(id){
     const dd=document.getElementById('a-client-dropdown'); if(dd) dd.style.display='none';
   }
   if(id==="mAppt"){
+    // Any earlier "Saat ver" context is stale the moment the dialog reopens —
+    // rbGiveTime sets it again right after this call when it is the opener.
+    window._rbResolving=null;
     // Always reset the Save button back to "new appointment" mode first.
     // (Editing an appointment temporarily rewires this button; if that edit
     // gets cancelled instead of saved, this guarantees it can't stay stuck
@@ -5373,7 +5454,9 @@ function openModal(id){
   }
 }
 function closeModal(id){document.getElementById(id).classList.remove("open");}
-document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click",e=>{if(e.target===o)o.classList.remove("open");}));
+// mRebook is the checkout gate — like the satisfaction window it has no
+// backdrop escape; the only way through is a button on the panel itself.
+document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click",e=>{if(e.target===o&&o.id!=="mRebook")o.classList.remove("open");}));
 
 
 // ── Robust Turkish alphabetical sort ─────────────────────────
@@ -5841,6 +5924,7 @@ function dashEditAppt(id){
         if(enteredPrice > 0 && live.staff){
           if(live.status !== 'completed'){
             live.status = 'completed';
+            try{ live._ckBy=localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){}
             const cl2 = clients.find(function(c){ return String(c.id)===String(live.clientId); });
             if(cl2){ cl2.visits = (cl2.visits||0)+1; cl2.lastVisit = dtLocal(new Date()).slice(0,10); }
             // 🔄 Offer the automatic 3-week follow-up from this path too
@@ -7896,6 +7980,7 @@ function renderDash(){
   document.getElementById("s-clients").textContent=clients.length;
   renderMiniChart();
   renderDash24h();
+  try{ renderRebookQueue(); renderRebookTiles(); }catch(e){}
   const upcoming=appointments.filter(a=>a.status==="confirmed"&&new Date(a.datetime)>=new Date());
   document.getElementById("s-upcoming").textContent=upcoming.length;
   // No-shows among TODAY'S appointments — the WhatsApp before/after number.
@@ -8048,9 +8133,24 @@ function deleteClient(id){
   toast('🗑','Müşteri Silindi', c.name+' ve tüm randevuları kaldırıldı.','r');
 }
 
+// Dotted/dotless-aware Turkish matching: İ i I ı must all find each other,
+// and so must Ş/S, Ğ/G, Ü/U, Ö/O, Ç/C. BOTH sides go through this before
+// comparing — "MELISA", "melısa" and "MELİSA" are the same customer.
+const rdNorm = s => String(s||'')
+  .replace(/[İIıi]/g,'i').replace(/[Şş]/g,'s').replace(/[Ğğ]/g,'g')
+  .replace(/[Üü]/g,'u').replace(/[Öö]/g,'o').replace(/[Çç]/g,'c')
+  .toLowerCase().trim();
+
+// Render an id as an inline-onclick argument WITHOUT changing its type: a
+// numeric id stays numeric (strict === callers keep working), a string id —
+// including the old decimal ones like "1779103045065.9568" — stays a string
+// instead of being mangled by float parsing.
+function rdIdArg(id){ return typeof id==='string' ? "'"+String(id).replace(/['"\\]/g,'')+"'" : String(id); }
+
 function renderClients(){
-  const q=(document.getElementById("client-search")?.value||"").toLowerCase();
-  const list=clients.filter(c=>c.name.toLowerCase().includes(q)||c.phone.includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
+  const q=(document.getElementById("client-search")?.value||"");
+  const qn=rdNorm(q), qd=q.replace(/\D/g,'');
+  const list=clients.filter(c=>(qn&&rdNorm(c.name).includes(qn))||(qd&&String(c.phone||'').replace(/\D/g,'').includes(qd))||(!qn&&!qd)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
   const _pill=document.getElementById("client-count-pill");
   if(_pill)_pill.textContent=q?`${list.length} / ${clients.length} müşteri`:`${clients.length} müşteri`;
   document.getElementById("clients-body").innerHTML=list.map(c=>`
@@ -8065,51 +8165,175 @@ function renderClients(){
       <td><select onchange="setClientDiscount(${c.id},this.value,event)" onclick="event.stopPropagation()" title="Bu müşteriye uygulanacak indirim — değiştirmek için patron şifresi gerekir" style="padding:5px 10px;border-radius:20px;border:2px solid ${clientDiscPct(c)?'#4caf50':'#ccc'};background:${clientDiscPct(c)?'#e8f5e9':'#f5f5f5'};color:${clientDiscPct(c)?'#2e7d32':'#888'};font-weight:700;cursor:pointer;font-size:0.8rem;font-family:'Nunito',sans-serif;">${CLIENT_DISCOUNTS.map(p=>`<option value="${p}"${p===clientDiscPct(c)?' selected':''}>${p?'✓ ':''}${clientDiscLabel(p)}</option>`).join('')}</select></td>
       <td style="color:var(--muted);font-size:0.81rem">${c.lastVisit||"—"}</td>
       <td><div style="display:flex;gap:5px">
-        <button class="btn btn-ghost btn-sm" onclick="showClientDetail(${c.id})">👁</button>
-        <button class="btn btn-gold btn-sm" onclick="openEditClient(${c.id})">✏️</button>
-        <button class="btn btn-mint btn-sm" onclick="quickBook(${c.id})">+Appt</button>
-        <button class="btn btn-wa btn-sm" onclick="gotoWAfor(${c.id})">💬</button>
-        <button class="btn btn-red btn-sm" style="opacity:0.75" onclick="deleteClient(${c.id})">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="showClientDetail('${c.id}')">👁</button>
+        <button class="btn btn-gold btn-sm" onclick="openEditClient(${rdIdArg(c.id)})">✏️</button>
+        <button class="btn btn-mint btn-sm" onclick="quickBook(${rdIdArg(c.id)})">+Appt</button>
+        <button class="btn btn-wa btn-sm" onclick="gotoWAfor(${rdIdArg(c.id)})">💬</button>
+        <button class="btn btn-red btn-sm" style="opacity:0.75" onclick="deleteClient(${rdIdArg(c.id)})">🗑</button>
       </div></td>
     </tr>`).join("");
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOMER TIMELINE — type a name, see her whole history.
+// The old panel silently dropped appointments because it compared
+// `a.clientId===id` STRICTLY while the records hold a mix of numbers,
+// strings and old decimal ids — today's visits vanished while months-old
+// ones showed. Everything below compares String() to String().
+// ═══════════════════════════════════════════════════════════════════════════
+// client → appointments index, built once and reused; it rebuilds only when
+// the appointments array is swapped (cloud snapshot) or grows — never per
+// keystroke, so 700 clients / 2000 appointments stay instant.
+let _cdIdxRef=null,_cdIdxLen=0,_cdIdx=null;
+function rdClientAppts(clientId){
+  if(!_cdIdx||_cdIdxRef!==appointments||_cdIdxLen!==appointments.length){
+    _cdIdx=new Map();
+    appointments.forEach(a=>{
+      if(!a||a.clientId==null) return;
+      const k=String(a.clientId);
+      if(!_cdIdx.has(k)) _cdIdx.set(k,[]);
+      _cdIdx.get(k).push(a);
+    });
+    _cdIdx.forEach(list=>list.sort((a,b)=>new Date(b.datetime)-new Date(a.datetime)));
+    _cdIdxRef=appointments; _cdIdxLen=appointments.length;
+  }
+  return _cdIdx.get(String(clientId))||[];
+}
+// Reception sees the timeline WITHOUT the price column; the owner sees it all.
+function rdSeePrices(){ try{ return localStorage.getItem('rdns_msg_role')!=='reception'; }catch(e){ return true; } }
+function _cdStats(c, appts){
+  const done=appts.filter(a=>a.status==='completed').sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+  const spend=done.reduce((s,a)=>s+(parseFloat(a.price)||0),0);
+  const gaps=[];
+  for(let i=1;i<done.length;i++) gaps.push((new Date(done[i].datetime)-new Date(done[i-1].datetime))/86400000);
+  const avgGap=gaps.length?Math.round(gaps.reduce((s,g)=>s+g,0)/gaps.length):0;
+  const byStaff={};
+  done.forEach(a=>{ if(a.staff) byStaff[a.staff]=(byStaff[a.staff]||0)+1; });
+  const topStaff=Object.keys(byStaff).sort((x,y)=>byStaff[y]-byStaff[x])[0]||'—';
+  const noShows=appts.filter(a=>a.noShow).length;
+  const cancels=appts.filter(a=>a.status==='cancelled'&&!a.noShow).length;
+  const first=done.length?done[0].datetime:null;
+  const last=done.length?done[done.length-1].datetime:null;
+  const daysSince=last?Math.max(0, Math.floor((Date.now()-new Date(last))/86400000)):null;
+  return {done,spend,avgGap,topStaff,noShows,cancels,first,last,daysSince};
+}
 function showClientDetail(id){
   const c=cObj(id);if(!c)return;
-  const appts=appointments.filter(a=>a.clientId===id).sort((a,b)=>new Date(b.datetime)-new Date(a.datetime));
+  const appts=rdClientAppts(c.id);
+  const st=_cdStats(c, appts);
+  const showP=rdSeePrices();
+  const eh=(typeof dtEscHtml==='function')?dtEscHtml:(s=>String(s||''));
+  const now=new Date();
+  const tStr=todayStr();
+  const dayOf=a=>{ try{ return String(a.datetime||'').slice(0,10); }catch(e){ return ''; } };
+  const future=appts.filter(a=>dayOf(a)>tStr).sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+  const todayList=appts.filter(a=>dayOf(a)===tStr).sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+  const past=appts.filter(a=>dayOf(a)<tStr); // already newest-first
+  // Gap since the previous ATTENDED visit — the number that shows drifting.
+  const doneAsc=st.done;
+  const gapOf=a=>{
+    if(a.status!=='completed') return '';
+    const i=doneAsc.findIndex(x=>x===a);
+    if(i<1) return '';
+    const g=Math.round((new Date(a.datetime)-new Date(doneAsc[i-1].datetime))/86400000);
+    return '<span style="color:var(--muted);font-size:.72rem;">↑ '+g+' gün sonra</span>';
+  };
+  const pendingRb=(typeof rbItems==='function')?rbItems().filter(i=>i.status==='pending'&&String(i.clientId)===String(c.id)):[];
+  const smile=a=>a.sat==='happy'?' 🙂':(a.sat==='unhappy'?' 🙁':'');
+  const payLbl=a=>{
+    if(!a.pay) return '';
+    if(a.pay==='split'&&a.splits) return ' · ➗ '+a.splits.map(s=>(PM_TYPES[s.pay]?PM_TYPES[s.pay][0]:'')+(s.amount||0)).join('+');
+    return PM_TYPES[a.pay]?(' · '+PM_TYPES[a.pay][0]+' '+PM_TYPES[a.pay][1]):'';
+  };
+  const row=(a,past_)=>{
+    const dead=a.status==='cancelled'||a.noShow;
+    const tag=a.noShow?'<span class="badge badge-rose" style="font-size:.6rem;">Gelmedi</span>':(a.status==='cancelled'?'<span class="badge badge-muted" style="font-size:.6rem;">İptal</span>':statusBadge(a.status));
+    return '<div class="tl-item"'+(dead?' style="opacity:.45;"':'')+'>'
+      +'<div class="tl-dot" style="background:'+(a.status==='completed'?'rgba(110,203,138,0.12)':'rgba(122,170,232,0.1)')+'">'+(a.status==='completed'?'✓':(dead?'✕':'●'))+'</div>'
+      +'<div class="tl-body">'
+      +'<div class="tl-title">'+eh(a.service||'—')+'</div>'
+      +'<div class="tl-sub">'+fDT(a.datetime)+' · '+eh(a.staff||'—')
+      +(past_&&showP&&a.status==='completed'?' · <strong>₺'+(parseFloat(a.price)||0).toLocaleString('tr-TR')+'</strong>'+payLbl(a):'')
+      +(past_?smile(a):'')
+      +'</div>'+(past_?gapOf(a):'')+'</div>'
+      +tag+'</div>';
+  };
+  const provRow=i=>'<div class="tl-item" style="opacity:.9;">'
+    +'<div class="tl-dot" style="background:rgba(217,164,65,.12);color:#d9a441;">⏳</div>'
+    +'<div class="tl-body"><div class="tl-title" style="color:#d9a441;">'+_('rb_provisional')+' — '+eh(i.service||'')+'</div>'
+    +'<div class="tl-sub">'+rbFmtDate(i.targetDate)+' · '+eh(i.staff||'—')+' · '+_('rb_time_later')+'</div></div>'
+    +'<span class="rbk-prov">'+_('rb_pending')+'</span></div>';
+  const sec=(title,inner,hl)=>inner?'<div style="font-weight:800;font-size:.78rem;letter-spacing:1.5px;color:'+(hl?'#d9a441':'var(--muted)')+';margin:14px 0 8px;">'+title+'</div>'
+    +'<div class="timeline"'+(hl?' style="background:rgba(217,164,65,.06);border:1px solid rgba(217,164,65,.3);border-radius:9px;padding:8px 10px;"':'')+'>'+inner+'</div>':'';
+  // The single most useful line: is she drifting?
+  let drift='';
+  if(st.avgGap>0&&st.daysSince!=null&&st.daysSince>2*st.avgGap){
+    const ph=(typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone||'')):String(c.phone||'').replace(/\D/g,'');
+    drift='<div style="display:flex;align-items:center;gap:10px;background:rgba(217,164,65,.1);border:1px solid rgba(217,164,65,.4);border-radius:9px;padding:10px 13px;margin:12px 0;font-size:.83rem;color:#d9a441;">'
+      +'<span>⚠️ Normalde '+st.avgGap+' günde bir gelirdi — <strong>'+st.daysSince+' gündür gelmiyor</strong>.</span>'
+      +(ph?'<button class="btn btn-wa btn-sm" style="margin-left:auto;" onclick="window.open(\'https://wa.me/'+ph+'\',\'_blank\')">📞 '+_('rb_call')+'</button>':'')
+      +'</div>';
+  }
+  const stat=(v,l)=>'<div style="text-align:center;min-width:72px;"><div style="font-weight:800;font-size:.95rem;">'+v+'</div><div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+l+'</div></div>';
   document.getElementById("cd-title").textContent="👤 "+c.name;
   document.getElementById("cd-body").innerHTML=`
-    <div class="grid-2" style="margin-bottom:16px">
-      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
-        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Contact</div>
-        <div style="font-size:0.83rem;margin-bottom:4px">📞 ${c.phone}</div>
-        <div style="font-size:0.83rem">🎂 ${c.birthday?fDate(c.birthday+"T00:00"):"—"}</div>
-      </div>
-      ${uiOn('loyalty')?`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
-        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Loyalty</div>
-        ${tierBadge(c.tier)}<span style="font-size:0.81rem;color:var(--muted);margin-left:7px">${c.points} pts · ${c.visits} visits</span>
-        <div class="lbar" style="margin-top:8px"><div class="lbar-fill" style="width:${Math.min(c.points/4,100)}%"></div></div>
-      </div>`:`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px">
-        <div style="font-size:0.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px">Ziyaret</div>
-        <span style="font-size:0.81rem;color:var(--muted)">${c.visits} ziyaret · son: ${c.lastVisit||"—"}</span>
-      </div>`}
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:11px 13px;font-size:.84rem;">
+      <span>📞 ${eh(c.phone||'—')}</span>
+      <span>🎂 ${c.birthday?fDate(c.birthday+"T00:00"):"—"}</span>
+      <span>💅 ${st.done.length} ziyaret</span>
+      ${showP?`<span>💰 ₺${st.spend.toLocaleString('tr-TR')}</span>`:''}
+      <span>⏱ ort. ${st.avgGap?st.avgGap+' gün':'—'}</span>
+      <span>👤 ${eh(st.topStaff)}</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="rdClientPrint('${String(c.id).replace(/['"\\]/g,'')}')">🖨 Yazdır</button>
     </div>
-    ${c.notes?`<div style="background:rgba(212,169,106,0.07);border:1px solid rgba(212,169,106,0.2);border-radius:8px;padding:9px 13px;font-size:0.81rem;color:var(--gold);margin-bottom:14px">📝 ${c.notes}</div>`:""}
-    <div style="font-weight:700;font-size:0.95rem;color:var(--soft);margin-bottom:11px">Appointment History</div>
-    <div class="timeline">${appts.length===0?`<p style="color:var(--muted);font-size:0.83rem">No appointments yet.</p>`:
-    appts.slice(0,6).map(a=>`
-      <div class="tl-item">
-        <div class="tl-dot" style="background:${a.status==='completed'?'rgba(110,203,138,0.12)':'rgba(122,170,232,0.1)'}">
-          ${a.status==='completed'?"✓":a.status==='cancelled'?"✕":"●"}
-        </div>
-        <div class="tl-body">
-          <div class="tl-title">${a.service}${a.autoRebooked?' <span class="badge badge-mint" style="font-size:0.62rem">Auto</span>':""}</div>
-          <div class="tl-sub">${fDT(a.datetime)} · ${a.duration}min · ₺${a.price} · ${a.staff}</div>
-        </div>
-        ${statusBadge(a.status)}
-      </div>`).join("")}
+    ${c.notes?`<div style="background:rgba(212,169,106,0.07);border:1px solid rgba(212,169,106,0.2);border-radius:8px;padding:9px 13px;font-size:0.81rem;color:var(--gold);margin-bottom:10px">📝 ${eh(c.notes)}</div>`:""}
+    ${drift}
+    ${sec('GELECEK', future.map(a=>row(a,false)).join('')+pendingRb.map(provRow).join(''))}
+    ${sec('BUGÜN', todayList.map(a=>row(a, a.status==='completed')).join(''), true)}
+    ${sec('GEÇMİŞ', past.map(a=>row(a,true)).join(''))}
+    ${appts.length===0&&!pendingRb.length?'<p style="color:var(--muted);font-size:0.83rem">Henüz randevu yok.</p>':''}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+      ${showP?stat('₺'+st.spend.toLocaleString('tr-TR'),'toplam'):''}
+      ${stat(st.done.length,'ziyaret')}
+      ${stat(st.noShows,'gelmedi')}
+      ${stat(st.cancels,'iptal')}
+      ${showP?stat(st.done.length?'₺'+Math.round(st.spend/st.done.length).toLocaleString('tr-TR'):'—','ort. harcama'):''}
+      ${stat(st.first?fDate(st.first):'—','ilk ziyaret')}
+      ${stat(st.daysSince!=null?st.daysSince+' gün':'—','son ziyaretten beri')}
     </div>`;
   openModal("mClientDetail");
+}
+
+// 🖨 A clean one-page summary — read-only, prices only for the owner.
+function rdClientPrint(id){
+  const c=cObj(id); if(!c) return;
+  const appts=rdClientAppts(c.id);
+  const st=_cdStats(c, appts);
+  const showP=rdSeePrices();
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const rows=appts.map(a=>{
+    const tag=a.noShow?'Gelmedi':(a.status==='cancelled'?'İptal':(a.status==='completed'?'✓':'●'));
+    return '<tr'+((a.status==='cancelled'||a.noShow)?' style="color:#999;"':'')+'><td>'+fDT(a.datetime)+'</td><td>'+esc(a.service)+'</td><td>'+esc(a.staff||'—')+'</td>'
+      +(showP?'<td style="text-align:right;">'+(a.status==='completed'?('₺'+(parseFloat(a.price)||0).toLocaleString('tr-TR')):'—')+'</td>':'')
+      +'<td>'+tag+'</td></tr>';
+  }).join('');
+  const w=window.open('','_blank','width=760,height=900');
+  if(!w) return;
+  w.document.write('<html><head><title>'+esc(c.name)+' — Royal Diamond</title><style>'
+    +'body{font-family:Arial,sans-serif;padding:24px;color:#222;}h1{font-size:18px;margin:0 0 4px;}'
+    +'.sub{color:#666;font-size:12px;margin-bottom:14px;}table{width:100%;border-collapse:collapse;font-size:12px;}'
+    +'th,td{border-bottom:1px solid #ddd;padding:5px 7px;text-align:left;}th{background:#f5f5f5;}'
+    +'.tot{margin-top:12px;font-size:12px;color:#444;}'
+    +'</style></head><body>'
+    +'<h1>👑 Royal Diamond Nail Studio — '+esc(c.name)+'</h1>'
+    +'<div class="sub">📞 '+esc(c.phone||'—')+' · 🎂 '+(c.birthday?fDate(c.birthday+'T00:00'):'—')+' · '+new Date().toLocaleDateString('tr-TR')+'</div>'
+    +'<table><tr><th>Tarih</th><th>Hizmet</th><th>Personel</th>'+(showP?'<th style="text-align:right;">Fiyat</th>':'')+'<th>Durum</th></tr>'+rows+'</table>'
+    +'<div class="tot">'+st.done.length+' ziyaret · '+st.noShows+' gelmedi · '+st.cancels+' iptal'
+    +(showP?' · toplam ₺'+st.spend.toLocaleString('tr-TR')+(st.done.length?' · ort. ₺'+Math.round(st.spend/st.done.length).toLocaleString('tr-TR'):''):'')
+    +(st.avgGap?' · ort. aralık '+st.avgGap+' gün':'')+'</div>'
+    +'</body></html>');
+  w.document.close();
+  setTimeout(function(){ try{ w.print(); }catch(e){} },300);
 }
 
 function quickBook(cid){openModal("mAppt");setTimeout(()=>{document.getElementById("a-client").value=cid;},80);}
@@ -8376,6 +8600,10 @@ function saveAppt(){
   appointments.push(a);
   try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
   saveAll();
+  // Saat ver: this booking resolves a pending rebook — flip it to booked so
+  // the queue badge drops; everything downstream (reminders, confirmation)
+  // already happened through this normal path.
+  try{ if(window._rbResolving&&typeof rbMarkBooked==='function'){ rbMarkBooked(window._rbResolving, a.id); window._rbResolving=null; } }catch(e){}
   closeModal("mAppt");
   if(a.birthday){
     toast("🎂","DOĞUM GÜNÜ RANDEVUSU!",`${cName(cid)} — doğum gününde geliyor! %25 indirim uygulanacak 🎉`,"g");
@@ -8399,29 +8627,34 @@ function saveAppt(){
 }
 
 let rebookPending=null;
+// ── The checkout panel state: what the "Sonraki randevu" row has answered ──
+// null until a button is pressed — the pre-selected 3/4 hafta is only a gold
+// SUGGESTION; the receptionist still has to give it one confirming tap, which
+// is what keeps ✓ Çıkışı Tamamla honest (grey until answered).
+let _ckState=null;
 function showRebookModal(a, c){
   rebookPending={appt:a,client:c};
-  const sug=add3W(a.datetime, a.staff, (typeof rdSvcDur==='function'?rdSvcDur(a.service):60));
-  const sugDate=new Date(sug);
-  const sugDay=sugDate.toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  const sugTime=sugDate.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  _ckState={sel:null,targetDate:null,source:null,declineReason:null};
   document.getElementById("rb-info").innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.84rem;">
       <div><span style="color:var(--muted)">Müşteri:</span> <strong>${c?.name}</strong></div>
       <div><span style="color:var(--muted)">Hizmet:</span> <strong>${a.service}</strong></div>
       <div><span style="color:var(--muted)">Personel:</span> <strong>${a.staff}</strong></div>
       <div><span style="color:var(--muted)">Süre:</span> <strong>1 saat</strong></div>
-    </div>
-    <div style="margin-top:10px;background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.25);border-radius:8px;padding:10px 12px;">
-      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:4px;">🔄 Önerilen Sonraki Randevu (3 hafta · Uygun slot)</div>
-      <div style="color:var(--waLight);font-weight:700;font-size:0.95rem;">${sugDay}</div>
-      <div style="color:var(--mint);font-size:0.88rem;">🕐 ${sugTime} — ${a.staff}</div>
     </div>`;
-  document.getElementById("rb-dt").value=sug;
   // Show the price already recorded for this visit (and never leave a stale
   // figure from a previous rebook sitting in the box).
   const _rbP=document.getElementById("rb-price");
   if(_rbP) _rbP.value = (a.price>0 ? a.price : (a._takingsAmount>0 ? a._takingsAmount : ''));
+  // Reset the row and pre-suggest 3/4 hafta from this client's own rhythm.
+  const sug=rbSuggestSource(a);
+  ['rbk-3w','rbk-4w','rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b){b.classList.remove('rbk-sel','rbk-suggest');}});
+  const sb=document.getElementById(sug==='4w'?'rbk-4w':'rbk-3w'); if(sb) sb.classList.add('rbk-suggest');
+  const dEl=document.getElementById('rbk-decline'); if(dEl) dEl.style.display='none';
+  const nEl=document.getElementById('rbk-decline-note'); if(nEl){nEl.style.display='none';nEl.value='';}
+  document.querySelectorAll('#rbk-decline .rbk-chip').forEach(ch=>ch.classList.remove('rbk-sel'));
+  const tEl=document.getElementById('rbk-target'); if(tEl) tEl.textContent='';
+  rdCkGate();
   openModal("mRebook");
 }
 
@@ -8478,15 +8711,24 @@ function satPick(val){
 }
 
 function completeAppt(id){
-  const a=appointments.find(x=>x.id===id);const c=cObj(a.clientId);
-  // A price already on the record means Done IS the checkout — hold the
-  // completion itself until the satisfaction answer is in. (Done with no
-  // price completes as before; the gate then sits on the price entry.)
-  if((parseFloat(a.price)||0)>0 && !a.sat){
-    satAsk(a, function(){ completeAppt(id); });
-    return;
-  }
+  // Done no longer completes anything on its own: it opens the checkout
+  // panel, and NOTHING is written until ✓ Çıkışı Tamamla passes all three
+  // gates (memnuniyet, ödeme, sonraki randevu). The completion and the
+  // rebook intent then land in the SAME save — a crash can never leave one
+  // without the other.
+  const a=appointments.find(x=>String(x.id)===String(id));if(!a)return;
+  const c=cObj(a.clientId);
+  if(a.status==='completed'){ toast('ℹ','Zaten tamamlandı','Bu randevunun çıkışı zaten yapılmış.',''); return; }
+  showRebookModal(a, c);
+}
+
+// Everything a completion mutates, exactly as Done used to do it — now run
+// from ✓ Çıkışı Tamamla (or the ✏ price-edit path, which completes first and
+// only then opens the panel for the rebook answer).
+function rdFinalizeCompletion(a){
+  const c=cObj(a.clientId);
   a.status="completed";
+  try{ a._ckBy=localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){}
   apptTouch(a);   // stamp the status itself, so the Done survives every merge
   const ci=clients.findIndex(x=>x.id===a.clientId);
   if(ci>=0){
@@ -8518,7 +8760,6 @@ function completeAppt(id){
       toast('⭐','Yorum isteği hazır','Dashboard\u2019daki ⭐ kartından tek tuşla gönderin','g');
     }
   }catch(e){}
-  showRebookModal(a, c);
   saveAll();renderAppts();renderDash();updateApptBadge();
   toast("✅","Treatment Done!",uiOn('loyalty')?`+${Math.floor((a.price||200)/10)} points for ${c?.name}`:`${c?.name||''}`,"g");
 
@@ -8601,96 +8842,411 @@ function buildRebookReminderText(c, a){
   return "Say\u0131n m\u00fc\u015fterimiz, "+gun+" saat "+saat+"'da "+(a.service||"randevunuz")+" i\u00e7in randevunuz bulunmaktad\u0131r. Royal Diamond Nail Studio, G\u00f6nyeli K.K.T.C. Tel: 0548 893 3333\nOnline randevu: https://bulentmcan-bit.github.io/royal-diamond/booking.html";
 }
 
-function confirmRebook(){
-  const{client}=rebookPending;
+// ═══════════════════════════════════════════════════════════════════════════
+// SONRAKİ RANDEVU — the mandatory third gate at checkout (rdns_rebook_v1)
+// At the desk we capture INTENT only: a date, never a time. The time is
+// assigned after the customer has left, from the dashboard queue.
+// ═══════════════════════════════════════════════════════════════════════════
+// RB-SLICE-START (tests slice from here — keep the marker)
+const RB_KEY='rdns_rebook_v1';
+const RB_KEY_OK=/^[A-Za-z0-9_-]+$/;
+function rbDevId(){ try{ return localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){ return 'anon'; } }
+// Digits and underscores ONLY — a decimal id once poisoned every set() in
+// this app wholesale (24 Aug 2026). Never Math.random() bare in a key.
+function rebookId(){ return String(Date.now())+'_'+Math.floor(Math.random()*100000); }
+let rbStore=(function(){
+  try{
+    const o=JSON.parse(localStorage.getItem(RB_KEY)||'{}');
+    if(o&&typeof o==='object'){ if(!o.items||typeof o.items!=='object'||Array.isArray(o.items)) o.items={}; return o; }
+  }catch(e){}
+  return {items:{}};
+})();
+function rbItems(){ return Object.keys(rbStore.items||{}).map(k=>rbStore.items[k]).filter(Boolean); }
+function rbPersist(){
+  // No payload leaves with a key Firebase would refuse — assert BEFORE the push.
+  try{ Object.keys(rbStore.items||{}).forEach(function(k){ if(!RB_KEY_OK.test(k)){ console.error('[rebook] 🧹 geçersiz anahtar atıldı:',k); delete rbStore.items[k]; } }); }catch(e){}
+  rbStore._ts=Date.now(); rbStore._by=rbDevId();
+  try{ localStorage.setItem(RB_KEY, JSON.stringify(rbStore)); }catch(e){}
+  try{ if(typeof syncPush==='function') syncPush(RB_KEY, rbStore); }catch(e){}
+}
+function rbUpsert(item){
+  if(!item||!item.id||!RB_KEY_OK.test(String(item.id))){ console.error('[rebook] kayıt REDDEDİLDİ — geçersiz id:',item&&item.id); return false; }
+  item.id=String(item.id);
+  item._uts=Math.max(Date.now(), (((rbStore.items||{})[item.id]||{})._uts||0)+1);
+  rbStore.items[item.id]=item;
+  rbPersist();
+  return true;
+}
+// Per item, never replace the whole object: for each incoming item keep the
+// side with the higher _uts. An item missing on one side is an ADDITION on
+// the other, never a deletion (deletes travel as status:"deleted").
+// Returns true when the LOCAL side holds anything the cloud copy lacks, so
+// the caller pushes the merged truth back once.
+function rbMergeRemote(remote){
+  if(!remote||typeof remote!=='object') return false;
+  const rit=(remote.items&&typeof remote.items==='object'&&!Array.isArray(remote.items))?remote.items:{};
+  let changed=false, localWon=false;
+  Object.keys(rit).forEach(function(k){
+    if(!RB_KEY_OK.test(k)) return;
+    const rv=rit[k]; if(!rv||typeof rv!=='object') return;
+    const lv=(rbStore.items||{})[k];
+    if(!lv||((rv._uts||0)>(lv._uts||0))){ rbStore.items[k]=rv; changed=true; }
+    else if((lv._uts||0)>(rv._uts||0)) localWon=true;
+  });
+  Object.keys(rbStore.items||{}).forEach(function(k){ if(!(k in rit)) localWon=true; });
+  if(changed){ try{ localStorage.setItem(RB_KEY, JSON.stringify(rbStore)); }catch(e){} }
+  return localWon;
+}
+// RB-SLICE-END
+
+function rbFmtDate(ds){
+  try{ return new Date(ds+'T12:00').toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'}); }catch(e){ return ds||''; }
+}
+function rbReasonLabel(r){
+  const m={tasindi:_('rb_r_tasindi'),fiyat:_('rb_r_fiyat'),memnun_degil:_('rb_r_memnun'),dusunecek:_('rb_r_dusunecek'),diger:_('rb_r_diger')};
+  return m[r]||r||'';
+}
+// Which of 3/4 hafta to pre-suggest: this client's previous two COMPLETED
+// visits for the same service — a gap of 25+ days means she is a 4-week girl.
+function rbSuggestSource(a){
+  try{
+    const done=appointments.filter(x=>x&&x.status==='completed'&&String(x.clientId)===String(a.clientId)&&x.service===a.service)
+      .sort((x,y)=>new Date(y.datetime)-new Date(x.datetime));
+    if(done.length>=2){
+      const gap=(new Date(done[0].datetime)-new Date(done[1].datetime))/86400000;
+      if(gap>=25) return '4w';
+    }
+  }catch(e){}
+  return '3w';
+}
+// Target = appointment day + N days; a Sunday lands on the Saturday BEFORE.
+function rbTargetFrom(a,days){
+  const d=new Date(a.datetime); d.setDate(d.getDate()+days);
+  if(d.getDay()===0) d.setDate(d.getDate()-1);
+  return dtLocal(d).slice(0,10);
+}
+function rdCkGate(){
+  const b=document.getElementById('btn-checkout-done'); if(!b) return;
+  let ok=false;
+  if(_ckState){
+    if(_ckState.sel==='no') ok=!!_ckState.declineReason;
+    else if(_ckState.sel) ok=!!_ckState.targetDate;
+  }
+  b.disabled=!ok; b.style.opacity=ok?'1':'.45';
+}
+function rdCkMark(btnId){
+  ['rbk-3w','rbk-4w','rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b)b.classList.remove('rbk-sel');});
+  const b=document.getElementById(btnId); if(b) b.classList.add('rbk-sel');
+}
+function rdCkPick(which){
+  if(!rebookPending||!_ckState) return;
+  const a=rebookPending.appt;
+  const dEl=document.getElementById('rbk-decline');
+  const tEl=document.getElementById('rbk-target');
+  if(which==='3w'||which==='4w'){
+    _ckState.sel=which; _ckState.source=which; _ckState.declineReason=null;
+    _ckState.targetDate=rbTargetFrom(a, which==='3w'?21:28);
+    if(dEl) dEl.style.display='none';
+    rdCkMark(which==='3w'?'rbk-3w':'rbk-4w');
+    if(tEl) tEl.textContent='📅 '+rbFmtDate(_ckState.targetDate)+' — '+_('rb_time_later');
+  } else if(which==='pick'){
+    rdCkMark('rbk-pick');
+    if(dEl) dEl.style.display='none';
+    rdCkCalOpen(a);
+    return; // the gate opens when a day is actually tapped
+  } else { // İstemiyor — deliberately the slower path
+    _ckState.sel='no'; _ckState.source=null; _ckState.targetDate=null;
+    rdCkMark('rbk-no');
+    if(dEl) dEl.style.display='block';
+    if(tEl) tEl.textContent='';
+  }
+  rdCkGate();
+}
+function rdCkReason(r){
+  if(!_ckState) return;
+  _ckState.declineReason=r;
+  document.querySelectorAll('#rbk-decline .rbk-chip').forEach(ch=>ch.classList.toggle('rbk-sel', ch.getAttribute('data-r')===r));
+  const n=document.getElementById('rbk-decline-note');
+  if(n) n.style.display = r==='diger' ? 'block' : 'none';
+  rdCkGate();
+}
+// ── "Tarih seç" overlay: only the next 8 weeks from tomorrow, Sundays closed,
+//    the 3-week day outlined in gold. One tap, one close, no time anywhere. ──
+function rdCkCalOpen(a){
+  const grid=document.getElementById('rbk-cal-grid'); if(!grid) return;
+  const t3=rbTargetFrom(a,21);
+  const start=new Date(); start.setHours(12,0,0,0); start.setDate(start.getDate()+1);
+  const MONTHS=(T[currentLang]||T.tr).months||T.tr.months;
+  let html='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;font-size:.7rem;color:var(--muted);text-align:center;font-weight:800;">'
+    +['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map(d=>'<div>'+d+'</div>').join('')+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">';
+  const lead=(start.getDay()===0?6:start.getDay()-1);
+  for(let i=0;i<lead;i++) html+='<div></div>';
+  for(let i=0;i<56;i++){
+    const d=new Date(start); d.setDate(start.getDate()+i);
+    const ds=dtLocal(d).slice(0,10);
+    const sun=d.getDay()===0;
+    const is3=ds===t3;
+    html+='<div class="rbk-cal-day'+(sun?' rbk-off':'')+(is3?' rbk-3w':'')+'"'
+      +(sun?'':' onclick="rdCkCalTap(\''+ds+'\')"')
+      +' title="'+d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'})+'">'
+      +'<div style="text-align:center;line-height:1.15;">'
+      +'<div style="font-size:.58rem;color:var(--muted);min-height:.7em;">'+((d.getDate()===1||i===0)?MONTHS[d.getMonth()].slice(0,3):'')+'</div>'
+      +d.getDate()
+      +(is3?'<div style="font-size:.52rem;color:#d9a441;font-weight:800;">'+_('rb_3w')+'</div>':'')
+      +'</div></div>';
+  }
+  html+='</div>';
+  grid.innerHTML=html;
+  document.getElementById('rbkCalOv').style.display='flex';
+}
+function rdCkCalTap(ds){
+  if(!_ckState) return;
+  _ckState.sel='picked'; _ckState.source='picked'; _ckState.targetDate=ds; _ckState.declineReason=null;
+  const dEl=document.getElementById('rbk-decline'); if(dEl) dEl.style.display='none';
+  rdCkMark('rbk-pick');
+  const tEl=document.getElementById('rbk-target'); if(tEl) tEl.textContent='📅 '+rbFmtDate(ds)+' — '+_('rb_time_later');
+  rdCkCalClose(); rdCkGate();
+}
+function rdCkCalClose(){ const o=document.getElementById('rbkCalOv'); if(o) o.style.display='none'; }
+
+// ── ✓ Çıkışı Tamamla — all three gates, then checkout + rebook in one save ──
+function rdCheckoutDone(){
+  if(!rebookPending||!_ckState) return;
+  const client=rebookPending.client;
   // Re-resolve against the live array — a cloud snapshot may have replaced
-  // `appointments` since this modal opened (see apptById).
-  const appt = apptById(rebookPending.appt.id) || rebookPending.appt;
-  let dt=document.getElementById("rb-dt").value;
-  const price = parseInt(document.getElementById("rb-price").value)||0;
-  if(!dt){toast("⚠️","Set a date","","r");return;}
-  // 😊 MANDATORY: money about to reach the till for the first time — the
-  // satisfaction answer comes first, then this whole click re-runs itself.
+  // `appointments` since this panel opened (see apptById).
+  const appt=apptById(rebookPending.appt.id)||rebookPending.appt;
+  const answered=(_ckState.sel==='no'&&_ckState.declineReason)||(_ckState.sel&&_ckState.sel!=='no'&&_ckState.targetDate);
+  if(!answered){ rdCkGate(); return; }
+  const price=parseInt(document.getElementById('rb-price')?.value)||0;
+  // 😊 MANDATORY — the same parked-continuation gate as before: no till entry
+  // before the satisfaction answer; the button press re-runs this whole click.
   if(price>0 && appt.staff && !appt._takingsAmount && !appt.sat){
-    satAsk(appt, function(){ confirmRebook(); });
+    satAsk(appt, function(){ rdCheckoutDone(); });
     return;
   }
-  // Save price to the completed appointment and add to daily takings
-  if(price > 0){ appt.price = price; appt._pts = Date.now(); }
-  if(price > 0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount = price; appt._pts = Date.now(); }
-  if(price > 0) priceOvrSet(appt);
-  // Create the rebooked appointment
-  const newApptId=Date.now();
-  const newAppt={id:newApptId,clientId:appt.clientId,service:appt.service,datetime:dt,duration:(typeof rdSvcDur==='function'?rdSvcDur(appt.service):60),price:appt.price,staff:appt.staff,status:"confirmed",r24:false,r1:false,autoRebooked:true,parentId:appt.id};
-  appointments.push(newAppt);
-  try{ _rdLogApptCreate(newAppt,'rebook'); }catch(e){}
+  // Money — unchanged path; diAutoAdd asks the ödeme question (pmAsk) itself.
+  if(price>0){ appt.price=price; appt._pts=Date.now(); }
+  if(price>0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount=price; appt._pts=Date.now(); }
+  if(price>0) priceOvrSet(appt);
+  // Completion — the Done path lands here still 'confirmed'; the ✏ Fiyat path
+  // arrives already completed and only owes the rebook answer.
+  if(appt.status!=='completed') rdFinalizeCompletion(appt);
+  // The rebook intent — written in the SAME synchronous save as the checkout.
+  const item={
+    id: rebookId(),
+    clientId: String(appt.clientId),
+    fromApptId: String(appt.id),
+    staff: appt.staff||'',
+    service: appt.service||'',
+    duration: Math.min(60, parseInt(appt.duration)||60),
+    targetDate: _ckState.sel==='no' ? null : _ckState.targetDate,
+    source: _ckState.sel==='no' ? null : _ckState.source,
+    status: _ckState.sel==='no' ? 'declined' : 'pending',
+    declineReason: _ckState.sel==='no' ? _ckState.declineReason : null,
+    declineNote: _ckState.sel==='no' ? String(document.getElementById('rbk-decline-note')?.value||'').slice(0,120) : '',
+    createdAt: Date.now(), createdBy: rbDevId(),
+    resolvedAt: null, resolvedApptId: null
+  };
+  rbUpsert(item);
   saveAll();
-
-  // 1. Immediately queue a WhatsApp booking confirmation
-  const confirmEntry={id:appt.clientId+"_rbconf_"+newApptId,clientId:appt.clientId,type:"rebook",subtype:"confirm",text:"",status:"pending",appt:newAppt};
-  msgQueue.push(confirmEntry);
-
-  // 2. Schedule a 24h reminder for the day before the new appointment
-  //    Store it — buildWAQueue will pick it up automatically when the time comes
-  //    But also pre-generate it now and mark it as scheduled
-  const reminderEntry={id:appt.clientId+"_rbremind_"+newApptId,clientId:appt.clientId,type:"rebook",subtype:"reminder",text:"",status:"scheduled",appt:newAppt,sendAt:new Date(new Date(dt).getTime()-24*60*60*1000).toISOString()};
-  msgQueue.push(reminderEntry);
-
-  closeModal("mRebook");rebookPending=null;
-  // Done flow is over for this visit — if the customer still owes from before,
-  // ask now, while she is standing at the till.
-  setTimeout(function(){ try{dpKasaCheck(appt.id);}catch(e){} },350);
-  toast("🔄","Auto-Rebooked!",`${client?.name} → ${fDT(dt)}`,"g");
-  renderAppts();renderDash();renderPayments();updateApptBadge();
-
-  // Auto-generate the confirmation message and open WhatsApp immediately
-  (async()=>{
-    confirmEntry.status="loading";
-    renderWA();
-    confirmEntry.text=buildRebookConfirmText(client, newAppt);
-    confirmEntry.status="pending";
-    // Pre-generate the reminder too
-    reminderEntry.text=buildRebookReminderText(client, newAppt);
-    renderWA();
-    toast("💬","WhatsApp Ready!",`Confirmation message for ${client?.name} ready to send.`,"g");
-    // Auto-open WhatsApp with confirmation
-    const c=cObj(appt.clientId);
-    if(c&&confirmEntry.text){
-      setTimeout(()=>{
-        window.open(`https://wa.me/${c.phone}?text=${encodeURIComponent(confirmEntry.text)}`,"_blank");
-        confirmEntry.status="sent";
-        waSentToday++;
-        renderWA();
-        toast("✅","Confirmation Sent!",`Booking confirmed to ${c.name} via WhatsApp.`,"g");
-      },800);
-    }
-  })();
+  const _dpId=appt.id;
+  closeModal('mRebook'); rebookPending=null; _ckState=null;
+  // If the customer still owes from before, ask while she is at the till.
+  setTimeout(function(){ try{dpKasaCheck(_dpId);}catch(e){} },350);
+  if(item.status==='pending'){
+    toast('📌',_('rb_provisional'),(client?.name||'')+' → '+rbFmtDate(item.targetDate)+' · '+_('rb_time_later'),'g');
+  } else {
+    toast('🙅‍♀️',_('rb_decline'),(client?.name||'')+' — '+rbReasonLabel(item.declineReason),'');
+  }
+  try{renderAppts();renderDash();renderPayments();updateApptBadge();}catch(e){}
+  try{renderRebookQueue();renderRebookTiles();}catch(e){}
+  try{ const pg=document.querySelector('.page.active'); if(pg&&pg.id==='page-calendar') renderCalendar(); }catch(e){}
 }
 
-function skipRebook(){
-  const _dpApptId = (rebookPending&&rebookPending.appt) ? rebookPending.appt.id : null;
-  if(rebookPending){
-    const appt = apptById(rebookPending.appt.id) || rebookPending.appt;
-    const priceEl = document.getElementById("rb-price");
-    const price = parseInt(priceEl?.value)||0;
-    // 😊 MANDATORY — same gate as confirmRebook: no till entry before the
-    // satisfaction answer; the button press re-runs this whole function.
-    if(price > 0 && appt.staff && !appt._takingsAmount && !appt.sat){
-      satAsk(appt, function(){ skipRebook(); });
-      return;
-    }
-    if(price > 0 && appt.staff && !appt._takingsAmount){
-      appt.price = price;
-      diAutoAdd(appt.staff, price, appt.datetime, appt.id);
-      appt._takingsAmount = price;
-      appt._pts = Date.now();
-      priceOvrSet(appt);
-      saveAll();renderAppts();renderDash();renderPayments();
-      toast("💰","Fiyat Kaydedildi",`₺${price} Daily Takings'e eklendi.`,"g");
-    }
+// ── Provisional bookings on the calendar: pending rebooks on their targetDate ──
+function rbPendingOnDay(d){
+  try{
+    const ds=dtLocal(d).slice(0,10);
+    return rbItems().filter(i=>i.status==='pending'&&i.targetDate===ds);
+  }catch(e){ return []; }
+}
+
+// ── Kesinleştirilecek Randevular — the dashboard queue ──
+function renderRebookQueue(){
+  const list=document.getElementById('rbq-list'), cnt=document.getElementById('rbq-count');
+  if(!list) return;
+  const items=rbItems();
+  const pending=items.filter(i=>i.status==='pending').sort((a,b)=>String(a.targetDate||'').localeCompare(String(b.targetDate||'')));
+  const t=todayStr();
+  const declinedToday=items.filter(i=>i.status==='declined'&&dtLocal(new Date(i.createdAt||0)).slice(0,10)===t);
+  if(cnt) cnt.textContent=pending.length;   // does not clear until the queue is empty
+  const eh=(typeof dtEscHtml==='function')?dtEscHtml:(s=>String(s||''));
+  let h='';
+  pending.forEach(i=>{
+    const c=cObj(i.clientId);
+    h+='<div class="r24-item" style="align-items:center;">'
+      +'<div class="r24-left"><div class="r24-name">'+eh(c?c.name:'?')+'</div>'
+      +'<div class="r24-meta"><span style="font-weight:700;color:#d9a441;">📅 '+rbFmtDate(i.targetDate)+'</span>'
+      +'<span>💅 '+eh(i.service||'')+'</span><span>👤 '+eh(i.staff||'—')+'</span>'
+      +'<span style="color:var(--muted)">'+(i.source==='picked'?_('rb_src_picked'):(i.source==='4w'?_('rb_4w'):_('rb_3w')))+'</span></div></div>'
+      +'<div class="r24-actions">'
+      +'<button class="btn btn-gold btn-sm" onclick="rbGiveTime(\''+i.id+'\')">🕐 '+_('rb_give_time')+'</button>'
+      +'<button class="btn btn-ghost btn-sm" title="Sadece patron silebilir" onclick="rbDelete(\''+i.id+'\')">🗑</button>'
+      +'</div></div>';
+  });
+  declinedToday.forEach(i=>{
+    const c=cObj(i.clientId);
+    h+='<div class="r24-item" style="opacity:.5;align-items:center;">'
+      +'<div class="r24-left"><div class="r24-name">'+eh(c?c.name:'?')+'</div>'
+      +'<div class="r24-meta"><span>🙅‍♀️ '+_('rb_decline')+' — '+rbReasonLabel(i.declineReason)+(i.declineNote?' · '+eh(i.declineNote):'')+'</span>'
+      +'<span>👤 '+eh(i.staff||'—')+'</span></div></div>'
+      +'<div class="r24-actions">'+((c&&c.phone)?'<button class="btn btn-wa btn-sm" onclick="rbCall(\''+i.id+'\')">📞 '+_('rb_call')+'</button>':'')+'</div>'
+      +'</div>';
+  });
+  list.innerHTML=h||'<div class="r24-empty">✅ Bekleyen ön randevu yok.</div>';
+}
+// Saat ver — the EXISTING new-appointment dialog, pre-filled; only the time
+// is still open. Saving goes through the normal path, so confirmations,
+// reminders and everything downstream work untouched.
+function rbGiveTime(id){
+  const it=(rbStore.items||{})[String(id)];
+  if(!it||it.status!=='pending') return;
+  openModal('mAppt');
+  window._rbResolving=String(id);
+  setTimeout(function(){
+    const c=cObj(it.clientId);
+    const hid=document.getElementById('a-client'); if(hid) hid.value=it.clientId;
+    const cs=document.getElementById('a-client-search'); if(cs) cs.value=c?c.name:'';
+    const dd=document.getElementById('a-client-dropdown'); if(dd) dd.style.display='none';
+    try{ apptSvcSet(it.service||''); }catch(e){ const sv=document.getElementById('a-service'); if(sv) sv.value=it.service||''; }
+    const st=document.getElementById('a-staff'); if(st) st.value=it.staff||'';
+    const du=document.getElementById('a-dur'); if(du) du.value=String(Math.min(60,it.duration||60));
+    const dt=document.getElementById('a-dt');
+    if(dt){ dt.value=(it.targetDate||todayStr())+'T09:00'; try{ dt.focus(); }catch(e){} }
+  },160);
+  toast('🕐',_('rb_give_time'),'Tarih ve bilgiler hazır — müşteriyle SAATİ kararlaştırıp kaydedin.','g');
+}
+// The normal booking path calls this straight after the appointment is
+// created, flipping the rebook to booked so the badge drops by one.
+function rbMarkBooked(id, apptId){
+  const it=(rbStore.items||{})[String(id)];
+  if(!it) return;
+  it.status='booked';
+  it.resolvedApptId=String(apptId);
+  it.resolvedAt=Date.now();
+  rbUpsert(it);
+  try{ renderRebookQueue(); renderRebookTiles(); }catch(e){}
+  toast('✅',_('rb_queue_title'),cName(it.clientId)+' — saat verildi, gerçek randevu oluştu.','g');
+}
+// Reception may resolve; only the owner may delete. A delete travels as a
+// status so the per-item merge can never resurrect it.
+function rbDelete(id){
+  if(!ownerPin()) return;
+  const it=(rbStore.items||{})[String(id)];
+  if(!it) return;
+  it.status='deleted';
+  rbUpsert(it);
+  try{ renderRebookQueue(); renderRebookTiles(); renderDash(); }catch(e){}
+}
+function rbCall(id){
+  const it=(rbStore.items||{})[String(id)];
+  const c=it?cObj(it.clientId):null;
+  if(!c||!c.phone) return;
+  const ph=(typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone)):String(c.phone).replace(/\D/g,'');
+  window.open('https://wa.me/'+ph,'_blank');
+}
+
+// ── Measurement — the numbers that actually change desk behaviour ──
+function rbStats(){
+  const t=todayStr();
+  const items=rbItems().filter(i=>i.status!=='deleted');
+  const createdToday=items.filter(i=>dtLocal(new Date(i.createdAt||0)).slice(0,10)===t);
+  const taken=createdToday.filter(i=>i.status!=='declined');
+  const declined=createdToday.filter(i=>i.status==='declined');
+  const pending=items.filter(i=>i.status==='pending');
+  const checkouts=appointments.filter(a=>a&&a.status==='completed'&&apptDayStr(a)===t);
+  const todaysAll=appointments.filter(a=>a&&apptDayStr(a)===t&&a.status!=='cancelled');
+  return {taken,declined,pending,checkouts,todaysAll};
+}
+function renderRebookTiles(){
+  try{
+    const s=rbStats();
+    const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+    const rate=s.checkouts.length?Math.round(100*s.taken.length/s.checkouts.length):null;
+    set('s-rb-rate', rate==null?'—':'%'+rate);
+    set('s-rb-ratio', s.checkouts.length+' / '+s.todaysAll.length);
+    set('s-rb-pending', String(s.pending.length));
+    set('s-rb-declined', String(s.declined.length));
+  }catch(e){}
+}
+function rbDeclineBreakdown(days){
+  const since=Date.now()-days*86400000;
+  const counts={};
+  let total=0;
+  rbItems().forEach(i=>{
+    if(i.status!=='declined'||(i.createdAt||0)<since) return;
+    counts[i.declineReason||'?']=(counts[i.declineReason||'?']||0)+1; total++;
+  });
+  const text=Object.keys(counts).map(k=>rbReasonLabel(k)+' '+counts[k]).join(' · ');
+  return {total,counts,text};
+}
+function rbShowDeclineBreakdown(){
+  let m=document.getElementById('rbDeclModal');
+  if(!m){
+    m=document.createElement('div'); m.id='rbDeclModal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(8,9,8,.7);z-index:9996;display:none;align-items:center;justify-content:center;padding:16px;';
+    m.addEventListener('click',function(ev){ if(ev.target===m) m.style.display='none'; });
+    document.body.appendChild(m);
   }
-  closeModal("mRebook");rebookPending=null;
-  if(_dpApptId!=null) setTimeout(function(){ try{dpKasaCheck(_dpApptId);}catch(e){} },350);
+  const today=rbDeclineBreakdown(1), week=rbDeclineBreakdown(7);
+  m.innerHTML='<div style="background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;max-width:380px;width:100%;color:var(--text);" onclick="event.stopPropagation()">'
+    +'<div style="font-weight:800;font-size:1rem;margin-bottom:10px;">🙅‍♀️ '+_('rb_decline')+' — nedenler</div>'
+    +'<div style="font-size:.85rem;margin-bottom:6px;"><strong>Bugün:</strong> '+(today.total?today.text:'—')+'</div>'
+    +'<div style="font-size:.85rem;"><strong>Son 7 gün:</strong> '+(week.total?week.text:'—')+'</div>'
+    +'<button class="btn btn-ghost" style="margin-top:14px;width:100%;" onclick="document.getElementById(\'rbDeclModal\').style.display=\'none\'">Kapat</button>'
+    +'</div>';
+  m.style.display='flex';
+}
+// The block appended to the end-of-day report that goes to the owner.
+function rbReportText(){
+  try{
+    const s=rbStats();
+    const rate=s.checkouts.length?Math.round(100*s.taken.length/s.checkouts.length):0;
+    let msg='─────────────────────\n';
+    msg+='📌 *Sonraki Randevu*\n';
+    msg+='• Oran: '+s.taken.length+'/'+s.checkouts.length+' (%'+rate+')\n';
+    msg+='• Çıkış / randevu: '+s.checkouts.length+' / '+s.todaysAll.length+'\n';
+    msg+='• Saat verilmemiş (kuyrukta kalan): '+s.pending.length+'\n';
+    const db=rbDeclineBreakdown(1);
+    msg+='• İstemiyor: '+s.declined.length+(db.total?' ('+db.text+')':'')+'\n';
+    // Per receptionist — the device identity every push already logs with.
+    const byDev={};
+    s.checkouts.forEach(a=>{ const d=a._ckBy||'?'; byDev[d]=byDev[d]||{c:0,t:0}; byDev[d].c++; });
+    s.taken.forEach(i=>{ const d=i.createdBy||'?'; byDev[d]=byDev[d]||{c:0,t:0}; byDev[d].t++; });
+    const me=rbDevId();
+    const devLine=Object.keys(byDev).map(d=>{
+      const pct=byDev[d].c?Math.round(100*byDev[d].t/byDev[d].c):0;
+      return (d===me?'bu cihaz':d)+' '+byDev[d].t+'/'+byDev[d].c+' (%'+pct+')';
+    }).join(' · ');
+    if(devLine) msg+='• Resepsiyon: '+devLine+'\n';
+    // Per technician
+    const bySt={};
+    s.checkouts.forEach(a=>{ const k=a.staff||'?'; bySt[k]=bySt[k]||{c:0,t:0}; bySt[k].c++; });
+    s.taken.forEach(i=>{ const k=i.staff||'?'; bySt[k]=bySt[k]||{c:0,t:0}; bySt[k].t++; });
+    const stLine=Object.keys(bySt).map(k=>{
+      const pct=bySt[k].c?Math.round(100*bySt[k].t/bySt[k].c):0;
+      return k+' '+bySt[k].t+'/'+bySt[k].c+' (%'+pct+')';
+    }).join(' · ');
+    if(stLine) msg+='• Personel: '+stLine+'\n';
+    // Weekly decline summary rides the Saturday report.
+    if(new Date().getDay()===6){
+      const wk=rbDeclineBreakdown(7);
+      if(wk.total) msg+='• Haftalık istemiyor ('+wk.total+'): '+wk.text+'\n';
+    }
+    return msg;
+  }catch(e){ return ''; }
 }
 
 function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
@@ -9646,7 +10202,11 @@ function renderMonthView(){
     // "Real" activity = manually-booked confirmed + completed. Auto-rebooked projections shown separately.
     const real = dayAll.filter(a=>(a.status==='confirmed'&&!a.autoRebooked)||a.status==='completed').length;
     const auto = dayAll.filter(a=>a.status==='confirmed'&&a.autoRebooked).length;
+    // Ön randevu: a separate strip on the day — never a slot, never counted.
+    const prov = (typeof rbPendingOnDay==='function')?rbPendingOnDay(dt):[];
+    const provTitle = prov.map(p=>_('rb_provisional')+' · '+cName(p.clientId)+' · '+(p.staff||'—')).join('\n');
     return `<div class="cal-day${c.other?' other-month':''}${isToday?' today':''}" onclick="calDayClick('${dt.toISOString()}')" style="min-height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;">
+      ${prov.length?`<div class="rbk-prov" title="${provTitle}">⏳ ${prov.length} ${_('rb_provisional').toLowerCase()}</div>`:''}
       <div style="font-size:1.4rem;font-weight:800;color:${isToday?'#4caf50':'#1a1a1a'};">${c.day}</div>
       ${real>0?`<div style="background:#4caf50;color:white;border-radius:12px;padding:2px 10px;font-size:0.75rem;font-weight:700;">${real} appt${real>1?'s':''}</div>`:''}
       ${auto>0?`<div style="background:#f0f0f0;color:#999;border:1px dashed #ccc;border-radius:12px;padding:1px 8px;font-size:0.68rem;font-weight:700;" title="Otomatik yeniden randevu — henüz onaylanmadı">🔄 ${auto} oto</div>`:''}
@@ -9672,9 +10232,13 @@ function renderWeekView(){
   const hdrEl = document.getElementById('cal-week-hdr');
   hdrEl.innerHTML = '<div></div>' + weekDays.map(d=>{
     const isT = sameDay(d,today);
+    // Ön randevu chips live in this strip at the top of the day — they must
+    // not occupy or block a time slot in the hour grid below.
+    const prov = (typeof rbPendingOnDay==='function')?rbPendingOnDay(d):[];
     return `<div class="cal-week-day-hdr${isT?' today':''}">
       <div class="cal-week-day-name">${DAYS_SHORT[d.getDay()===0?6:d.getDay()-1]}</div>
       <div class="cal-week-day-num${isT?' today-num':''}">${d.getDate()}</div>
+      ${prov.map(p=>`<div class="rbk-prov" style="margin:2px auto 0;max-width:95%;" title="${_('rb_provisional')} · ${cName(p.clientId)} · ${p.staff||'—'}">⏳ ${cName(p.clientId).split(' ')[0]} · ${p.staff||'—'}</div>`).join('')}
     </div>`;
   }).join('');
 
@@ -9889,7 +10453,7 @@ function renderDayGrid(){
         const col = TECH_COLORS[tech]||{bg:"rgba(37,211,102,0.15)",border:"var(--wa)",text:"var(--waLight)"};
         html += `<div class="dsg-appt status-${a.status}"
           style="top:${topPx}px;height:${heightPx}px;background:${col.bg};border-left-color:${col.border};color:${col.text};"
-          onclick="event.stopPropagation();showClientDetail(${a.clientId})"
+          onclick="event.stopPropagation();showClientDetail('${String(a.clientId).replace(/['"\\]/g,'')}')"
           title="${c?.name} — ${a.service} — ${fDT(a.datetime)}">
           <div class="dsg-appt-name">${c?.name||"?"}</div>
           ${heightPx>30?`<div class="dsg-appt-svc">${a.service}</div>`:""}
@@ -9964,6 +10528,14 @@ const T = {
     btn_add_client:"+ Müşteri Ekle", btn_import:"📥 Excel/CSV İçe Aktar",
     btn_save_client:"✓ Kaydet", btn_cancel:"İptal",
     btn_confirm_rebook:"🔄 Onayla & Yeniden Randevu Al", btn_skip_rebook:"Atla",
+    rb_next_appt:"Sonraki randevu *", rb_3w:"3 hafta", rb_4w:"4 hafta",
+    rb_pick:"📅 Tarih seç", rb_decline:"İstemiyor", rb_done:"✓ Çıkışı Tamamla",
+    rb_time_later:"saat sonra verilecek", rb_queue_title:"Kesinleştirilecek Randevular",
+    rb_give_time:"Saat ver", rb_provisional:"Ön randevu", rb_call:"Ara",
+    rb_src_picked:"müşteri günü gösterdi", rb_why:"Neden istemiyor? (zorunlu)",
+    rb_r_tasindi:"Taşındı", rb_r_fiyat:"Fiyat", rb_r_memnun:"Memnun değil",
+    rb_r_dusunecek:"Düşünecek", rb_r_diger:"Diğer",
+    rb_rate:"Sonraki randevu oranı", rb_ratio:"Çıkış / randevu", rb_pending:"Saat verilmemiş",
     lbl_name:"Ad Soyad *", lbl_phone:"WhatsApp No *", lbl_birthday:"Doğum Günü",
     lbl_notes:"Notlar / Tercihler", lbl_tier:"Sadakat Kademesi", lbl_points:"Puanlar",
     lbl_client:"Müşteri *", lbl_service:"Hizmet *", lbl_datetime:"Tarih & Saat *",
@@ -10025,6 +10597,14 @@ const T = {
     btn_add_client:"+ Add Client", btn_import:"📥 Import Excel/CSV",
     btn_save_client:"✓ Save Client", btn_cancel:"Cancel",
     btn_confirm_rebook:"🔄 Confirm & Rebook", btn_skip_rebook:"Skip",
+    rb_next_appt:"Next appointment *", rb_3w:"3 weeks", rb_4w:"4 weeks",
+    rb_pick:"📅 Pick a date", rb_decline:"Doesn't want", rb_done:"✓ Complete Checkout",
+    rb_time_later:"time set later", rb_queue_title:"Appointments To Finalise",
+    rb_give_time:"Set time", rb_provisional:"Provisional", rb_call:"Call",
+    rb_src_picked:"client picked the day", rb_why:"Why not? (required)",
+    rb_r_tasindi:"Moved away", rb_r_fiyat:"Price", rb_r_memnun:"Not satisfied",
+    rb_r_dusunecek:"Will think about it", rb_r_diger:"Other",
+    rb_rate:"Next-appointment rate", rb_ratio:"Checkouts / appts", rb_pending:"No time yet",
     lbl_name:"Full Name *", lbl_phone:"WhatsApp Number *", lbl_birthday:"Birthday",
     lbl_notes:"Notes / Preferences", lbl_tier:"Loyalty Tier", lbl_points:"Points",
     lbl_client:"Client *", lbl_service:"Service *", lbl_datetime:"Date & Time *",
@@ -10086,6 +10666,14 @@ const T = {
     btn_add_client:"+ Thêm khách", btn_import:"📥 Nhập Excel/CSV",
     btn_save_client:"✓ Lưu", btn_cancel:"Hủy",
     btn_confirm_rebook:"🔄 Xác nhận & Đặt lại", btn_skip_rebook:"Bỏ qua",
+    rb_next_appt:"Lịch hẹn tiếp theo *", rb_3w:"3 tuần", rb_4w:"4 tuần",
+    rb_pick:"📅 Chọn ngày", rb_decline:"Không muốn", rb_done:"✓ Hoàn tất thanh toán",
+    rb_time_later:"giờ sẽ chọn sau", rb_queue_title:"Lịch hẹn cần chốt giờ",
+    rb_give_time:"Chọn giờ", rb_provisional:"Hẹn tạm", rb_call:"Gọi",
+    rb_src_picked:"khách chọn ngày", rb_why:"Vì sao không? (bắt buộc)",
+    rb_r_tasindi:"Đã chuyển đi", rb_r_fiyat:"Giá", rb_r_memnun:"Không hài lòng",
+    rb_r_dusunecek:"Sẽ suy nghĩ", rb_r_diger:"Khác",
+    rb_rate:"Tỷ lệ hẹn tiếp theo", rb_ratio:"Thanh toán / lịch hẹn", rb_pending:"Chưa có giờ",
     lbl_name:"Họ và tên *", lbl_phone:"Số WhatsApp *", lbl_birthday:"Sinh nhật",
     lbl_notes:"Ghi chú / Sở thích", lbl_tier:"Hạng khách hàng", lbl_points:"Điểm",
     lbl_client:"Khách hàng *", lbl_service:"Dịch vụ *", lbl_datetime:"Ngày & Giờ *",
@@ -10147,6 +10735,14 @@ const T = {
     btn_add_client:"+ Προσθήκη Πελάτη", btn_import:"📥 Εισαγωγή Excel/CSV",
     btn_save_client:"✓ Αποθήκευση", btn_cancel:"Άκυρο",
     btn_confirm_rebook:"🔄 Επιβεβαίωση & Επανακράτηση", btn_skip_rebook:"Παράλειψη",
+    rb_next_appt:"Επόμενο ραντεβού *", rb_3w:"3 εβδομάδες", rb_4w:"4 εβδομάδες",
+    rb_pick:"📅 Επιλογή ημερομηνίας", rb_decline:"Δεν θέλει", rb_done:"✓ Ολοκλήρωση εξόδου",
+    rb_time_later:"η ώρα ορίζεται αργότερα", rb_queue_title:"Ραντεβού προς οριστικοποίηση",
+    rb_give_time:"Ορισμός ώρας", rb_provisional:"Προσωρινό ραντεβού", rb_call:"Κλήση",
+    rb_src_picked:"η πελάτισσα έδειξε τη μέρα", rb_why:"Γιατί όχι; (υποχρεωτικό)",
+    rb_r_tasindi:"Μετακόμισε", rb_r_fiyat:"Τιμή", rb_r_memnun:"Δυσαρεστημένη",
+    rb_r_dusunecek:"Θα το σκεφτεί", rb_r_diger:"Άλλο",
+    rb_rate:"Ποσοστό επόμενου ραντεβού", rb_ratio:"Έξοδοι / ραντεβού", rb_pending:"Χωρίς ώρα",
     lbl_name:"Ονοματεπώνυμο *", lbl_phone:"Αριθμός WhatsApp *", lbl_birthday:"Γενέθλια",
     lbl_notes:"Σημειώσεις / Προτιμήσεις", lbl_tier:"Επίπεδο Πιστότητας", lbl_points:"Πόντοι",
     lbl_client:"Πελάτης *", lbl_service:"Υπηρεσία *", lbl_datetime:"Ημερομηνία & Ώρα *",
@@ -10232,7 +10828,11 @@ function setLang(lang){
    ['flabel-a-client','lbl_client'],['flabel-a-service','lbl_service'],
    ['flabel-a-dt','lbl_datetime'],['flabel-a-dur','lbl_duration'],
    ['flabel-a-price','lbl_price'],['flabel-a-staff','lbl_staff'],
-   ['flabel-rb-dt','lbl_next_appt'],['flabel-rb-pay','lbl_payment'],
+   ['flabel-rb-next','rb_next_appt'],['flabel-rb-pay','lbl_payment'],
+   ['rbk-3w','rb_3w'],['rbk-4w','rb_4w'],['rbk-pick','rb_pick'],['rbk-no','rb_decline'],
+   ['rbk-decline-why','rb_why'],['btn-checkout-done','rb_done'],
+   ['s-rb-rate-lbl','rb_rate'],['s-rb-ratio-lbl','rb_ratio'],
+   ['s-rb-pending-lbl','rb_pending'],['s-rb-declined-lbl','rb_decline'],
    ['flabel-inv-client','lbl_client'],['flabel-inv-appt','lbl_appt'],
    ['flabel-inv-method','lbl_payment'],['flabel-inv-disc','lbl_discount'],
    ['flabel-inv-notes','lbl_inv_notes'],
@@ -10243,8 +10843,6 @@ function setLang(lang){
   ].forEach(([id,key])=>{ const e=document.getElementById(id); if(e) e.textContent=_(key); });
   [['btn-cancel-client','btn_cancel'],['btn-save-client','btn_save_client'],
    ['btn-cancel-appt','btn_cancel'],['btn-save-appt','btn_book'],
-   ['btn-skip-rebook','btn_skip_rebook'],['btn-confirm-rebook','btn_confirm_rebook'],
-   ['rb-banner-text','rebook_active'],
    ['clients-page-add-btn','btn_add_client'],['clients-page-import-btn','btn_import'],
    ['tx-select-label','select_client'],
   ].forEach(([id,key])=>{ const e=document.getElementById(id); if(e) e.textContent=_(key); });
@@ -12622,6 +13220,8 @@ function dtBuildWAMessage(){
   msg += '─────────────────────\n';
   msg += '💰 *GRAND TOTAL: '+dtFmt(total)+'*\n';
   msg += '📊 '+ops.reduce((s,o)=>s+o.entries.length,0)+' transactions · '+ops.filter(o=>o.entries.length>0).length+' staff\n';
+  // Sonraki randevu figures ride the same end-of-day report to the owner.
+  try{ if(typeof rbReportText==='function') msg += rbReportText(); }catch(e){}
   msg += '─────────────────────\n';
   msg += '✅ Sent via Royal Diamond Dashboard';
   return msg;
