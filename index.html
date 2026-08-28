@@ -17206,6 +17206,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 #cbm-music .mus-set:hover{background:rgba(212,169,106,.24)}
 #cbm-music .mus-where{margin-top:4px;font-size:.6rem;color:#6d6559;text-align:center;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Which laptop is the speaker. The green badge lives on the one device that
+   actually plays; every other machine gets the claim button instead, and a
+   line that says where the sound really is — a silent music strip must never
+   look broken when it is simply not the speaker. */
+#cbm-music .mus-role{margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+#mus-badge{flex:none;font-size:.62rem;font-weight:800;color:#5fcb8c;
+  border:1px solid rgba(46,158,91,.5);background:rgba(46,158,91,.12);
+  border-radius:7px;padding:3px 7px}
+#mus-claim{flex:1;font-size:.66rem !important;padding:6px 8px !important}
+#mus-role-note{flex:0 0 100%;font-size:.6rem;font-weight:700;color:#8d8574;text-align:center}
+#mus-role-note.offline{color:#f2708b}
 #mus-pick{display:none}
 /* The boss's master levels for the salon speaker. Gold-edged so it reads as
    management's, and labelled as the ROOM's sound — the one mistake this panel
@@ -17218,6 +17229,40 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 #cbm-remote input[type=range]{width:100%;accent-color:#d4a96a;height:16px}
 #cbm-remote .r-warn{color:#f2708b;font-size:.66rem;font-weight:800;padding-top:4px}
 #cbm-remote .r-warn:empty{display:none}
+/* The music remote, under the boss's level sliders. It renders what reception
+   REPORTS, never what was asked for — a play button that lies green is worse
+   than one that says nothing. */
+#cbm-remote .rmus-now{margin-top:3px;color:#f3e3c8;font-size:.7rem;font-weight:800;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cbm-remote .rmus-btns{display:flex;align-items:center;gap:6px;margin-top:5px}
+#cbm-remote .rmus-btns button{flex:none;cursor:pointer;border-radius:8px;padding:5px 10px;
+  border:1px solid rgba(212,169,106,.5);background:rgba(212,169,106,.12);color:#d4a96a;
+  font-family:inherit;font-weight:800;font-size:.8rem;line-height:1}
+#cbm-remote .rmus-btns button:hover{background:rgba(212,169,106,.24)}
+#cbm-remote .rmus-btns button:disabled{opacity:.35;cursor:default}
+#cbm-remote .rmus-btns button:disabled:hover{background:rgba(212,169,106,.12)}
+#cbm-remote #rmus-shuf.off{opacity:.38}
+#rmus-ack{flex:1;text-align:right;color:#f2708b;font-size:.64rem;font-weight:800}
+#rmus-badge{margin-left:6px;font-size:.62rem;font-weight:800;color:#5fcb8c;
+  border:1px solid rgba(46,158,91,.5);background:rgba(46,158,91,.12);
+  border-radius:7px;padding:2px 6px;vertical-align:1px}
+#cbm-remote .rmus-listbtn{display:block;width:100%;margin-top:7px;border-radius:8px;
+  padding:6px 9px;cursor:pointer;border:1px solid rgba(212,169,106,.5);
+  background:rgba(212,169,106,.12);color:#d4a96a;font-family:inherit;
+  font-weight:800;font-size:.68rem;text-align:center}
+#cbm-remote .rmus-listbtn:hover{background:rgba(212,169,106,.24)}
+#cbm-remote .rmus-listbtn:disabled{opacity:.35;cursor:default}
+#rmus-filter{display:block;width:100%;margin-top:6px;border-radius:8px;
+  border:1px solid rgba(212,169,106,.4);background:#1c1a14;color:#f3e3c8;
+  padding:7px 9px;font-family:inherit;font-size:.72rem;font-weight:700;box-sizing:border-box}
+#rmus-filter::placeholder{color:#8d8574;font-weight:600}
+#rmus-tracks{margin-top:5px;max-height:40vh;overflow-y:auto;border:1px solid #2a2a22;
+  border-radius:8px;background:#1c1a14;font-size:.68rem;color:#8d8574;padding:2px}
+#rmus-tracks .rmus-row{padding:6px 8px;border-radius:6px;cursor:pointer;color:#f3e3c8;
+  font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rmus-tracks .rmus-row:hover{background:rgba(212,169,106,.14)}
+#rmus-tracks .rmus-row.cur{background:rgba(46,158,91,.15);color:#5fcb8c}
+#rmus-tracks .rmus-trunc{padding:6px 8px;color:#f0c14b;font-weight:800}
 #cbm-body{padding:8px 10px 4px}
 .cbm-row{display:flex;align-items:center;gap:9px;border:1px solid #2a2a22;background:#1c1a14;
   border-radius:10px;padding:7px 9px;margin-bottom:6px;cursor:pointer;flex-wrap:wrap}
@@ -17293,6 +17338,14 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     <button class="mus-set" onclick="musPickFolder()">🎵 Müzik klasörü seç</button>
     <button class="mus-set" id="mus-clear" style="display:none" onclick="musClearLib()">🗑 Kütüphaneyi temizle</button>
     <div class="mus-where" id="mus-where"></div>
+    <!-- One device is the speaker; the rest are remotes. The badge marks the
+         speaker, the button claims the role, and the note says where the
+         sound is when it is not here. -->
+    <div class="mus-role">
+      <span id="mus-badge" style="display:none">♪ Çalıyor</span>
+      <button id="mus-claim" type="button" style="display:none" onclick="musClaim()">📻 Bu cihazdan çal</button>
+      <div id="mus-role-note" style="display:none"></div>
+    </div>
     <!-- The fallback for a browser without the folder picker. It cannot be
          remembered between visits, so it is only reached if the good one is
          missing. -->
@@ -17311,6 +17364,28 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     <label>Anons sesi <input type="range" min="0" max="100" step="1" id="raud-voice"></label>
     <label>Zil sesi <input type="range" min="0" max="100" step="1" id="raud-tones"></label>
     <div class="r-warn" id="raud-warn"></div>
+    <!-- The music remote. Buttons send commands over rdns_audio_v1/cmd; the
+         line above them renders ONLY what reception reports back in /state.
+         No answer inside ten seconds says "Cevap yok" rather than pretending. -->
+    <div id="rmus" style="display:none">
+      <div class="r-ttl" style="margin-top:9px">🎵 MÜZİK KUMANDASI
+        <span id="rmus-badge" style="display:none">♪ Resepsiyon çalıyor</span></div>
+      <div class="rmus-now" id="rmus-now">–</div>
+      <div class="rmus-btns">
+        <button id="rmus-prev"   type="button" title="Önceki parça">⏮</button>
+        <button id="rmus-toggle" type="button" title="Çal / duraklat">▶</button>
+        <button id="rmus-next"   type="button" title="Sonraki parça">⏭</button>
+        <button id="rmus-shuf"   type="button" title="Karışık çalma">🔀</button>
+        <span id="rmus-ack"></span>
+      </div>
+      <label>Müzik sesi <input type="range" min="0" max="100" step="1" id="rmus-vol"></label>
+      <button id="rmus-list-btn" type="button" class="rmus-listbtn">▾ Parça listesi</button>
+      <div id="rmus-list" style="display:none">
+        <input id="rmus-filter" type="text" placeholder="Parça ara…" autocomplete="off">
+        <div id="rmus-tracks"></div>
+      </div>
+      <div class="r-warn" id="rmus-warn"></div>
+    </div>
   </div>
   <div id="cbm-body"></div>
   <div class="cbm-foot">
@@ -17471,10 +17546,16 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // the first touch of the day: a browser will not start audio without a
     // gesture, so this is tried on every one until it takes.
     try{
-      if(Music && !Music.wanted() && localStorage.getItem('rdns_cbm_musicon')==='1') Music.play();
-      // Music that is wanted but stalled — a comeback the browser refused —
-      // is restarted by the same gesture: inside a real tap the browser says yes.
-      else if(Music && Music.wanted() && !Music.playing()) Music.revive();
+      // Only on the device that IS the speaker. Without this, the comeback ran
+      // on every tap of every machine — the exact way the owner's laptop would
+      // start singing in his office the morning after reception claimed the role.
+      var _mayP=true; try{ var _rr=window.rdnsAudioRole; if(_rr) _mayP=!!_rr.mayPlay(); }catch(e){}
+      if(_mayP){
+        if(Music && !Music.wanted() && localStorage.getItem('rdns_cbm_musicon')==='1') Music.play();
+        // Music that is wanted but stalled — a comeback the browser refused —
+        // is restarted by the same gesture: inside a real tap the browser says yes.
+        else if(Music && Music.wanted() && !Music.playing()) Music.revive();
+      }
     }catch(e){}
     try{
       if(!_ac){
@@ -17656,6 +17737,30 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var note='', noteT=null;   // a short-lived line in the title slot: what just went wrong
     var lib=false;             // true when the tracks come from the permanent library (OPFS)
     var copying=null;          // {done,total} while the stick is being copied in
+
+    // One device is the speaker; every other machine is a remote. The role
+    // module (rdns_audio_v1/player) answers who; until it has loaded, or on a
+    // laptop from before the feature, the answer is yes — nothing changes.
+    // Every path that can start sound goes through here, so a laptop that
+    // stopped being the speaker can never sing over the real one.
+    function mayPlay(){
+      try{ var r=window.rdnsAudioRole; return r ? !!r.mayPlay() : true; }catch(e){ return true; }
+    }
+
+    // The auto-updater reloads this page on every new version, and Chrome then
+    // refuses audio until somebody touches the page. That refusal used to die
+    // in an empty catch — the salon stayed silent and nothing said why. Now
+    // every refused play() lands here: logged, and handed up to the bar that
+    // asks for the one click Chrome wants.
+    var refusedAt=0;   // the per-second revive retries too — log once, not sixty times a minute
+    function refused(err){
+      if(!err || err.name!=='NotAllowedError') return;
+      if(Date.now()-refusedAt>30000){
+        refusedAt=Date.now();
+        try{ console.warn('[music] play() reddedildi (NotAllowedError) — tarayıcı sayfaya bir dokunuş bekliyor'); }catch(e){}
+      }
+      try{ if(window.rdnsMusicBlocked) window.rdnsMusicBlocked(); }catch(e){}
+    }
 
     function audio(){
       if(el) return el;
@@ -17922,7 +18027,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     }
     function step(dir){
       var a=audio();
-      if(!a || !tracks.length) return;
+      if(!a || !tracks.length || !mayPlay()) return;
       at+=dir;
       if(at>=order.length){
         if(!C.music.loop){ wanted=false; paintMusic(); return; }
@@ -17940,7 +18045,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         // A refused play must at least repaint, so the stalled state shows
         // instead of hiding behind the last track's title; revive() and the
         // next real tap take it from there.
-        if(wanted) { var p=a.play(); if(p&&p.catch) p.catch(function(){ paintMusic(); }); }
+        if(wanted) { var p=a.play(); if(p&&p.catch) p.catch(function(err){ refused(err); paintMusic(); }); }
         // The old blob is let go only once the element has moved off it, or the
         // element reports the release as a broken file.
         if(old) setTimeout(function(){ try{ URL.revokeObjectURL(old); }catch(e){} }, 2000);
@@ -17973,12 +18078,15 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 
     return {
       play:function(){
+        // Not the speaker: say so and touch nothing — not even wanted, or the
+        // stalled state would paint on a machine that is right to be silent.
+        if(!mayPlay()){ this.note('🔊 Hoparlör başka cihazda — müzik oradan çalıyor'); return; }
         wanted=true;
         try{ localStorage.setItem('rdns_cbm_musicon','1'); }catch(e){}
         var a=audio();
         if(!a || !tracks.length){ paintMusic(); return; }
         if(at<0) step(1);
-        else { var p=a.play(); if(p&&p.catch) p.catch(function(){}); }
+        else { var p=a.play(); if(p&&p.catch) p.catch(refused); }
         paintMusic();
       },
       pause:function(){
@@ -17988,6 +18096,26 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         paintMusic();
       },
       next:function(){ step(1); },
+      prev:function(){ step(-1); },
+      // Which track — as an index into the FILE-ORDER list, the same number
+      // the published library rows carry, whatever the shuffle order is.
+      index:function(){ return (at>=0 && at<order.length) ? order[at] : -1; },
+      // Jump straight to one track by that same index — the owner tapping a
+      // row in the remote list. It means "play this", so wanted comes on.
+      playTrack:function(i){
+        if(!mayPlay()) return;
+        i=Math.floor(Number(i));
+        if(!isFinite(i) || i<0 || i>=tracks.length) return;
+        var p=order.indexOf(i);
+        if(p<0) return;
+        wanted=true;
+        try{ localStorage.setItem('rdns_cbm_musicon','1'); }catch(e){}
+        at=p-1;   // step(1) lands exactly on p, bounds and all
+        step(1);
+      },
+      // Display names only, in file order — what the remote library publishes.
+      // Never the files, never a path.
+      names:function(){ return tracks.map(function(t){ return C.trackName(t.name); }); },
       wanted:function(){ return wanted; },
       playing:function(){ return !!(el && !el.paused && !el.ended); },
       title:function(){
@@ -18139,12 +18267,13 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       // every real tap via unlockAudio — a browser that refuses a
       // programmatic play still honours one made inside a gesture.
       revive:function(){
+        if(!mayPlay()) return;
         if(!wanted || ducks>0 || scanning || !tracks.length) return;
         if(!el || !el.paused) return;
         if(at<0){ step(1); return; }
         try{
           var p=el.play();
-          if(p&&p.catch) p.catch(function(){ paintMusic(); });
+          if(p&&p.catch) p.catch(function(err){ refused(err); paintMusic(); });
         }catch(e){}
       }
     };
@@ -18154,6 +18283,59 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   // cbmMusic.play(), .setVolume(50), .level() — handy when the salon rings up
   // to say the music is behaving oddly.
   window.cbmMusic=Music;
+  // The remote-control module claims the speaker role inside a click and needs
+  // that click to double as the browser's unlock gesture.
+  window.cbmUnlockAudio=unlockAudio;
+
+  /* ── the reload stall bar ────────────────────────────────────────────────
+     The auto-updater reloads this page on every new version. Chrome then
+     refuses audio until the page is touched, and the music used to simply
+     never come back — nobody at the desk knew why, and the owner's remote
+     could not fix it because a Firebase callback is not a gesture. So a
+     refused comeback now puts an unmissable bar across the very top of the
+     screen (the panel itself may be closed), and the FIRST click, key or
+     touch anywhere resumes the music and takes the bar down. */
+  (function(){
+    var bar=null, armed=false;
+    function resume(){
+      try{ console.log('[music] dokunuş geldi — müzik devam ettiriliyor'); }catch(e){}
+      try{ unlockAudio(); }catch(e){}
+      remove();
+    }
+    function remove(){
+      if(bar && bar.parentNode) bar.parentNode.removeChild(bar);
+      bar=null;
+      if(armed){
+        armed=false;
+        ['click','keydown','touchstart'].forEach(function(ev){
+          document.removeEventListener(ev, resume, true);
+        });
+      }
+    }
+    window.rdnsMusicBlocked=function(){
+      if(bar) return;
+      try{ if(!Music.wanted()) return; }catch(e){ return; }
+      bar=document.createElement('div');
+      bar.id='mus-resume-bar';
+      bar.textContent='▶ Müziği başlatmak için tıklayın';
+      bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483000;'+
+        'background:#d4a96a;color:#14120d;font-family:inherit;font-weight:800;'+
+        'font-size:1.05rem;text-align:center;padding:15px 10px;cursor:pointer;'+
+        'box-shadow:0 3px 14px rgba(0,0,0,.45)';
+      document.body.appendChild(bar);
+      if(!armed){
+        armed=true;
+        // Capture phase: ANY gesture anywhere counts, whatever it was aimed at.
+        ['click','keydown','touchstart'].forEach(function(ev){
+          document.addEventListener(ev, resume, true);
+        });
+      }
+      try{ console.warn('[music] otomatik devam engellendi — "tıklayın" çubuğu gösterildi'); }catch(e){}
+    };
+    // The bar must not outlive its reason: the second the music is genuinely
+    // running again — whichever path brought it back — it goes.
+    setInterval(function(){ try{ if(bar && Music.playing()) remove(); }catch(e){} },1000);
+  })();
 
   // The baseline came down to sit further under the room. Changing the number in
   // crown-config.js is only half of it: a laptop where somebody has touched the
@@ -18274,6 +18456,12 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   // itself; reception taps once and never hears the word folder.
   window.musStart=function(){
     unlockAudio();
+    // Not the speaker: play() below says where the sound really is, and this
+    // machine is not walked through reconnects and pickers it has no use for.
+    try{
+      var _r=window.rdnsAudioRole;
+      if(_r && !_r.mayPlay()){ Music.play(); return; }
+    }catch(e){}
     Music.play();
     if(Music.hasList()) return;
     if(Music.needsPermission()){
@@ -19683,7 +19871,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     wt=setTimeout(function(){
       var m=document.getElementById('raud-music'), vo=document.getElementById('raud-voice'), to=document.getElementById('raud-tones');
       if(!m||!vo||!to) return;
-      db.ref(PATH).set({
+      // update(), never set(): the key now also carries the music remote's
+      // player/cmd/state/library sections, and a slider move must not wipe them.
+      db.ref(PATH).update({
         musicVolume: Math.max(0,Math.min(100,Math.round(Number(m.value)||0))),
         voiceVolume: Math.max(0,Math.min(1,(Math.round(Number(vo.value)||0))/100)),
         tonesVolume: Math.max(0,Math.min(1,(Math.round(Number(to.value)||0))/100)),
@@ -19701,21 +19891,24 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     try{ db.ref('.info/serverTimeOffset').on('value',function(s){ off=Number(s.val())||0; }); }catch(e){}
     db.ref(PATH).on('value',function(snap){
       var v=snap.val();
-      if(!v){
+      // "Levels were never written" is judged on the levels themselves, not on
+      // the key being empty — the music remote's sections live here too now.
+      // And the seed is an update(), never a set(), for the same reason.
+      if(!v || v.musicVolume==null){
         // Empty: the boss's machine writes the levels the salon is ALREADY
         // running on, so remote control begins from today's sound — never
         // from a guess, and never from silence.
         if(OWNER && !seeded){
           seeded=true;
           var curMusic=21; try{ curMusic=cbmMusic.volume(); }catch(e){}
-          db.ref(PATH).set({
+          db.ref(PATH).update({
             musicVolume: curMusic,
             voiceVolume: (C.voice&&isFinite(C.voice.volume))?C.voice.volume:0.6,
             tonesVolume: (C.tones&&isFinite(C.tones.volume))?C.tones.volume:0.6,
             ts: firebase.database.ServerValue.TIMESTAMP
           }).catch(function(e){ console.warn('[audio] seed failed (rules?):',e); });
         }
-        return;
+        if(!v) return;
       }
       seeded=true;
       apply(v);
@@ -19738,6 +19931,383 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
         if(s) s.addEventListener('input', pushLevels);
       });
     }
+    (function waitFb(){
+      try{
+        if(window.firebase && firebase.apps && firebase.apps.length){
+          firebase.auth().onAuthStateChanged(function(u){ if(u && !u.isAnonymous) start(); });
+          return;
+        }
+      }catch(e){}
+      setTimeout(waitFb,500);
+    })();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
+  else boot();
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     REMOTE MUSIC CONTROL — rdns_audio_v1 (player / cmd / state / library)
+     ---------------------------------------------------------------------
+     The sound comes out of ONE machine — reception's, the laptop on the
+     speaker. Every other signed-in device is a remote: it sends commands and
+     shows what is playing, but never plays a note and never holds the music.
+
+     player  — who the speaker is. Claimed with "Bu cihazdan çal", kept alive
+               by a 15-second heartbeat; a heartbeat over 60s old means the
+               speaker is gone, and every screen says so instead of pretending.
+     cmd     — one command object, overwritten never queued. The player acts
+               on an id it has not seen whose stamp is under a minute old, so
+               a reconnecting device replaying its past cannot restart the
+               music by itself. Ids follow the 24 Aug rule: digits and an
+               underscore, asserted before every push, no decimals ever.
+     state   — what is ACTUALLY happening, written by the player on change and
+               at least every 15s. The owner's panel renders only this: a
+               command with no answer shows "Cevap yok", never a false green.
+     library — the track NAMES (index + name, nothing else), published by the
+               player only when the list itself changes, so the owner can see
+               and tap tracks that live in an OPFS his browser cannot reach.
+
+     Sections are written one ref each — never the whole key — and the older
+     level sliders above were moved to update() for the same reason.
+     ═══════════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  var PATH='rdns_audio_v1';
+  var db=null, off=0;
+  var OWNER=false; try{ OWNER=localStorage.getItem('rdns_msg_role')==='owner'; }catch(e){}
+  var myId=(function(){
+    try{
+      var d=localStorage.getItem('rdns_device_id_v1');
+      if(!d){ d=Math.random().toString(36).slice(2,8); localStorage.setItem('rdns_device_id_v1',d); }
+      return d;
+    }catch(e){ return 'anon'; }
+  })();
+
+  var player=null, playerLoaded=false;   // Firebase's answer, once it has spoken
+  var state=null, library=null;
+  var lastCmdId=null;        // player side: an id once seen is seen for good
+  var pending=null;          // remote side: {sentAt, baseTs} of the command in flight
+  var lastStateSig='', lastStatePush=0, lastLibSig=null;
+  var listOpen=false, filterTxt='';
+
+  function now(){ return Date.now()+off; }
+  function M(){ return window.cbmMusic||null; }
+  function byId(id){ return document.getElementById(id); }
+  function TS(){ return firebase.database.ServerValue.TIMESTAMP; }
+  function esc(s){ return String(s==null?'':s).replace(/[<>&"']/g,'').slice(0,160); }
+
+  /* ── who the speaker is ─────────────────────────────────────────────────
+     Firebase is the truth once loaded. Before that — a morning reload, a dead
+     connection — the last answer this device SAW holds, cached locally: the
+     laptop that stopped being the speaker yesterday must not sing while it
+     waits for the network, and the real speaker must not fall silent for it. */
+  function playerId(){
+    if(playerLoaded) return (player && player.deviceId) ? String(player.deviceId) : '';
+    try{ return localStorage.getItem('rdns_audio_player_dev')||''; }catch(e){ return ''; }
+  }
+  function isPlayer(){ return playerId()===myId; }
+  function playerLive(){
+    if(!playerLoaded) return !!playerId();
+    if(!player || !player.deviceId) return false;
+    var hb=Number(player.heartbeat)||Number(player.claimedAt)||0;
+    return (now()-hb)<60000;
+  }
+  // The one gate every play() in the music module asks before making a sound.
+  window.rdnsAudioRole={ mayPlay:function(){ var p=playerId(); return !p || p===myId; } };
+
+  /* ── ids: the rule that broke the sync once already ── */
+  function newId(){ return String(Date.now())+'_'+Math.floor(Math.random()*100000); }
+  function goodId(id){ return typeof id==='string' && /^[A-Za-z0-9_-]+$/.test(id); }
+
+  /* ── commands out (any remote) ── */
+  function setAck(t){ var el=byId('rmus-ack'); if(el) el.textContent=t||''; }
+  function send(verb,arg){
+    if(!db) return;
+    var id=newId();
+    if(!goodId(id)) return;   // asserted before EVERY push — no key Firebase refuses
+    pending={sentAt:Date.now(), baseTs:(state&&Number(state.ts))||0};
+    setAck('');
+    db.ref(PATH+'/cmd').set({
+      id:id, verb:String(verb), arg:(arg==null?null:arg), ts:TS(), by:myId
+    }).catch(function(e){
+      pending=null; setAck('Gönderilemedi');
+      try{ console.warn('[music-remote] cmd write failed:',e); }catch(_){}
+    });
+    // Never assume it worked: if reception's state has not moved inside ten
+    // seconds, say so next to the buttons rather than showing a false green.
+    setTimeout(function(){
+      if(!pending || Date.now()-pending.sentAt<9800) return;
+      if(((state&&Number(state.ts))||0)<=pending.baseTs) setAck('Cevap yok');
+      pending=null;
+    },10200);
+  }
+
+  /* ── commands in (the player only) ── */
+  function onCmd(c){
+    if(!c || !isPlayer()) return;
+    if(!goodId(c.id) || c.id===lastCmdId) return;
+    lastCmdId=String(c.id);          // seen is seen — even a stale one never fires later
+    if(now()-(Number(c.ts)||0)>60000) return;   // a reconnecting device replaying its past
+    var m=M(); if(!m) return;
+    var verb=String(c.verb||''), arg=c.arg, n=Number(arg);
+    try{
+      if(verb==='play')       m.play();
+      else if(verb==='pause') m.pause();
+      else if(verb==='next')  m.next();
+      else if(verb==='prev')  m.prev();
+      else if(verb==='volume'){
+        // null and '' are ABSENT, not zero — the same rule the level sliders live by
+        if(arg!=null && arg!=='' && isFinite(n)){
+          m.setVolume(Math.max(0,Math.min(100,Math.round(n))));
+          // a hand moved the knob, remotely: stamped so the older master-level
+          // channel knows this write came later and does not undo it
+          try{ localStorage.setItem('rdns_cbm_musicvol_ts',String(Date.now())); }catch(e){}
+        }
+      }
+      else if(verb==='shuffle') m.setShuffle(arg===1||arg===true||arg==='1');
+      else if(verb==='playTrack'){ if(arg!=null && arg!=='' && isFinite(n)) m.playTrack(Math.floor(n)); }
+    }catch(e){}
+    pushState(true);   // answer at once — the ten-second clock is running on the other side
+  }
+
+  /* ── state and library out (the player only) ── */
+  function musicSnapshot(){
+    var m=M(); if(!m) return null;
+    try{
+      return {
+        playing:    !!m.playing(),
+        trackIndex: (typeof m.index==='function') ? m.index() : -1,
+        trackName:  esc(m.title()||''),
+        trackCount: m.count()||0,
+        volume:     Math.max(0,Math.min(100,Math.round(Number(m.volume())||0))),
+        shuffle:    !!m.shuffled(),
+        // wanted but silent, with tracks in hand and no announcement holding it
+        // down: the autoplay stall, told to the owner instead of hidden
+        stalled:    !!(m.wanted() && m.hasList() && !m.playing() && !m.ducked() && !m.scanning())
+      };
+    }catch(e){ return null; }
+  }
+  function pushState(force){
+    if(!db || !isPlayer()) return;
+    var s=musicSnapshot(); if(!s) return;
+    var sig=JSON.stringify(s);
+    if(!force && sig===lastStateSig && Date.now()-lastStatePush<15000) return;
+    lastStateSig=sig; lastStatePush=Date.now();
+    s.ts=TS();
+    db.ref(PATH+'/state').set(s)
+      .catch(function(e){ try{ console.warn('[music-remote] state write failed:',e); }catch(_){} });
+  }
+  // Names only — never audio, never a path. Written when the list itself
+  // changes (and once if the cloud has none), NEVER on the heartbeat: the
+  // signature comparison is what keeps this from churning.
+  function pushLibrary(){
+    if(!db || !isPlayer()) return;
+    var m=M(); if(!m || typeof m.names!=='function') return;
+    var names=[]; try{ names=m.names()||[]; }catch(e){ return; }
+    if(!names.length && lastLibSig===null) return;   // nothing here and nothing there
+    var truncated=false;
+    if(names.length>500){ names=names.slice(0,500); truncated=true; }
+    var tracks=names.map(function(nm,i){ return {i:i, n:esc(nm)}; });
+    var sig=JSON.stringify(tracks)+(truncated?'+':'');
+    if(sig===lastLibSig) return;
+    lastLibSig=sig;
+    var out={ts:TS(), count:tracks.length, tracks:tracks};
+    if(truncated) out.truncated=true;
+    db.ref(PATH+'/library').set(out)
+      .catch(function(e){ try{ console.warn('[music-remote] library write failed:',e); }catch(_){} });
+  }
+  function libSigOf(v){
+    if(!v || !v.tracks) return null;
+    var arr=[];
+    try{ (v.tracks.forEach?v.tracks:[]).forEach(function(t){ if(t) arr.push({i:Number(t.i)||0, n:String(t.n||'')}); }); }catch(e){}
+    return JSON.stringify(arr)+(v.truncated?'+':'');
+  }
+
+  /* ── claiming the speaker ── */
+  window.musClaim=function(){
+    if(!db){ try{ var mm=M(); if(mm) mm.note('Bağlantı yok — birazdan yeniden deneyin'); }catch(e){} return; }
+    if(!confirm('Müzik bundan sonra BU cihazın hoparlöründen çalsın mı?\n\nSalonda ses resepsiyon bilgisayarından çıkar — bu düğmeye orada basılır.')) return;
+    player={deviceId:myId, claimedAt:now(), heartbeat:now()};
+    playerLoaded=true;
+    try{ localStorage.setItem('rdns_audio_player_dev', myId); }catch(e){}
+    db.ref(PATH+'/player').set({deviceId:myId, claimedAt:TS(), heartbeat:TS()})
+      .catch(function(e){ try{ console.warn('[music-remote] claim failed:',e); }catch(_){} });
+    // The claim tap IS a gesture: whatever was meant to be playing may start
+    // inside it, so claiming the speaker never leaves the room silent.
+    try{ if(window.cbmUnlockAudio) cbmUnlockAudio(); }catch(e){}
+    lastStateSig=''; pushState(true); pushLibrary(); paint();
+  };
+
+  /* ── the owner's panel ── */
+  // Turkish knows two i's, and the search box must not care which one was
+  // typed: MELISA, MELİSA and melısa are all the same track.
+  function trFold(s){
+    return String(s||'').replace(/[İIıŞşĞğÜüÖöÇç]/g,function(c){
+      return {'İ':'i','I':'i','ı':'i','Ş':'s','ş':'s','Ğ':'g','ğ':'g',
+              'Ü':'u','ü':'u','Ö':'o','ö':'o','Ç':'c','ç':'c'}[c]||c;
+    }).toLowerCase();
+  }
+  function renderList(){
+    if(!OWNER || !listOpen) return;
+    var box=byId('rmus-tracks'); if(!box) return;
+    // A list that disagrees with the player's own count is a list mid-change:
+    // say it is being brought up to date rather than showing the wrong one.
+    var fresh = library && library.tracks &&
+                (!state || Number(library.count)===Number(state.trackCount));
+    if(!fresh){ box.textContent='Liste güncelleniyor…'; return; }
+    var q=trFold(filterTxt), curIdx=state?Number(state.trackIndex):-1;
+    box.textContent='';
+    var frag=document.createDocumentFragment(), shown=0;
+    var rows=library.tracks.forEach?library.tracks:[];
+    rows.forEach(function(t){
+      if(!t) return;
+      var name=String(t.n||''), i=Number(t.i);
+      if(q && trFold(name).indexOf(q)<0) return;
+      var row=document.createElement('div');
+      row.className='rmus-row'+(i===curIdx?' cur':'');
+      row.textContent=(i===curIdx?'▶ ':'')+name;   // text only — a name is never HTML
+      row.addEventListener('click',function(){ send('playTrack',i); });
+      frag.appendChild(row);
+      shown++;
+    });
+    if(!shown){ box.textContent = q ? 'Eşleşen parça yok' : 'Liste boş'; return; }
+    box.appendChild(frag);
+    if(library.truncated){
+      var tr=document.createElement('div');
+      tr.className='rmus-trunc';
+      tr.textContent='⚠ Liste 500 parçada kesildi';
+      box.appendChild(tr);
+    }
+  }
+  function scrollCur(){
+    var box=byId('rmus-tracks'); if(!box) return;
+    var cur=box.querySelector('.cur');
+    if(cur) try{ cur.scrollIntoView({block:'center'}); }catch(e){ try{ cur.scrollIntoView(); }catch(_){} }
+  }
+  function wireOwner(){
+    function on(id,fn){ var el=byId(id); if(el) el.addEventListener('click',fn); }
+    on('rmus-prev',  function(){ send('prev',null); });
+    on('rmus-next',  function(){ send('next',null); });
+    on('rmus-toggle',function(){ send((state&&state.playing)?'pause':'play', null); });
+    on('rmus-shuf',  function(){ send('shuffle',(state&&state.shuffle)?0:1); });
+    var v=byId('rmus-vol');
+    // change, not input: one command when the hand lets go, not fifty mid-drag
+    if(v) v.addEventListener('change',function(){
+      var n=parseInt(v.value,10);
+      if(!isNaN(n)) send('volume',Math.max(0,Math.min(100,n)));
+    });
+    on('rmus-list-btn',function(){
+      listOpen=!listOpen;
+      var box=byId('rmus-list'); if(box) box.style.display=listOpen?'':'none';
+      var b=byId('rmus-list-btn'); if(b) b.textContent=(listOpen?'▴':'▾')+' Parça listesi';
+      if(listOpen){ renderList(); scrollCur(); }
+    });
+    var f=byId('rmus-filter');
+    if(f) f.addEventListener('input',function(){ filterTxt=f.value||''; renderList(); });
+  }
+
+  /* ── painting: every screen tells the truth about the speaker ── */
+  function paint(){
+    var live=playerLive(), mine=isPlayer();
+    var badge=byId('mus-badge');  if(badge) badge.style.display = mine?'':'none';
+    var claim=byId('mus-claim');  if(claim) claim.style.display = mine?'none':'';
+    var noteEl=byId('mus-role-note');
+    if(noteEl){
+      var txt='', offline=false;
+      if(!mine && playerLoaded && player && player.deviceId){
+        if(live) txt='🔊 Hoparlör başka cihazda ('+esc(String(player.deviceId)).slice(0,8)+')';
+        else { txt='Resepsiyon çevrimdışı — müzik çalmıyor'; offline=true; }
+      }
+      noteEl.textContent=txt;
+      noteEl.style.display=txt?'':'none';
+      noteEl.classList.toggle('offline',offline);
+    }
+    if(!OWNER) return;
+    var nowEl=byId('rmus-now'), warn=byId('rmus-warn'), obadge=byId('rmus-badge');
+    ['rmus-prev','rmus-toggle','rmus-next','rmus-shuf','rmus-vol','rmus-list-btn']
+      .forEach(function(id){ var el=byId(id); if(el) el.disabled=!live; });
+    if(obadge) obadge.style.display=(live && state && state.playing)?'':'none';
+    if(!playerLoaded){
+      if(nowEl) nowEl.textContent='Bağlanıyor…';
+      if(warn) warn.textContent='';
+    } else if(!player || !player.deviceId){
+      if(nowEl) nowEl.textContent='–';
+      if(warn) warn.textContent='Hoparlör seçilmedi — resepsiyonda "📻 Bu cihazdan çal" düğmesine bir kez basın';
+    } else if(!live){
+      if(nowEl) nowEl.textContent='–';
+      if(warn) warn.textContent='Resepsiyon çevrimdışı — müzik çalmıyor';
+    } else {
+      if(warn) warn.textContent=(state && state.stalled)
+        ? '⚠ Müzik takıldı — resepsiyon ekranına bir dokunuş gerekiyor (tarayıcı sesi engelledi)'
+        : '';
+      if(nowEl){
+        if(!state) nowEl.textContent='Durum bekleniyor…';
+        else{
+          var pos=(Number(state.trackIndex)>=0 && Number(state.trackCount)>0)
+            ? ((Number(state.trackIndex)+1)+' / '+Number(state.trackCount)+' · ') : '';
+          nowEl.textContent=(state.playing?'▶ ':'⏸ ')+pos+(String(state.trackName||'')||'—');
+        }
+      }
+      var tg=byId('rmus-toggle'); if(tg) tg.textContent=(state&&state.playing)?'⏸':'▶';
+      var sh=byId('rmus-shuf'); if(sh) sh.classList.toggle('off', !(state&&state.shuffle));
+      var vs=byId('rmus-vol');
+      if(vs && state && state.volume!=null && document.activeElement!==vs)
+        vs.value=Math.round(Number(state.volume)||0);
+    }
+  }
+
+  /* ── wiring ── */
+  function start(){
+    if(db) return;
+    db=firebase.database();
+    try{ db.ref('.info/serverTimeOffset').on('value',function(s){ off=Number(s.val())||0; }); }catch(e){}
+    db.ref(PATH+'/player').on('value',function(s){
+      player=s.val()||null; playerLoaded=true;
+      try{
+        if(player && player.deviceId) localStorage.setItem('rdns_audio_player_dev', String(player.deviceId));
+        else localStorage.removeItem('rdns_audio_player_dev');
+      }catch(e){}
+      // One device is the player: losing the role stops the sound HERE, now.
+      try{
+        var m=M();
+        if(m && player && player.deviceId && String(player.deviceId)!==myId && m.playing()) m.pause();
+      }catch(e){}
+      paint();
+    },function(e){ try{ console.warn('[music-remote] player read denied (rules?):',e); }catch(_){} });
+    db.ref(PATH+'/cmd').on('value',function(s){ onCmd(s.val()); });
+    db.ref(PATH+'/state').on('value',function(s){
+      state=s.val()||null;
+      // the answer arrived: the command in flight is answered, whatever it did
+      if(pending && state && Number(state.ts)>pending.baseTs){ pending=null; setAck(''); }
+      paint(); renderList();
+    });
+    db.ref(PATH+'/library').on('value',function(s){
+      library=s.val()||null;
+      // Remember what the cloud already holds, so an unchanged library is
+      // never pushed again just because the page reloaded.
+      var sig=libSigOf(library);
+      if(sig!==null) lastLibSig=sig;
+      renderList();
+    });
+  }
+  // The player's clocks: heartbeat every 15s; state on change (checked every
+  // 2s) and at least every 15s; the library only when its signature moves.
+  setInterval(function(){
+    if(db && isPlayer())
+      db.ref(PATH+'/player').update({heartbeat:TS()}).catch(function(){});
+  },15000);
+  setInterval(function(){
+    if(db && isPlayer()){ pushState(false); pushLibrary(); }
+  },2000);
+  setInterval(paint,1000);   // heartbeat ageing has to show without any write arriving
+
+  function boot(){
+    if(OWNER){
+      var b=byId('rmus'); if(b) b.style.display='';
+      wireOwner();
+    }
+    paint();
     (function waitFb(){
       try{
         if(window.firebase && firebase.apps && firebase.apps.length){
