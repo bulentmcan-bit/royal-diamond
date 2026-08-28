@@ -4642,13 +4642,17 @@ p, span, div, label, h1, h2, h3, h4 {
 <style>
 /* ── Sonraki randevu (checkout) ── */
 .rbk-btn{flex:1;min-width:0;border:1.5px solid var(--border);background:rgba(255,255,255,.03);border-radius:12px;padding:14px 4px;font-family:inherit;font-weight:800;font-size:.9rem;cursor:pointer;color:var(--text);transition:border-color .15s, background .15s;}
-.rbk-btn.rbk-suggest{border-color:#d9a441;box-shadow:0 0 0 2px rgba(217,164,65,.4);}
+/* Tarih seç is THE action now the shortcuts are gone: wider and gold, so the
+   hand goes to the calendar first. İstemiyor stays deliberately quieter —
+   dashed, the slower path. Selection (.rbk-sel, below) overrides both. */
+.rbk-btn.rbk-primary{flex:2.2;border-color:#d9a441;background:rgba(217,164,65,.10);}
+.rbk-btn.rbk-dashed{border-style:dashed;opacity:.85;}
 .rbk-btn.rbk-sel{border-color:#25d366;background:rgba(37,211,102,.16);box-shadow:none;}
 .rbk-chip{border:1.5px solid var(--border);background:rgba(255,255,255,.03);border-radius:20px;padding:9px 14px;font-family:inherit;font-weight:700;font-size:.82rem;cursor:pointer;color:var(--text);}
 .rbk-chip.rbk-sel{border-color:#e87a7a;background:rgba(232,122,122,.16);}
 .rbk-cal-day{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:9px;font-weight:800;font-size:.92rem;cursor:pointer;background:var(--card);color:var(--text);position:relative;}
 .rbk-cal-day.rbk-off{opacity:.28;cursor:not-allowed;background:rgba(255,255,255,.02);}
-.rbk-cal-day.rbk-3w{outline:2px solid #d9a441;outline-offset:-2px;}
+.rbk-cal-day.rbk-sug{outline:2px solid #d9a441;outline-offset:-2px;}
 .rbk-prov{border:1.5px dashed #d9a441;background:rgba(217,164,65,.10);color:#d9a441;opacity:.85;border-radius:7px;font-size:.62rem;font-weight:800;padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 </style>
 <div class="overlay" id="mRebook">
@@ -4659,10 +4663,8 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="fg" style="margin-bottom:6px;">
       <label class="flabel" id="flabel-rb-next">Sonraki randevu *</label>
       <div id="rbk-btns" style="display:flex;gap:8px;margin-top:6px;">
-        <button type="button" class="rbk-btn" id="rbk-3w" onclick="rdCkPick('3w')">3 hafta</button>
-        <button type="button" class="rbk-btn" id="rbk-4w" onclick="rdCkPick('4w')">4 hafta</button>
-        <button type="button" class="rbk-btn" id="rbk-pick" onclick="rdCkPick('pick')">📅 Tarih seç</button>
-        <button type="button" class="rbk-btn" id="rbk-no" onclick="rdCkPick('no')">İstemiyor</button>
+        <button type="button" class="rbk-btn rbk-primary" id="rbk-pick" onclick="rdCkPick('pick')">📅 Tarih seç</button>
+        <button type="button" class="rbk-btn rbk-dashed" id="rbk-no" onclick="rdCkPick('no')">İstemiyor</button>
       </div>
       <div id="rbk-target" style="margin-top:9px;font-size:.85rem;font-weight:700;color:var(--gold);min-height:1.2em;"></div>
       <div id="rbk-decline" style="display:none;margin-top:9px;">
@@ -8628,9 +8630,10 @@ function saveAppt(){
 
 let rebookPending=null;
 // ── The checkout panel state: what the "Sonraki randevu" row has answered ──
-// null until a button is pressed — the pre-selected 3/4 hafta is only a gold
-// SUGGESTION; the receptionist still has to give it one confirming tap, which
-// is what keeps ✓ Çıkışı Tamamla honest (grey until answered).
+// null until answered — nothing is pre-selected any more; the suggestion
+// lives inside the calendar as a gold highlight, and the receptionist still
+// has to tap a day, which is what keeps ✓ Çıkışı Tamamla honest (grey until
+// answered).
 let _ckState=null;
 function showRebookModal(a, c){
   rebookPending={appt:a,client:c};
@@ -8646,10 +8649,9 @@ function showRebookModal(a, c){
   // figure from a previous rebook sitting in the box).
   const _rbP=document.getElementById("rb-price");
   if(_rbP) _rbP.value = (a.price>0 ? a.price : (a._takingsAmount>0 ? a._takingsAmount : ''));
-  // Reset the row and pre-suggest 3/4 hafta from this client's own rhythm.
-  const sug=rbSuggestSource(a);
-  ['rbk-3w','rbk-4w','rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b){b.classList.remove('rbk-sel','rbk-suggest');}});
-  const sb=document.getElementById(sug==='4w'?'rbk-4w':'rbk-3w'); if(sb) sb.classList.add('rbk-suggest');
+  // Reset the row. Nothing is preselected — the client's own rhythm shows up
+  // as the gold "önerilen" day inside the calendar instead.
+  ['rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b){b.classList.remove('rbk-sel');}});
   const dEl=document.getElementById('rbk-decline'); if(dEl) dEl.style.display='none';
   const nEl=document.getElementById('rbk-decline-note'); if(nEl){nEl.style.display='none';nEl.value='';}
   document.querySelectorAll('#rbk-decline .rbk-chip').forEach(ch=>ch.classList.remove('rbk-sel'));
@@ -8906,8 +8908,20 @@ function rbReasonLabel(r){
   const m={tasindi:_('rb_r_tasindi'),fiyat:_('rb_r_fiyat'),memnun_degil:_('rb_r_memnun'),dusunecek:_('rb_r_dusunecek'),diger:_('rb_r_diger')};
   return m[r]||r||'';
 }
-// Which of 3/4 hafta to pre-suggest: this client's previous two COMPLETED
-// visits for the same service — a gap of 25+ days means she is a 4-week girl.
+// Every NEW intent is source:"picked". '3w'/'4w' are the shortcut era's marks
+// — 28 records still carry them and must keep rendering; their labels live
+// here as plain literals now the buttons (and their translation strings) are
+// gone. Never migrate or rewrite those records.
+function rbSourceLabel(src){
+  if(src==='picked') return _('rb_src_picked');
+  if(src==='4w') return '4 hafta';
+  if(src==='3w') return '3 hafta';
+  return '';
+}
+// Which rhythm to SUGGEST in the calendar (the gold "önerilen" day): this
+// client's previous two COMPLETED visits for the same service — a gap of 25+
+// days means she is a 4-week girl. Returns '4w'/'3w' — the same tokens the 28
+// records from the shortcut era still carry in `source`, kept readable here.
 function rbSuggestSource(a){
   try{
     const done=appointments.filter(x=>x&&x.status==='completed'&&String(x.clientId)===String(a.clientId)&&x.service===a.service)
@@ -8935,7 +8949,7 @@ function rdCkGate(){
   b.disabled=!ok; b.style.opacity=ok?'1':'.45';
 }
 function rdCkMark(btnId){
-  ['rbk-3w','rbk-4w','rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b)b.classList.remove('rbk-sel');});
+  ['rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b)b.classList.remove('rbk-sel');});
   const b=document.getElementById(btnId); if(b) b.classList.add('rbk-sel');
 }
 function rdCkPick(which){
@@ -8943,13 +8957,7 @@ function rdCkPick(which){
   const a=rebookPending.appt;
   const dEl=document.getElementById('rbk-decline');
   const tEl=document.getElementById('rbk-target');
-  if(which==='3w'||which==='4w'){
-    _ckState.sel=which; _ckState.source=which; _ckState.declineReason=null;
-    _ckState.targetDate=rbTargetFrom(a, which==='3w'?21:28);
-    if(dEl) dEl.style.display='none';
-    rdCkMark(which==='3w'?'rbk-3w':'rbk-4w');
-    if(tEl) tEl.textContent='📅 '+rbFmtDate(_ckState.targetDate)+' — '+_('rb_time_later');
-  } else if(which==='pick'){
+  if(which==='pick'){
     rdCkMark('rbk-pick');
     if(dEl) dEl.style.display='none';
     rdCkCalOpen(a);
@@ -8971,10 +8979,13 @@ function rdCkReason(r){
   rdCkGate();
 }
 // ── "Tarih seç" overlay: only the next 8 weeks from tomorrow, Sundays closed,
-//    the 3-week day outlined in gold. One tap, one close, no time anywhere. ──
+//    the suggested day (3 weeks, or 4 for a 25+ day-gap client, Sunday pulled
+//    to the Saturday before) outlined in gold and labelled "önerilen" — the
+//    receptionist points at it, but nothing is chosen until she taps a day.
+//    One tap, one close, no time anywhere. ──
 function rdCkCalOpen(a){
   const grid=document.getElementById('rbk-cal-grid'); if(!grid) return;
-  const t3=rbTargetFrom(a,21);
+  const tSug=rbTargetFrom(a, rbSuggestSource(a)==='4w'?28:21);
   const start=new Date(); start.setHours(12,0,0,0); start.setDate(start.getDate()+1);
   const MONTHS=(T[currentLang]||T.tr).months||T.tr.months;
   let html='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;font-size:.7rem;color:var(--muted);text-align:center;font-weight:800;">'
@@ -8986,14 +8997,14 @@ function rdCkCalOpen(a){
     const d=new Date(start); d.setDate(start.getDate()+i);
     const ds=dtLocal(d).slice(0,10);
     const sun=d.getDay()===0;
-    const is3=ds===t3;
-    html+='<div class="rbk-cal-day'+(sun?' rbk-off':'')+(is3?' rbk-3w':'')+'"'
+    const isSug=ds===tSug;
+    html+='<div class="rbk-cal-day'+(sun?' rbk-off':'')+(isSug?' rbk-sug':'')+'"'
       +(sun?'':' onclick="rdCkCalTap(\''+ds+'\')"')
       +' title="'+d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'})+'">'
       +'<div style="text-align:center;line-height:1.15;">'
       +'<div style="font-size:.58rem;color:var(--muted);min-height:.7em;">'+((d.getDate()===1||i===0)?MONTHS[d.getMonth()].slice(0,3):'')+'</div>'
       +d.getDate()
-      +(is3?'<div style="font-size:.52rem;color:#d9a441;font-weight:800;">'+_('rb_3w')+'</div>':'')
+      +(isSug?'<div style="font-size:.52rem;color:#d9a441;font-weight:800;">'+_('rb_suggested')+'</div>':'')
       +'</div></div>';
   }
   html+='</div>';
@@ -9090,7 +9101,7 @@ function renderRebookQueue(){
       +'<div class="r24-left"><div class="r24-name">'+eh(c?c.name:'?')+'</div>'
       +'<div class="r24-meta"><span style="font-weight:700;color:#d9a441;">📅 '+rbFmtDate(i.targetDate)+'</span>'
       +'<span>💅 '+eh(i.service||'')+'</span><span>👤 '+eh(i.staff||'—')+'</span>'
-      +'<span style="color:var(--muted)">'+(i.source==='picked'?_('rb_src_picked'):(i.source==='4w'?_('rb_4w'):_('rb_3w')))+'</span></div></div>'
+      +'<span style="color:var(--muted)">'+rbSourceLabel(i.source)+'</span></div></div>'
       +'<div class="r24-actions">'
       +'<button class="btn btn-gold btn-sm" onclick="rbGiveTime(\''+i.id+'\')">🕐 '+_('rb_give_time')+'</button>'
       +'<button class="btn btn-ghost btn-sm" title="Sadece patron silebilir" onclick="rbDelete(\''+i.id+'\')">🗑</button>'
@@ -10528,7 +10539,7 @@ const T = {
     btn_add_client:"+ Müşteri Ekle", btn_import:"📥 Excel/CSV İçe Aktar",
     btn_save_client:"✓ Kaydet", btn_cancel:"İptal",
     btn_confirm_rebook:"🔄 Onayla & Yeniden Randevu Al", btn_skip_rebook:"Atla",
-    rb_next_appt:"Sonraki randevu *", rb_3w:"3 hafta", rb_4w:"4 hafta",
+    rb_next_appt:"Sonraki randevu *", rb_suggested:"önerilen",
     rb_pick:"📅 Tarih seç", rb_decline:"İstemiyor", rb_done:"✓ Çıkışı Tamamla",
     rb_time_later:"saat sonra verilecek", rb_queue_title:"Kesinleştirilecek Randevular",
     rb_give_time:"Saat ver", rb_provisional:"Ön randevu", rb_call:"Ara",
@@ -10597,7 +10608,7 @@ const T = {
     btn_add_client:"+ Add Client", btn_import:"📥 Import Excel/CSV",
     btn_save_client:"✓ Save Client", btn_cancel:"Cancel",
     btn_confirm_rebook:"🔄 Confirm & Rebook", btn_skip_rebook:"Skip",
-    rb_next_appt:"Next appointment *", rb_3w:"3 weeks", rb_4w:"4 weeks",
+    rb_next_appt:"Next appointment *", rb_suggested:"suggested",
     rb_pick:"📅 Pick a date", rb_decline:"Doesn't want", rb_done:"✓ Complete Checkout",
     rb_time_later:"time set later", rb_queue_title:"Appointments To Finalise",
     rb_give_time:"Set time", rb_provisional:"Provisional", rb_call:"Call",
@@ -10666,7 +10677,7 @@ const T = {
     btn_add_client:"+ Thêm khách", btn_import:"📥 Nhập Excel/CSV",
     btn_save_client:"✓ Lưu", btn_cancel:"Hủy",
     btn_confirm_rebook:"🔄 Xác nhận & Đặt lại", btn_skip_rebook:"Bỏ qua",
-    rb_next_appt:"Lịch hẹn tiếp theo *", rb_3w:"3 tuần", rb_4w:"4 tuần",
+    rb_next_appt:"Lịch hẹn tiếp theo *", rb_suggested:"được đề xuất",
     rb_pick:"📅 Chọn ngày", rb_decline:"Không muốn", rb_done:"✓ Hoàn tất thanh toán",
     rb_time_later:"giờ sẽ chọn sau", rb_queue_title:"Lịch hẹn cần chốt giờ",
     rb_give_time:"Chọn giờ", rb_provisional:"Hẹn tạm", rb_call:"Gọi",
@@ -10735,7 +10746,7 @@ const T = {
     btn_add_client:"+ Προσθήκη Πελάτη", btn_import:"📥 Εισαγωγή Excel/CSV",
     btn_save_client:"✓ Αποθήκευση", btn_cancel:"Άκυρο",
     btn_confirm_rebook:"🔄 Επιβεβαίωση & Επανακράτηση", btn_skip_rebook:"Παράλειψη",
-    rb_next_appt:"Επόμενο ραντεβού *", rb_3w:"3 εβδομάδες", rb_4w:"4 εβδομάδες",
+    rb_next_appt:"Επόμενο ραντεβού *", rb_suggested:"προτεινόμενο",
     rb_pick:"📅 Επιλογή ημερομηνίας", rb_decline:"Δεν θέλει", rb_done:"✓ Ολοκλήρωση εξόδου",
     rb_time_later:"η ώρα ορίζεται αργότερα", rb_queue_title:"Ραντεβού προς οριστικοποίηση",
     rb_give_time:"Ορισμός ώρας", rb_provisional:"Προσωρινό ραντεβού", rb_call:"Κλήση",
@@ -10829,7 +10840,7 @@ function setLang(lang){
    ['flabel-a-dt','lbl_datetime'],['flabel-a-dur','lbl_duration'],
    ['flabel-a-price','lbl_price'],['flabel-a-staff','lbl_staff'],
    ['flabel-rb-next','rb_next_appt'],['flabel-rb-pay','lbl_payment'],
-   ['rbk-3w','rb_3w'],['rbk-4w','rb_4w'],['rbk-pick','rb_pick'],['rbk-no','rb_decline'],
+   ['rbk-pick','rb_pick'],['rbk-no','rb_decline'],
    ['rbk-decline-why','rb_why'],['btn-checkout-done','rb_done'],
    ['s-rb-rate-lbl','rb_rate'],['s-rb-ratio-lbl','rb_ratio'],
    ['s-rb-pending-lbl','rb_pending'],['s-rb-declined-lbl','rb_decline'],
