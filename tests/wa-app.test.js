@@ -226,6 +226,41 @@ function makeDevice() {
     }
   }
 
+  console.log('9. the answer mark on the appointment itself');
+  {
+    const m = html.match(/function rdWaAnsMark\(a, mini\)\{[\s\S]*?\n\}/);
+    if (!m) { fail++; console.log('  ✗ rdWaAnsMark not found'); }
+    else {
+      const d = makeDevice();
+      d.ctx.clients.push({ id: 7, name: 'Ayşe', phone: '05338669933' });
+      vm.runInContext(m[0] + ';__mark=rdWaAnsMark;', d.ctx);
+      const mk = (a, mini) => vm.runInContext('__mark(' + JSON.stringify(a) + ',' + !!mini + ')', d.ctx);
+      is(mk({ id: 1, clientId: 7, status: 'confirmed', waAns: { v: 'confirm', at: 1 } }).includes('🟢'), true,
+         'confirmed → the green dot (not the checkout tick)');
+      const ch = mk({ id: 1, clientId: 7, status: 'confirmed', waAns: { v: 'change', at: 1 } });
+      is(ch.includes('↻') && ch.includes('tel:+905338669933') && ch.includes('Ara'), true,
+         'change → amber ↻ with 📞 Ara right on the row');
+      is(mk({ id: 1, clientId: 7, status: 'confirmed', waAns: { v: 'change', at: 1 } }, true).includes('Ara'), false,
+         'mini variant (tight calendar cells) drops the Ara button, keeps the mark');
+      is(mk({ id: 1, clientId: 7, status: 'confirmed' }), '', 'no answer → no mark');
+      is(mk({ id: 1, clientId: 7, status: 'cancelled', waAns: { v: 'confirm', at: 1 } }), '',
+         'a cancelled booking shows no mark');
+    }
+  }
+  {
+    // A moved booking drops its answer — the question is asked afresh.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Ayşe', phone: '05338669933' });
+    const a = { id: 42, clientId: 7, status: 'confirmed', datetime: '2026-09-02T11:00',
+                wa: { u: ['U1'], t: 1 }, waAns: { v: 'confirm', at: 5 } };
+    d.ctx.appointments.push(a);
+    d.ctx.reply = { ok: true, scheduled: [], skipped: [], results: [] };
+    vm.runInContext('rdWaReschedule(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(a.waAns, undefined, 'rdWaReschedule clears the old hour\'s answer');
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);

@@ -5648,7 +5648,7 @@ function renderDashGrid(){
       const doneBorder = isMoneyOk ? 'rgba(232,132,122,0.4)' : 'rgba(230,168,80,0.45)';
       html += '<div style="background:'+(isDone?doneBg:isPast?'rgba(255,255,255,0.04)':'rgba(37,211,102,0.13)')+';border:1px solid '+(isDone?doneBorder:isPast?'rgba(255,255,255,0.1)':'rgba(37,211,102,0.25)')+';border-left:3px solid '+col+';border-radius:6px;padding:6px 7px;margin-bottom:5px;'+(isDone?'opacity:0.85;':'')+'">';
       const isBday = (a.birthday || (typeof isBirthdayAppt==='function' && isBirthdayAppt(a.clientId, a.datetime)));
-      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+'</div>';
+      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
       html += '<div style="font-size:0.63rem;color:#6b8c70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;">'+a.service+'</div>';
       // Unpaid old debt on this customer — one small line so reception knows
@@ -8490,7 +8490,7 @@ function renderGapReport(){
       // slot overlaps the appointment window?
       if(sMin < startMin+dur && sMin+SLOTLEN[matchedTech] > startMin){
         const isStart = (sMin <= startMin && startMin < sMin+SLOTLEN[matchedTech]);
-        if(!bookedMap[s][matchedTech] || isStart) bookedMap[s][matchedTech] = {n:name, first:isStart, ch:wantsChange};
+        if(!bookedMap[s][matchedTech] || isStart) bookedMap[s][matchedTech] = {n:name, first:isStart, ch:wantsChange, ok:!!(a.waAns&&a.waAns.v==='confirm')};
       }
     });
   });
@@ -8562,7 +8562,7 @@ function renderGapReport(){
         if(isStart){
           html += wantsCh
             ? `<td style="padding:6px 8px;text-align:center;"><div style="background:#c4863a;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;" title="${name} değişiklik istedi — saat boşalabilir">↻ ${name}</div></td>`
-            : `<td style="padding:6px 8px;text-align:center;"><div style="background:#1ea34f;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;">${name}</div></td>`;
+            : `<td style="padding:6px 8px;text-align:center;"><div style="background:#1ea34f;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;">${name}${bkEntry.ok?' 🟢':''}</div></td>`;
         } else {
           html += `<td style="padding:6px 8px;text-align:center;"><div style="background:${wantsCh?'rgba(196,134,58,0.35)':'rgba(30,163,79,0.35)'};color:#e8f5ec;border-radius:7px;padding:6px 4px;font-size:0.68rem;font-weight:600;letter-spacing:1px;" title="${name} — devam ediyor">⋯ devam</div></td>`;
         }
@@ -8645,7 +8645,7 @@ function renderAppts(){
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:7px">
         <div class="avatar" style="background:${avC(c?.name)};width:26px;height:26px;font-size:0.68rem">${avI(c?.name)}</div>
-        <strong>${c?.name}</strong>${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
+        <strong>${c?.name}</strong>${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
       <td>${a.service}</td>
       <td style="font-size:0.81rem">${fDT(a.datetime)}</td>
       <td style="color:var(--muted)">${a.duration}m</td>
@@ -10318,6 +10318,7 @@ function renderMonthView(){
       ${prov.length?`<div class="rbk-prov" title="${provTitle}">⏳ ${prov.length} ${_('rb_provisional').toLowerCase()}</div>`:''}
       <div style="font-size:1.4rem;font-weight:800;color:${isToday?'#4caf50':'#1a1a1a'};">${c.day}</div>
       ${real>0?`<div style="background:#4caf50;color:white;border-radius:12px;padding:2px 10px;font-size:0.75rem;font-weight:700;">${real} appt${real>1?'s':''}</div>`:''}
+      ${(function(){const ch=dayAll.filter(a=>a.status==='confirmed'&&a.waAns&&a.waAns.v==='change').length;return ch>0?`<div style="background:#c4863a;color:#fff;border-radius:12px;padding:1px 8px;font-size:0.68rem;font-weight:800;" title="Değişiklik isteyen müşteri — güne girip arayın">↻ ${ch} değişiklik</div>`:'';})()}
       ${auto>0?`<div style="background:#f0f0f0;color:#999;border:1px dashed #ccc;border-radius:12px;padding:1px 8px;font-size:0.68rem;font-weight:700;" title="Otomatik yeniden randevu — henüz onaylanmadı">🔄 ${auto} oto</div>`:''}
     </div>`;
   }).join('');
@@ -10373,7 +10374,7 @@ function renderWeekView(){
         html += `<div class="cal-week-event ${evClass(a)}"
           style="top:${topPct}%;height:${heightPct}px;left:${i*2}px;"
           onclick="calApptClick(${a.id})" title="${cName(a.clientId)} · ${a.service}">
-          <div class="cal-ev-name">${a.autoRebooked&&a.status==='confirmed'?'🔄 ':''}${apptTime(a)} ${cName(a.clientId)}</div>
+          <div class="cal-ev-name">${a.autoRebooked&&a.status==='confirmed'?'🔄 ':''}${apptTime(a)} ${cName(a.clientId)}${typeof rdWaAnsMark==='function'?rdWaAnsMark(a,true):''}</div>
           <div class="cal-ev-svc">${a.service}</div>
         </div>`;
       });
@@ -10413,7 +10414,7 @@ function showDayPopup(d, appts){
       <div style="font-size:0.75rem;font-weight:700;color:var(--wa);min-width:44px;padding-top:2px">${apptTime(a)}</div>
       <div class="avatar" style="background:${avC(cName(a.clientId))};width:28px;height:28px;font-size:0.68rem;flex-shrink:0">${avI(cName(a.clientId))}</div>
       <div style="flex:1">
-        <div style="font-size:0.86rem;font-weight:700">${cName(a.clientId)}</div>
+        <div style="font-size:0.86rem;font-weight:700">${cName(a.clientId)}${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}</div>
         <div style="font-size:0.75rem;color:var(--muted)">${a.service} · ${a.duration}min · ₺${a.price}</div>
         <div style="margin-top:3px">${statusBadge(a.status)}</div>
       </div>
@@ -11010,7 +11011,7 @@ function r24ItemHtml(group){
   return `<div class="r24-item" id="r24-item-${key}">
     <div class="avatar" style="background:${avC(c?.name||'')};width:36px;height:36px;font-size:0.8rem;flex-shrink:0">${avI(c?.name||'?')}</div>
     <div class="r24-left">
-      <div class="r24-name">${c?.name||"Unknown"}${multiTag}</div>
+      <div class="r24-name">${c?.name||"Unknown"}${typeof rdWaAnsMark==='function'?rdWaAnsMark(first):''}${multiTag}</div>
       <div class="r24-meta">
         <span style="font-weight:700;color:var(--wa)">📞 ${c?.phone||"—"}</span>
         <span>💅 ${servicesStr}</span>
@@ -11064,7 +11065,7 @@ function r24AutoHtml(g){
   const timeStr = new Date(g[0].datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
   return `<div class="r24-item" style="opacity:0.8;">
     <div class="r24-left">
-      <div class="r24-name">${c?.name||"Unknown"}</div>
+      <div class="r24-name">${c?.name||"Unknown"}${typeof rdWaAnsMark==='function'?rdWaAnsMark(g[0]):''}</div>
       <div class="r24-meta"><span style="color:var(--wa);font-weight:700;">🤖 ✓ Otomatik · ${times}</span></div>
     </div>
     <div class="r24-time">${timeStr}</div>
@@ -11343,6 +11344,7 @@ function rdWaCancel(a){
     if(!rdWaOn() || !a || !a.wa || !Array.isArray(a.wa.u) || !a.wa.u.length) return;
     const uids = a.wa.u.slice();
     a.wa = { x:uids, t:Date.now() };
+    try{ if(a.waAns) delete a.waAns; }catch(e){}       // a dead booking's answer no longer applies
     try{ rdWaConfirmDel([String(a.id)]); }catch(e){}   // the confirm page forgets a dead booking
     rdWaFetch('/wa/cancel', { uids:uids }).then(function(j){
       console.log('[wa] appt', a.id, 'cancel:', JSON.stringify((j&&j.results)||[]));
@@ -11352,8 +11354,11 @@ function rdWaCancel(a){
 }
 
 // A moved booking: the reminders for the OLD hour are lies now — kill them
-// and book fresh ones for the new hour.
+// and book fresh ones for the new hour. The customer's answer belonged to
+// the old hour too, so it comes off the record; the fresh reminder will ask
+// again.
 function rdWaReschedule(a){
+  try{ if(a&&a.waAns){ delete a.waAns; apptTouch(a); } }catch(e){}
   try{ rdWaCancel(a); rdWaSchedule(a); }catch(e){ console.warn('[wa] reschedule error:', e); }
 }
 
@@ -11510,6 +11515,12 @@ function rdWaPollAnswers(){
     if(changed){
       try{ saveAll(); }catch(e){}
       try{ renderWaAnswers(); }catch(e){}
+      // The mark lives ON the appointment, so every open view showing
+      // appointments redraws — the diary is where reception will see it.
+      try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+      try{ if(typeof renderAppts==='function') renderAppts(); }catch(e){}
+      try{ if(typeof renderCalendar==='function') renderCalendar(); }catch(e){}
+      try{ if(typeof renderDash24h==='function') renderDash24h(); }catch(e){}
       try{ const pg=document.querySelector('.page.active'); if(pg&&pg.id==='page-gapreport') renderGapReport(); }catch(e){}
     }
     if(ack.length) rdWaFetch('/wa/answers',{ack:ack}).catch(function(){});
@@ -11547,6 +11558,38 @@ function renderWaAnswers(){
       +'</div>';
   };
   list.innerHTML=chg.map(function(a){return row(a,true);}).join('')+okd.map(function(a){return row(a,false);}).join('');
+}
+
+// ── The answer mark that rides the appointment EVERYWHERE it is drawn ───────
+// Reception looks at the diary all day; the answer lives on the row, not in a
+// panel she has to remember. 🟢 (green DOT — deliberately not the checkout's
+// ✓/✅ tick) = confirmed, needs nothing. ↻ on an amber chip = wants to change
+// — louder than the dot on purpose, with 📞 Ara beside it where the row has
+// room. Tapping either shows who answered and when. No answer, no mark; a
+// cancelled or moved booking drops its answer (see rdWaCancel/rdWaReschedule).
+function rdWaAnsMark(a, mini){
+  try{
+    if(!a || a.status!=='confirmed' || !a.waAns || !a.waAns.v) return '';
+    const stop='event.stopPropagation();event.preventDefault();';
+    if(a.waAns.v==='confirm'){
+      return ' <span onclick="'+stop+'rdWaAnsInfo('+a.id+')" style="cursor:pointer;" title="Müşteri onayladı — dokun: ne zaman">🟢</span>';
+    }
+    const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
+    const ph=(c&&c.phone)?((typeof normalizeWaPhone==='function')?normalizeWaPhone(c.phone):c.phone):'';
+    return ' <span onclick="'+stop+'rdWaAnsInfo('+a.id+')" style="cursor:pointer;background:#c4863a;color:#fff;border-radius:6px;padding:0 5px;font-weight:800;box-shadow:0 0 0 1px rgba(196,134,58,0.6);" title="Müşteri değişiklik istedi — dokun: ne zaman">↻</span>'
+      +((!mini&&ph)?' <a href="tel:+'+ph+'" onclick="'+stop.replace('event.preventDefault();','')+'" style="background:rgba(196,134,58,0.16);border:1px solid rgba(196,134,58,0.55);color:#c4863a;border-radius:6px;padding:0 6px;font-weight:800;text-decoration:none;">📞 Ara</a>':'');
+  }catch(e){ return ''; }
+}
+function rdWaAnsInfo(id){
+  const a=(appointments||[]).find(function(x){ return x&&String(x.id)===String(id); });
+  if(!a||!a.waAns) return;
+  const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
+  const w=new Date(a.waAns.at||0);
+  const ws=w.toLocaleDateString('tr-TR',{day:'numeric',month:'long'})+' '+w.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+  toast(a.waAns.v==='change'?'↻':'🟢',
+        a.waAns.v==='change'?'Değişiklik istedi':'Onayladı',
+        ((c&&c.name)||'Müşteri')+' — '+ws+' tarihinde hatırlatma sayfasından yanıtladı.',
+        a.waAns.v==='change'?'r':'g');
 }
 
 function send24hReminder(key, phone){
