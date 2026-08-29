@@ -3531,7 +3531,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <!-- 24-HOUR WHATSAPP REMINDERS PANEL -->
       <div class="r24-panel">
         <div class="r24-header">
-          <div class="r24-title">⏰ 24 Saat Kala Hatırlatmalar <span class="r24-count" id="dash-r24-count">0</span></div>
+          <div class="r24-title">⏰ 24 Saat Kala Hatırlatmalar <span class="r24-count" id="dash-r24-count">0</span> <span id="dash-wa-cover"></span></div>
           <button class="btn btn-sm" id="dash-wa-auto" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="rdWaSetup()" title="Otomatik WhatsApp hatırlatmaları (Piyzi) — anahtar bu cihaza girilince açılır">🤖 Oto: KAPALI</button>
           <button class="btn btn-wa btn-sm" id="dash-r24-send-all" style="display:none;" onclick="sendAll24hReminders()">💬 Hepsini Oluştur &amp; Gönder</button>
         </div>
@@ -11036,6 +11036,38 @@ function r24ItemHtml(group){
   </div>`;
 }
 
+// An appointment whose reminders are already standing at Piyzi (uids stored
+// on the record) must never be offered Generate — pressing it would text the
+// customer a SECOND time. A client-group is covered only when EVERY booking
+// in it is; the rare mixed group stays on the manual list, erring toward a
+// human look rather than a silent skip.
+function r24AutoCovered(g){
+  return (g||[]).length>0 && g.every(a => a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length>0);
+}
+// The covered row: state instead of a button. The 24-hour send fires at the
+// appointment's own clock time a day earlier; the 2-hour one two hours before.
+function r24AutoHtml(g){
+  const c = cObj(g[0].clientId);
+  const times = g.map(a=>{
+    const t = new Date(a.datetime);
+    const hhmm = String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+    const t2 = new Date(t.getTime()-2*3600e3);
+    const hhmm2 = String(t2.getHours()).padStart(2,'0')+':'+String(t2.getMinutes()).padStart(2,'0');
+    const both = a.wa.u.length>1;
+    return (g.length>1?hhmm+' — ':'') + (both
+      ? '24s ve 2s planlandı (gönderim '+hhmm+' ve '+hhmm2+')'
+      : '2 saat kala planlandı (gönderim '+hhmm2+')');
+  }).join(' · ');
+  const timeStr = new Date(g[0].datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  return `<div class="r24-item" style="opacity:0.8;">
+    <div class="r24-left">
+      <div class="r24-name">${c?.name||"Unknown"}</div>
+      <div class="r24-meta"><span style="color:var(--wa);font-weight:700;">🤖 ✓ Otomatik · ${times}</span></div>
+    </div>
+    <div class="r24-time">${timeStr}</div>
+  </div>`;
+}
+
 // Persist which appointments have already had a 24h reminder sent, so a page
 // reload — or a different device — doesn't forget and accidentally resend.
 function getR24SentLog(){
@@ -11084,7 +11116,12 @@ async function renderDash24h(){
   });
 
   // Gönderilmiş hatırlatmaları listeden gizle
-  const pending = groups.filter(g => dash24hMessages["c"+g[0].clientId]?.status !== "sent");
+  const notSent = groups.filter(g => dash24hMessages["c"+g[0].clientId]?.status !== "sent");
+  // The Piyzi-covered ones become read-only state rows; only the UNCOVERED
+  // remain generatable — an exception report (unarmed-device bookings, failed
+  // schedules), no longer a second-message trap.
+  const auto = notSent.filter(r24AutoCovered);
+  const pending = notSent.filter(g => !r24AutoCovered(g));
 
   // Count operations (each service appointment), not customers — so a client
   // with a manicure + pedicure + eyelash booking counts as 3, not 1. This
@@ -11094,9 +11131,31 @@ async function renderDash24h(){
   if(modalCount) modalCount.textContent = opCount;
   if(sendBtn) sendBtn.style.display = pending.length > 0 ? "inline-flex" : "none";
 
-  const html = pending.length === 0
-    ? `<div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div>`
-    : pending.map(r24ItemHtml).join("");
+  // Tomorrow's coverage, where a gap is visible BEFORE the customers see it:
+  // how many of tomorrow's bookings hold scheduled reminders, in the header.
+  try{
+    const cov=document.getElementById('dash-wa-cover');
+    if(cov){
+      const tm=new Date(Date.now()+86400e3);
+      const tk=tm.getFullYear()+'-'+String(tm.getMonth()+1).padStart(2,'0')+'-'+String(tm.getDate()).padStart(2,'0');
+      const tomo=(appointments||[]).filter(a=>a&&a.status==='confirmed'&&String(a.datetime).slice(0,10)===tk);
+      const cvd=tomo.filter(a=>a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length).length;
+      const miss=tomo.length-cvd;
+      cov.textContent='🤖 Yarın: '+cvd+'/'+tomo.length+' planlı';
+      cov.style.cssText='font-size:0.72rem;font-weight:800;border-radius:20px;padding:2px 10px;'+(miss>0
+        ? 'background:rgba(227,73,72,0.18);color:#e34948;border:1px solid rgba(227,73,72,0.45);'
+        : 'background:rgba(30,163,79,0.15);color:#1ea34f;border:1px solid rgba(30,163,79,0.4);');
+      cov.title=miss>0?(miss+' yarınki randevunun hatırlatması PLANLANMAMIŞ — aşağıdaki listeden elle gönderin ya da cihazı 🤖 ile eşleyin'):'Yarının bütün randevularının hatırlatmaları planlı';
+    }
+  }catch(e){}
+
+  const html =
+    (pending.length === 0
+      ? (auto.length
+          ? `<div class="r24-empty" style="color:var(--wa);">✅ Tüm hatırlatmalar otomatik planlandı.</div>`
+          : `<div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div>`)
+      : pending.map(r24ItemHtml).join(""))
+    + auto.map(r24AutoHtml).join("");
 
   if(list) list.innerHTML = html;
   if(modalList) modalList.innerHTML = html;
@@ -11562,7 +11621,9 @@ async function sendAll24hReminders(){
     const h=hrs(a.datetime);
     return a.status==="confirmed"&&h>0&&h<=25;
   }).sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
-  const groups = groupR24ByClient(due);
+  // Piyzi-covered clients are OUT of the bulk send too — same rule as the
+  // per-row Generate button, or "Hepsini Gönder" becomes the same trap at scale.
+  const groups = groupR24ByClient(due).filter(g=>!r24AutoCovered(g));
 
   // Generate any missing messages first
   const toGen = groups.filter(g=>{

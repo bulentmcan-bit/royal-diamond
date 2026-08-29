@@ -198,6 +198,28 @@ function makeDevice() {
     is(scan.eligible[0].payload.timeHHMM, '14:00', 'the payload is the same one a fresh booking would send');
   }
 
+  console.log('8. the manual panel no longer double-messages');
+  {
+    const m = html.match(/function r24AutoCovered\(g\)\{[\s\S]*?\n\}/);
+    if (!m) { fail++; console.log('  ✗ r24AutoCovered not found in index.html'); }
+    else {
+      const d = makeDevice();
+      vm.runInContext(m[0] + ';__r24=r24AutoCovered;', d.ctx);
+      const covered = { wa: { u: ['U24', 'U1'] } };
+      const bare = {};
+      const emptyU = { wa: { t: 1 } };                      // both sends were past — u stripped
+      is(vm.runInContext('__r24(' + JSON.stringify([covered]) + ')', d.ctx), true,
+         'a booking with stored uids offers NO Generate');
+      is(vm.runInContext('__r24(' + JSON.stringify([bare]) + ')', d.ctx), false,
+         'a booking with no reminder stays generatable — the exception report');
+      is(vm.runInContext('__r24(' + JSON.stringify([emptyU]) + ')', d.ctx), false,
+         'a same-day booking whose sends were both past stays generatable');
+      is(vm.runInContext('__r24(' + JSON.stringify([covered, bare]) + ')', d.ctx), false,
+         'a mixed client-group errs toward the manual list, never a silent skip');
+      is(vm.runInContext('__r24([])', d.ctx), false, 'an empty group is not "covered"');
+    }
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);
