@@ -11773,12 +11773,30 @@ function rdRestoreGate(){
 // bill already converted on the next — she never retypes the amount. Tapping
 // a figure copies it. A stale or missing rate is said out loud and nothing is
 // converted with it: an old rate shown as today's is how a till goes wrong.
+// The Merkez Bankası publishes on WORKING days only, and the salon is open
+// Saturdays. Friday's rate IS the current official rate all weekend and
+// through Monday morning — a weekend must never turn the strip red. The rate
+// counts as stale only when it is older than the last working day whose rate
+// should be out by now; a working-day morning before 11:00 still runs on the
+// previous working day's rate (the new one is not issued yet).
+function rdFxExpectedDate(now){
+  const d=new Date(now||Date.now());
+  const day=d.getDay();
+  let back=0;
+  if(day===0) back=2;                                  // Sunday → Friday
+  else if(day===6) back=1;                             // Saturday → Friday
+  else if(d.getHours()<11) back=(day===1)?3:1;         // Mon morning → Friday; other mornings → yesterday
+  const e=new Date(d); e.setDate(d.getDate()-back);
+  while(e.getDay()===0||e.getDay()===6) e.setDate(e.getDate()-1);
+  const p=n=>String(n).padStart(2,'0');
+  return e.getFullYear()+'-'+p(e.getMonth()+1)+'-'+p(e.getDate());
+}
 function rdFxRates(){
   try{
     const s=JSON.parse(localStorage.getItem('rdns_sun_rates')||'null');
     if(!s) return null;
     return { g:parseFloat(s.g)||0, u:parseFloat(s.u)||0, e:parseFloat(s.e)||0,
-             d:s.d||'?', stale:(s.d!==new Date().toISOString().slice(0,10)) };
+             d:s.d||'?', stale:(String(s.d||'') < rdFxExpectedDate()) };
   }catch(e){ return null; }
 }
 function rdCkFxRender(){
@@ -15646,7 +15664,10 @@ function sunConvLoad(){
       document.getElementById('sun-r-usd').value=s.u||'';
       document.getElementById('sun-r-eur').value=s.e||'';
       var st=document.getElementById('sun-r-stale');
-      if(st) st.textContent=(s.d!==today)?'⚠ Kurlar '+(s.d||'?')+' tarihli — bugünün alış kurlarını soldaki tablodan güncelleyin.':'';
+      // Same weekend-aware rule as the checkout strip: Friday's rate is NOT
+      // stale on a Saturday — only older than the last published working day.
+      var _exp=(typeof rdFxExpectedDate==='function')?rdFxExpectedDate():today;
+      if(st) st.textContent=(String(s.d||'')<_exp)?'⚠ Kurlar '+(s.d||'?')+' tarihli — bugünün alış kurlarını soldaki tablodan güncelleyin.':'';
       sunConvCalc(true);
     }
   }catch(e){}

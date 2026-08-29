@@ -270,6 +270,26 @@ function makeDevice() {
     is(a.waAns, undefined, 'rdWaReschedule clears the old hour\'s answer');
   }
 
+  console.log('10. the FX stale rule follows the Merkez Bankası calendar');
+  {
+    const m = html.match(/function rdFxExpectedDate\(now\)\{[\s\S]*?\n\}/);
+    if (!m) { fail++; console.log('  ✗ rdFxExpectedDate not found'); }
+    else {
+      const d = makeDevice();
+      vm.runInContext(m[0] + ';__exp=rdFxExpectedDate;', d.ctx);
+      const exp = iso => vm.runInContext('__exp(new Date(' + JSON.stringify(iso) + '))', d.ctx);
+      // 29 Aug 2026 is a Saturday; 28 Aug the Friday before; 31 Aug the Monday after.
+      is(exp('2026-08-29T14:00'), '2026-08-28', 'Saturday expects Friday — Friday\'s rate is NOT stale');
+      is(exp('2026-08-30T14:00'), '2026-08-28', 'Sunday still expects Friday');
+      is(exp('2026-08-31T09:00'), '2026-08-28', 'Monday MORNING still runs on Friday\'s rate');
+      is(exp('2026-08-31T14:00'), '2026-08-31', 'Monday afternoon expects Monday\'s fresh rate');
+      is(exp('2026-09-01T09:00'), '2026-08-31', 'Tuesday morning runs on Monday\'s rate');
+      is(exp('2026-09-02T14:00'), '2026-09-02', 'a working-day afternoon expects that day\'s rate');
+      is('2026-08-28' < exp('2026-08-31T14:00'), true, 'a Friday rate on Monday afternoon IS stale');
+      is('2026-08-28' < exp('2026-08-29T14:00'), false, 'a Friday rate on Saturday is NOT');
+    }
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);
