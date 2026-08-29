@@ -11293,7 +11293,11 @@ async function rdWaBackfill(apply){
         ok++;
       } else { fail++; failures.push({apptId:e.payload.apptId, error:j&&j.error}); }
     }catch(err){ fail++; failures.push({apptId:e.payload.apptId, error:String(err)}); }
-    if(i%10===0){ try{ saveAll(); }catch(_){} console.log('[wa-backfill]', i+'/'+scan.eligible.length, 'ok:'+ok, 'fail:'+fail); }
+    // Persist EVERY store: a cloud snapshot arriving mid-run rebuilds the
+    // book from the last save, so an unsaved uid can be wiped — two were,
+    // on the first live run. Saving per item shrinks that window to nothing.
+    try{ saveAll(); }catch(_){}
+    if(i%10===0) console.log('[wa-backfill]', i+'/'+scan.eligible.length, 'ok:'+ok, 'fail:'+fail);
     await new Promise(r=>setTimeout(r, 4500));
   }
   try{ saveAll(); }catch(_){}

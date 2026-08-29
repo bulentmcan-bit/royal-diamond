@@ -452,6 +452,20 @@ async function handleWa(req, env, ctx, url) {
     return waJson({ ok: true, data: r.body.data });
   }
 
+  // ── GET /wa/scheduled — Piyzi's pending-send list, read-only ──────────────
+  // Diagnosis and recovery: when a stored uid goes missing app-side (a sync
+  // snapshot can wipe an unsaved field), this is how the real uid is found
+  // again instead of scheduling a duplicate. Passes through status/page/limit.
+  if (route === '/wa/scheduled' && req.method === 'GET') {
+    const qs = new URLSearchParams();
+    for (const k of ['status', 'page', 'limit']) { const v = url.searchParams.get(k); if (v) qs.set(k, v); }
+    let r;
+    try { r = await piyziCall(env, 'GET', '/whatsapp/scheduled' + (qs.toString() ? '?' + qs.toString() : '')); }
+    catch { return waJson({ ok: false, error: { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' } }, 502); }
+    if (!(r.body && r.body.success)) return waJson({ ok: false, error: piyziErr(r) }, r.status >= 400 ? r.status : 502);
+    return waJson({ ok: true, data: r.body.data });
+  }
+
   // Everything below changes state at Piyzi, so it is POST + JSON only.
   if (req.method !== 'POST') return waJson({ ok: false, error: { code: 'METHOD', message: 'POST only' } }, 405);
   let b;
