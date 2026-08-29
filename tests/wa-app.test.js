@@ -169,6 +169,35 @@ function makeDevice() {
     is(d.toasts.length, 1, 'other errors log quietly, no toast storm');
   }
 
+  console.log('7. the backfill scan — who still needs reminders, and why not');
+  {
+    const d = makeDevice();
+    const now = new Date('2026-08-29T12:00').getTime();
+    const H = 3600e3;
+    const cls = [
+      { id: 1, name: 'Ayşe Yılmaz', phone: '05338669933' },
+      { id: 2, name: 'KAPALI — Personel', phone: '05330000000' },
+      { id: 3, name: 'Telefonsuz Müşteri', phone: '' },
+    ];
+    const appts = [
+      { id: 10, clientId: 1, status: 'confirmed', datetime: '2026-08-31T14:00', service: 'M' },  // 50h out → both
+      { id: 11, clientId: 1, status: 'confirmed', datetime: '2026-08-29T18:00', service: 'M' },  // 6h out → r1 only
+      { id: 12, clientId: 1, status: 'confirmed', datetime: '2026-08-29T13:30', service: 'M' },  // 1.5h → both past
+      { id: 13, clientId: 1, status: 'confirmed', datetime: '2026-08-28T10:00', service: 'M' },  // yesterday
+      { id: 14, clientId: 1, status: 'cancelled', datetime: '2026-08-31T10:00', service: 'M' },  // dead
+      { id: 15, clientId: 1, status: 'confirmed', datetime: '2026-09-01T10:00', service: 'M', wa: { u: ['X'], t: 1 } }, // has uids
+      { id: 16, clientId: 2, status: 'confirmed', datetime: '2026-09-01T11:00', service: 'M' },  // blocker
+      { id: 17, clientId: 3, status: 'confirmed', datetime: '2026-09-01T12:00', service: 'M' },  // no phone
+    ];
+    const scan = vm.runInContext(
+      'rdWaBackfillScan(' + JSON.stringify(appts) + ',' + JSON.stringify(cls) + ',' + now + ')', d.ctx);
+    is(scan.eligible.map(e => e.id), [10, 11], 'only the two un-reminded future bookings are eligible');
+    is(scan.eligible.map(e => e.both), [true, false], '50h out gets both; 6h out gets only the 2-hour one');
+    is([scan.already, scan.tooSoon, scan.blocked, scan.noPhone], [1, 1, 1, 1],
+       'uids-already / too-soon / KAPALI / no-phone each counted, none scheduled');
+    is(scan.eligible[0].payload.timeHHMM, '14:00', 'the payload is the same one a fresh booking would send');
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);

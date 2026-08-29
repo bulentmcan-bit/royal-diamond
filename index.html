@@ -11233,7 +11233,73 @@ function rdWaCancel(a){
 function rdWaReschedule(a){
   try{ rdWaCancel(a); rdWaSchedule(a); }catch(e){ console.warn('[wa] reschedule error:', e); }
 }
+
+// The one-time backfill's eyes: which of the book's confirmed FUTURE
+// appointments still need their reminders scheduled, and why the rest are
+// left out. Scheduling is event-driven (a booking schedules itself when it is
+// made or moved), so anything booked before a device was armed has nothing at
+// Piyzi and never will — this scan is how those are found. Pure: it takes the
+// book and the clock, decides, and touches nothing.
+function rdWaBackfillScan(appts, cls, now){
+  const out={eligible:[], already:0, tooSoon:0, blocked:0, noPhone:0};
+  (appts||[]).forEach(a=>{
+    if(!a||a.status!=='confirmed') return;
+    const dt=String(a.datetime||'');
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return;
+    const t=new Date(dt).getTime();               // device local = salon clock
+    if(!(t>now)) return;                          // future bookings only
+    if(a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length){ out.already++; return; }   // makes a re-run idempotent
+    // Nearer than the 2-hour reminder (plus the worker's 3-minute floor):
+    // both send times are already past — normal, not an error, but calling
+    // the worker for it would only spend the rate limit saying so.
+    if(t-now < 2*3600e3+3*60e3){ out.tooSoon++; return; }
+    const c=(cls||[]).find(x=>x&&String(x.id)===String(a.clientId));
+    if(/kapal[ıi]/i.test(String((c&&c.name)||''))){ out.blocked++; return; }
+    const p=rdWaPayload(a,c);
+    if(!p){ out.noPhone++; return; }
+    out.eligible.push({ id:a.id, payload:p, both:(t-now > 24*3600e3+3*60e3) });
+  });
+  return out;
+}
 // WA-SLICE-END
+
+// Console-run: rdWaBackfill() only reports the counts; rdWaBackfill(true)
+// schedules, one appointment at a time with a 4.5s gap — Piyzi allows 30
+// POSTs a minute per key and each schedule is up to two of them, so ~13
+// bookings a minute keeps a comfortable margin. Stops nothing else; a re-run
+// after any failure picks up only what is still missing (already-scheduled
+// bookings carry their uids and are skipped).
+async function rdWaBackfill(apply){
+  if(!rdWaOn()){ console.log('[wa-backfill] this device has no key — arm it first (🤖)'); return null; }
+  const scan=rdWaBackfillScan(appointments, clients, Date.now());
+  const report={
+    toSchedule: scan.eligible.length,
+    both24hAnd2h: scan.eligible.filter(e=>e.both).length,
+    only2h: scan.eligible.filter(e=>!e.both).length,
+    alreadyHaveUids: scan.already,
+    tooSoonBothPast: scan.tooSoon,
+    kapaliBlocked: scan.blocked,
+    noValidPhone: scan.noPhone
+  };
+  if(!apply){ console.log('[wa-backfill] DRY RUN', JSON.stringify(report)); return report; }
+  let ok=0, fail=0, failures=[], i=0;
+  for(const e of scan.eligible){
+    i++;
+    try{
+      const j=await rdWaFetch('/wa/schedule', e.payload);
+      if(j&&j.ok){
+        const live=(typeof apptById==='function')?apptById(e.id):null;
+        if(live){ live.wa={u:(j.scheduled||[]).map(s=>s.uid), t:Date.now()}; apptTouch(live); }
+        ok++;
+      } else { fail++; failures.push({apptId:e.payload.apptId, error:j&&j.error}); }
+    }catch(err){ fail++; failures.push({apptId:e.payload.apptId, error:String(err)}); }
+    if(i%10===0){ try{ saveAll(); }catch(_){} console.log('[wa-backfill]', i+'/'+scan.eligible.length, 'ok:'+ok, 'fail:'+fail); }
+    await new Promise(r=>setTimeout(r, 4500));
+  }
+  try{ saveAll(); }catch(_){}
+  console.log('[wa-backfill] DONE — scheduled:', ok, 'failed:', fail);
+  return Object.assign({}, report, { scheduledOk:ok, failed:fail, failures:failures.slice(0,20) });
+}
 
 // The 🤖 button on the dashboard reminders panel: owner PIN, then paste the
 // shared key (the same BTN_KEY the wall buttons carry) — or leave the box
@@ -11253,6 +11319,21 @@ function rdWaSetup(){
   toast('🤖', rdWaOn()?'Otomatik hatırlatma AÇIK':'Otomatik hatırlatma KAPALI',
     rdWaOn()?'Bu cihazdan yapılan her randevu, 24 saat ve 2 saat kala WhatsApp hatırlatmasını Piyzi\'de kurar.'
             :'Bu cihaz artık otomatik hatırlatma kurmaz.', rdWaOn()?'g':'r');
+  // A device armed AFTER the diary filled up: everything already in the book
+  // was booked silent, and nothing event-driven will ever go back for it.
+  // Offer the backfill right here, at the one moment the gap is visible —
+  // otherwise 100+ standing bookings simply never get a reminder.
+  if(rdWaOn()){
+    try{
+      const _scan=rdWaBackfillScan(appointments, clients, Date.now());
+      if(_scan.eligible.length && confirm('Defterde hatırlatması kurulmamış '+_scan.eligible.length+' onaylı randevu var (anahtar girilmeden önce alınmış).\n\nŞimdi hepsinin 24 saat / 2 saat hatırlatmaları kurulsun mu?\n(Yaklaşık '+Math.max(1,Math.ceil(_scan.eligible.length/13))+' dakika sürer — bu pencereyi açık bırakın.)')){
+        toast('🤖','Toplu kurulum başladı', _scan.eligible.length+' randevu sırayla Piyzi\'ye kuruluyor…','g');
+        rdWaBackfill(true).then(function(r){
+          toast('🤖','Toplu kurulum bitti', ((r&&r.scheduledOk)||0)+' randevunun hatırlatması kuruldu'+((r&&r.failed)?(', '+r.failed+' başarısız — konsola bakın'):'')+'.', (r&&r.failed)?'r':'g');
+        });
+      }
+    }catch(e){ console.warn('[wa] arm-time backfill offer failed:', e); }
+  }
 }
 setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
 
