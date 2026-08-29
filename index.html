@@ -2175,6 +2175,9 @@
       try{ _rdLogApptCreate(a,'online-booking'); }catch(e){}
       _obMarkProcessed(id);
       try{saveAll();}catch(e){try{syncPush('rdns_main_v1',{clients,appointments,payments});}catch(_){}}
+      // 🤖 An online booking earns the same WhatsApp reminders as a desk one.
+      // Only the device that claimed the request schedules — no doubles.
+      try{ rdWaSchedule(a); }catch(e){}
       console.log('[OB] appointment created:',a);
       _fbDb.ref('rdns_booking_requests/'+id).update({handled:'booked',handledAt:Date.now(),apptId:a.id}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Randevu kaydedildi ama Firebase Rules güncellemesi yayınlanmamış — çift kayıt riskine karşı Rules ekranını güncelleyin.','r');}catch(_){}} );
       try{toast('🌐','ONLINE RANDEVU KAYDEDİLDİ! 🎉',cl.name+' — '+req.date+' '+req.time+(staffPick?' · '+staffPick:'')+(req.service?' · '+req.service:''),'g');}catch(e){}
@@ -3529,6 +3532,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="r24-panel">
         <div class="r24-header">
           <div class="r24-title">⏰ 24 Saat Kala Hatırlatmalar <span class="r24-count" id="dash-r24-count">0</span></div>
+          <button class="btn btn-sm" id="dash-wa-auto" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="rdWaSetup()" title="Otomatik WhatsApp hatırlatmaları (Piyzi) — anahtar bu cihaza girilince açılır">🤖 Oto: KAPALI</button>
           <button class="btn btn-wa btn-sm" id="dash-r24-send-all" style="display:none;" onclick="sendAll24hReminders()">💬 Hepsini Oluştur &amp; Gönder</button>
         </div>
         <div id="dash-r24-list"><div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div></div>
@@ -5871,6 +5875,7 @@ function dashEditAppt(id){
         // is what left records with no Hizmet at all.
         const _svcVal = document.getElementById('a-service').value;
         if(_svcVal) live.service = _svcVal;
+        const _oldDt = live.datetime;   // to spot a moved booking below
         live.datetime  = document.getElementById('a-dt').value;
         live.duration  = Math.min(60, parseInt(document.getElementById('a-dur').value)||60);
         let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
@@ -5968,6 +5973,11 @@ function dashEditAppt(id){
         }
 
         try{ saveAll(); }catch(e){ console.error('saveAll error on update:', e); }
+        // 🤖 A moved booking: the WhatsApp reminders standing at Piyzi still
+        // point at the OLD hour — kill them and book fresh ones for the new.
+        // A checkout through this same popup is not a move (the visit is
+        // already happening), so only a still-confirmed booking reschedules.
+        try{ if(_oldDt !== live.datetime && live.status==='confirmed') rdWaReschedule(live); }catch(e){}
         closeModal('mAppt');
         saveBtn.textContent = '+ Randevu';
         saveBtn.onclick = saveAppt;
@@ -6226,6 +6236,7 @@ function dashCancelAppt(id){
   apptTouch(a);
   priceOvrSealCancel(a);
   cancelLogAdd(a, auth.role);
+  try{ rdWaCancel(a); }catch(e){}   // kill the pending WhatsApp reminders too
   saveAll(); renderDash(); renderAppts(); updateApptBadge();
   toast('❌','Cancelled','Appointment cancelled. ('+auth.role+')','r');
 }
@@ -6662,6 +6673,10 @@ function noShowClose(a, role, reason){
   apptTouch(a);
   priceOvrSealCancel(a);
   cancelLogAdd(a, role, reason||'gelmedi');
+  // A no-show is closed after its hour, so the reminders normally already
+  // went — but a gelmedi marked EARLY still has one pending, and the worker
+  // counts "already sent" as cancelled anyway. Always safe to ask.
+  try{ rdWaCancel(a); }catch(e){}
 }
 // The third button on the appointment card, next to ✓ Done and ✕. Same
 // password and the same guards as a cancellation — only the reason differs.
@@ -8602,6 +8617,9 @@ function saveAppt(){
   appointments.push(a);
   try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
   saveAll();
+  // 🤖 The booking books its own WhatsApp reminders at Piyzi (24h + 2h);
+  // fire-and-forget, dormant on a device without the key.
+  try{ rdWaSchedule(a); }catch(e){}
   // Saat ver: this booking resolves a pending rebook — flip it to booked so
   // the queue badge drops; everything downstream (reminders, confirmation)
   // already happened through this normal path.
@@ -9260,8 +9278,8 @@ function rbReportText(){
   }catch(e){ return ''; }
 }
 
-function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
-function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
+function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);try{rdWaCancel(a);}catch(e){}saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
+function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;try{rdWaCancel(appointments.find(x=>x.id===id));}catch(e){}apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
@@ -11085,6 +11103,125 @@ function normalizeWaPhone(phone){
   else if(!p.startsWith("90") && p.length <= 10) p = "90" + p; // bare 10-digit local number -> assume 90
   return p;
 }
+
+// WA-SLICE-START (the fixture tests run this block as-is — keep it self-contained)
+/* ── Otomatik WhatsApp hatırlatmaları, Piyzi üzerinden ──────────────────────
+   The rd-buttons worker fronts Piyzi's API (worker/README.md, routes under
+   /wa/). Every booking schedules its OWN 24-hour and 2-hour reminders there,
+   at the moment it is booked — Piyzi's servers do the sending, so no tab has
+   to be open and there is no morning sweep to miss. The uids Piyzi answers
+   with are stored on the appointment (a.wa.u) and ride the normal sync, which
+   is what lets a cancellation from ANY device kill exactly the reminders this
+   booking created (a.wa.x keeps what was killed, for tracing).
+
+   DORMANT BY DEFAULT. Nothing happens on a device until the shared key is
+   pasted into it — the 🤖 button on the dashboard reminders panel (owner PIN),
+   or rdWaSetKey('…') in the console. No key: no calls, no errors, the manual
+   panel keeps working exactly as before. Turning one device on turns the
+   feature on: bookings made on other, key-less devices simply schedule
+   nothing, so roll out by putting the key on the machines that actually take
+   bookings. */
+const RD_WA_WORKER = 'https://rd-buttons.royaldiamond.workers.dev';
+function rdWaKey(){ try{ return localStorage.getItem('rdns_wa_key_v1')||''; }catch(e){ return ''; } }
+function rdWaOn(){ return !!rdWaKey(); }
+
+// What /wa/schedule is asked, or null when this appointment must not produce
+// messages at all: no client, no phone that cleans up to a real Turkish
+// mobile, the KAPALI hour-blocker, a malformed datetime. The worker re-checks
+// all of this — null here just saves the round trip.
+function rdWaPayload(a, c){
+  if(!a || a.id==null || !c) return null;
+  const name = String(c.name||'');
+  if(/kapal[ıi]/i.test(name)) return null;
+  const phone = (typeof normalizeWaPhone==='function') ? normalizeWaPhone(String(c.phone||'')) : String(c.phone||'');
+  if(!/^90\d{10}$/.test(phone)) return null;
+  const dt = String(a.datetime||'');
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return null;
+  return { apptId:String(a.id), phone:phone, name:name,
+           dateISO:dt.slice(0,10), timeHHMM:dt.slice(11,16), service:String(a.service||'') };
+}
+
+function rdWaFetch(path, body){
+  return fetch(RD_WA_WORKER + path, {
+    method:'POST',
+    headers:{ 'content-type':'application/json', 'x-rd-key': rdWaKey() },
+    body: JSON.stringify(body)
+  }).then(function(r){ return r.json(); });
+}
+
+// Fire-and-forget: booking must never wait on (or break on) the reminder
+// machinery. On success the uids land on the LIVE record — re-found by id,
+// because a cloud snapshot can swap the array while the request is in the
+// air — and are stamped so the merge carries them to every device.
+function rdWaSchedule(a){
+  try{
+    if(!rdWaOn() || !a) return;
+    const c = (clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+    const p = rdWaPayload(a, c);
+    if(!p) return;
+    rdWaFetch('/wa/schedule', p).then(function(j){
+      const live = (typeof apptById==='function') ? apptById(a.id) : null;
+      if(!live) return;
+      if(j && j.ok){
+        live.wa = { u:(j.scheduled||[]).map(function(s){ return s.uid; }), t:Date.now() };
+        apptTouch(live); saveAll();
+        console.log('[wa] appt', a.id, 'scheduled:', JSON.stringify(j.scheduled||[]), 'skipped:', JSON.stringify(j.skipped||[]));
+      } else {
+        console.warn('[wa] appt', a.id, 'schedule failed:', j&&j.error&&j.error.code, j&&j.error&&j.error.message);
+        // The one failure that means "the setup is not finished" is worth a
+        // toast — it will hit EVERY booking until the worker's template specs
+        // are filled in, and silence here is how it would go unnoticed.
+        if(j && j.error && j.error.code==='TEMPLATES_NOT_CONFIGURED'){
+          try{ toast('🤖','WA şablon ayarı eksik','Hatırlatma kurulamadı: worker şablonları henüz tanımlı değil (TEMPLATES_NOT_CONFIGURED).','r'); }catch(e){}
+        }
+      }
+    }).catch(function(e){ console.warn('[wa] appt', a.id, 'schedule unreachable:', e); });
+  }catch(e){ console.warn('[wa] schedule error:', e); }
+}
+
+// A cancellation kills what is still pending. "Already sent" and "already
+// gone" count as killed at the worker, so this cannot fail for being late.
+// The uids move from wa.u to wa.x — the record keeps its trace, and a second
+// cancel finds nothing to send.
+function rdWaCancel(a){
+  try{
+    if(!rdWaOn() || !a || !a.wa || !Array.isArray(a.wa.u) || !a.wa.u.length) return;
+    const uids = a.wa.u.slice();
+    a.wa = { x:uids, t:Date.now() };
+    rdWaFetch('/wa/cancel', { uids:uids }).then(function(j){
+      console.log('[wa] appt', a.id, 'cancel:', JSON.stringify((j&&j.results)||[]));
+      if(!(j && j.ok)) console.warn('[wa] appt', a.id, 'cancel incomplete — check worker logs');
+    }).catch(function(e){ console.warn('[wa] appt', a.id, 'cancel unreachable:', e); });
+  }catch(e){ console.warn('[wa] cancel error:', e); }
+}
+
+// A moved booking: the reminders for the OLD hour are lies now — kill them
+// and book fresh ones for the new hour.
+function rdWaReschedule(a){
+  try{ rdWaCancel(a); rdWaSchedule(a); }catch(e){ console.warn('[wa] reschedule error:', e); }
+}
+// WA-SLICE-END
+
+// The 🤖 button on the dashboard reminders panel: owner PIN, then paste the
+// shared key (the same BTN_KEY the wall buttons carry) — or leave the box
+// empty to switch this device back off.
+function rdWaSetKey(k){ try{ localStorage.setItem('rdns_wa_key_v1', String(k||'').trim()); }catch(e){} rdWaBadge(); }
+function rdWaBadge(){
+  const b=document.getElementById('dash-wa-auto');
+  if(b) b.textContent = rdWaOn() ? '🤖 Oto: AÇIK' : '🤖 Oto: KAPALI';
+}
+function rdWaSetup(){
+  if(typeof ownerPin==='function' && !ownerPin()) return;
+  const k = prompt(rdWaOn()
+    ? 'Otomatik WhatsApp hatırlatmaları bu cihazda AÇIK.\nAnahtarı değiştirmek için yenisini yapıştırın; KAPATMAK için kutuyu boşaltıp Tamam deyin.'
+    : 'Otomatik WhatsApp hatırlatmaları için paylaşılan anahtarı yapıştırın (BTN_KEY):');
+  if(k===null) return;
+  rdWaSetKey(k);
+  toast('🤖', rdWaOn()?'Otomatik hatırlatma AÇIK':'Otomatik hatırlatma KAPALI',
+    rdWaOn()?'Bu cihazdan yapılan her randevu, 24 saat ve 2 saat kala WhatsApp hatırlatmasını Piyzi\'de kurar.'
+            :'Bu cihaz artık otomatik hatırlatma kurmaz.', rdWaOn()?'g':'r');
+}
+setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
 
 function send24hReminder(key, phone){
   const msg = dash24hMessages[key];
