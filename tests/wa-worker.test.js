@@ -30,10 +30,13 @@ const ctx = {
   console: { log: () => {}, warn: () => {}, error: () => {} },
   TextEncoder, Intl, Date, JSON, Math, Object, Array, String, Number, Boolean,
   isNaN, parseFloat, parseInt, RegExp, Response: class {}, fetch: () => { throw new Error('no network in tests'); },
+  // The page template module is ESM; the vm slice gets a token-only stand-in
+  // so rRender's substitution and escaping can be tested without the 165KB.
+  R_PAGE: '{{BODY}}|{{HEADLINE}}|{{DATE}}|{{TIME}}|{{SVC}}|{{DONE_T}}|{{DONE_P}}',
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(0, cut) +
-  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waSpec, waFill };',
+vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
+  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waSpec, waFill, rRender, rDateStr };',
   ctx, { filename: 'worker-index-slice.js' });
 const api = ctx.__api;
 
@@ -128,6 +131,24 @@ console.log('6. placeholder filling, in the template\'s own order');
   const out = api.waFill(spec, { name: 'Ayşe', when: 'x', service: 'x', date: '2026-09-01', time: '14:00', apptId: '1756000000001' });
   is(out.parameters.body, ['14:00'], 'the live 24h spec: body carries the hour alone');
   is(out.parameters.buttons, { 0: '1756000000001' }, 'the live spec: button carries the apptId');
+}
+
+console.log('7. the confirm page render');
+is(api.rDateStr('2026-09-02T16:00'), '2 Eylül Çarşamba', 'the date reads as the design\'s own example did');
+{
+  const out = api.rRender('pending', { dt: '2026-09-02T16:00', svc: 'Manikür <b>&</b>', st: 'pending' });
+  is(out.includes('|16:00|'), true, 'the hour lands in its slot');
+  is(out.includes('Manikür &lt;b&gt;&amp;&lt;/b&gt;'), true, 'the service is HTML-escaped');
+  is(out.startsWith('|'), true, 'pending state: no body class');
+}
+{
+  const out = api.rRender('answered', { dt: '2026-09-02T16:00', svc: 'M', st: 'change' });
+  is(out.startsWith('answered|'), true, 'answered state class set');
+  is(out.includes('Aldık, teşekkürler'), true, 'the change thank-you text');
+}
+{
+  const out = api.rRender('na', null);
+  is(out.startsWith('na|Sizi bekliyoruz||||'), true, 'unknown id: na class, no data leaked into the slots');
 }
 
 console.log('');

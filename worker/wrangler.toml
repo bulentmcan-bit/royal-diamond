@@ -16,6 +16,15 @@ workers_dev = true
 [triggers]
 crons = ["0 3 * * *", "0 4 * * *"]
 
+# The confirm-page store. Each key holds ONE appointment's public face — date,
+# time, service, and the customer's answer — and nothing else: no name, no
+# phone, no price. The armed app pushes records here behind the shared key;
+# the /r/ page reads them; answers travel back to the app by polling. No
+# Firebase credential ever sits on this worker.
+[[kv_namespaces]]
+binding = "RD_WA"
+id = "087711ff20264efe9e6aadfacaf945e1"
+
 # The reminders' master switch. "off" means the six-o'clock firing only writes
 # a log line; nothing is read as a batch, nothing is sent. Turning it on is a
 # one-word edit here plus a deploy — deliberate and visible in git, never an

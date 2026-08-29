@@ -3538,6 +3538,16 @@ p, span, div, label, h1, h2, h3, h4 {
         <div id="dash-r24-list"><div class="r24-empty">✅ No appointments in the next 24 hours — all clear!</div></div>
       </div>
 
+      <!-- The customers' own answers, tapped on the reminder's confirm page.
+           A ↻ here is a slot that may be about to open — reception calls,
+           and the Gap Report shows the same booking marked amber. -->
+      <div class="r24-panel" id="dash-wa-ans-panel">
+        <div class="r24-header">
+          <div class="r24-title">📩 Müşteri Yanıtları <span class="r24-count" id="dash-wa-ans-count">0</span></div>
+        </div>
+        <div id="dash-wa-ans-list"><div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div></div>
+      </div>
+
       <!-- GOOGLE REVIEW REQUESTS PANEL -->
       <div class="r24-panel" id="rv-panel" style="border-color:rgba(212,169,106,.55);">
         <div class="r24-header">
@@ -8449,6 +8459,7 @@ function renderGapReport(){
   // Each appointment occupies EVERY slot it overlaps, based on its true duration.
   const bookedMap = {};
   SLOTS.forEach(s => { bookedMap[s] = {}; });
+  const changeReqs = [];   // "değişiklik istiyorum" answers — slots about to open
 
   (appointments||[]).filter(a => {
     if(a.status==='cancelled') return false;
@@ -8464,13 +8475,22 @@ function renderGapReport(){
     const dur = parseInt(a.duration) || staffSvcDur(a.staff,a.service) || 60;
     const cl = (clients||[]).find(c => String(c.id)===String(a.clientId));
     const name = cl ? cl.name.split(' ')[0] : 'Client';
+    // The customer pressed "Değişiklik istiyorum" on the reminder page: the
+    // booking still holds its slot, but it is at risk — mark every cell it
+    // occupies and put it on the call strip above the table.
+    const wantsChange = !!(a.waAns && a.waAns.v==='change');
+    if(wantsChange) changeReqs.push({
+      time: String(a.datetime).slice(11,16), tech: matchedTech,
+      name: cl ? cl.name : 'Client',
+      phone: cl && cl.phone ? ((typeof normalizeWaPhone==='function')?normalizeWaPhone(cl.phone):cl.phone) : ''
+    });
     GRID[matchedTech].forEach(s => {
       const [sh,sm] = s.split(':').map(Number);
       const sMin = sh*60+sm;
       // slot overlaps the appointment window?
       if(sMin < startMin+dur && sMin+SLOTLEN[matchedTech] > startMin){
         const isStart = (sMin <= startMin && startMin < sMin+SLOTLEN[matchedTech]);
-        if(!bookedMap[s][matchedTech] || isStart) bookedMap[s][matchedTech] = {n:name, first:isStart};
+        if(!bookedMap[s][matchedTech] || isStart) bookedMap[s][matchedTech] = {n:name, first:isStart, ch:wantsChange};
       }
     });
   });
@@ -8538,10 +8558,13 @@ function renderGapReport(){
       if(bkEntry){
         const name = (typeof bkEntry==='object') ? bkEntry.n : bkEntry;
         const isStart = (typeof bkEntry==='object') ? bkEntry.first : true;
+        const wantsCh = (typeof bkEntry==='object') && bkEntry.ch;
         if(isStart){
-          html += `<td style="padding:6px 8px;text-align:center;"><div style="background:#1ea34f;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;">${name}</div></td>`;
+          html += wantsCh
+            ? `<td style="padding:6px 8px;text-align:center;"><div style="background:#c4863a;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;" title="${name} değişiklik istedi — saat boşalabilir">↻ ${name}</div></td>`
+            : `<td style="padding:6px 8px;text-align:center;"><div style="background:#1ea34f;color:#fff;border-radius:7px;padding:6px 4px;font-size:0.72rem;font-weight:700;">${name}</div></td>`;
         } else {
-          html += `<td style="padding:6px 8px;text-align:center;"><div style="background:rgba(30,163,79,0.35);color:#e8f5ec;border-radius:7px;padding:6px 4px;font-size:0.68rem;font-weight:600;letter-spacing:1px;" title="${name} — devam ediyor">⋯ devam</div></td>`;
+          html += `<td style="padding:6px 8px;text-align:center;"><div style="background:${wantsCh?'rgba(196,134,58,0.35)':'rgba(30,163,79,0.35)'};color:#e8f5ec;border-radius:7px;padding:6px 4px;font-size:0.68rem;font-weight:600;letter-spacing:1px;" title="${name} — devam ediyor">⋯ devam</div></td>`;
         }
       } else {
         const cellId = 'gr-'+slot.replace(':','')+'-'+tech;
@@ -8558,6 +8581,30 @@ function renderGapReport(){
   });
   html += '</tbody>';
   tbl.innerHTML = html;
+
+  // The call strip: every "değişiklik istiyorum" answer for this day, phone
+  // in hand — these slots can be refilled the moment reception calls.
+  try{
+    let chEl = document.getElementById('gr-change');
+    if(!chEl && tbl.parentElement && tbl.parentElement.parentElement){
+      chEl = document.createElement('div');
+      chEl.id = 'gr-change';
+      tbl.parentElement.parentElement.insertBefore(chEl, tbl.parentElement);
+    }
+    if(chEl){
+      chEl.innerHTML = changeReqs.length
+        ? '<div style="background:rgba(196,134,58,0.10);border:1px solid rgba(196,134,58,0.45);border-radius:10px;padding:12px 14px;margin-bottom:14px;">'
+          +'<div style="font-weight:800;color:#c4863a;margin-bottom:8px;">↻ Değişiklik isteyenler — bu saatler boşalabilir, hemen arayın</div>'
+          + changeReqs.sort((x,y)=>x.time.localeCompare(y.time)).map(r =>
+              '<div style="display:flex;align-items:center;gap:10px;padding:5px 0;font-size:0.85rem;">'
+              +'<b style="white-space:nowrap;">'+r.time+'</b><span>'+r.name+'</span>'
+              +'<span style="color:var(--muted);font-size:0.75rem;">'+r.tech+'</span>'
+              +(r.phone?'<a href="tel:+'+r.phone+'" style="margin-left:auto;background:rgba(196,134,58,0.18);border:1px solid rgba(196,134,58,0.5);color:#c4863a;border-radius:7px;padding:3px 10px;text-decoration:none;font-weight:700;font-size:0.78rem;">📞 Ara</a>':'')
+              +'</div>').join('')
+          +'</div>'
+        : '';
+    }
+  }catch(e){ console.warn('gr-change strip:', e); }
 
   // Subtitle
   const sub = document.getElementById('gr-subtitle');
@@ -11007,6 +11054,7 @@ function markR24Sent(apptIds, text){
 }
 
 async function renderDash24h(){
+  try{ if(typeof renderWaAnswers==='function') renderWaAnswers(); }catch(e){}
   const list = document.getElementById("dash-r24-list");
   const countEl = document.getElementById("dash-r24-count");
   const sendBtn = document.getElementById("dash-r24-send-all");
@@ -11198,6 +11246,9 @@ function rdWaSchedule(a){
       if(j && j.ok){
         live.wa = { u:(j.scheduled||[]).map(function(s){ return s.uid; }), t:Date.now() };
         apptTouch(live); saveAll();
+        // The confirm page learns this booking's public face (date, time,
+        // service — nothing else) the moment its reminders exist.
+        try{ rdWaConfirmPush([live]); }catch(e){}
         console.log('[wa] appt', a.id, 'scheduled:', JSON.stringify(j.scheduled||[]), 'skipped:', JSON.stringify(j.skipped||[]));
       } else {
         console.warn('[wa] appt', a.id, 'schedule failed:', j&&j.error&&j.error.code, j&&j.error&&j.error.message);
@@ -11221,6 +11272,7 @@ function rdWaCancel(a){
     if(!rdWaOn() || !a || !a.wa || !Array.isArray(a.wa.u) || !a.wa.u.length) return;
     const uids = a.wa.u.slice();
     a.wa = { x:uids, t:Date.now() };
+    try{ rdWaConfirmDel([String(a.id)]); }catch(e){}   // the confirm page forgets a dead booking
     rdWaFetch('/wa/cancel', { uids:uids }).then(function(j){
       console.log('[wa] appt', a.id, 'cancel:', JSON.stringify((j&&j.results)||[]));
       if(!(j && j.ok)) console.warn('[wa] appt', a.id, 'cancel incomplete — check worker logs');
@@ -11289,7 +11341,7 @@ async function rdWaBackfill(apply){
       const j=await rdWaFetch('/wa/schedule', e.payload);
       if(j&&j.ok){
         const live=(typeof apptById==='function')?apptById(e.id):null;
-        if(live){ live.wa={u:(j.scheduled||[]).map(s=>s.uid), t:Date.now()}; apptTouch(live); }
+        if(live){ live.wa={u:(j.scheduled||[]).map(s=>s.uid), t:Date.now()}; apptTouch(live); try{ rdWaConfirmPush([live]); }catch(_){} }
         ok++;
       } else { fail++; failures.push({apptId:e.payload.apptId, error:j&&j.error}); }
     }catch(err){ fail++; failures.push({apptId:e.payload.apptId, error:String(err)}); }
@@ -11340,6 +11392,91 @@ function rdWaSetup(){
   }
 }
 setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
+
+// ── The confirm page's data feed and the answers coming back ────────────────
+// The /r/<apptId> page the reminder's button opens lives on the worker and
+// reads the worker's own store. The armed app feeds that store the booking's
+// PUBLIC face only — date, time, service; never a name, phone or price — and
+// polls the answers customers tap back into the book, where the dashboard
+// and the Gap Report read them off a.waAns.
+function rdWaConfirmPush(appts){
+  if(!rdWaOn()) return;
+  const items=(appts||[]).map(function(a){
+    return a&&a.id!=null?{id:String(a.id), dt:String(a.datetime||'').slice(0,16), svc:String(a.service||'')}:null;
+  }).filter(Boolean);
+  if(items.length) rdWaFetch('/wa/confirm-push',{items:items}).catch(function(e){ console.warn('[wa] confirm-push:',e); });
+}
+function rdWaConfirmDel(ids){
+  if(!rdWaOn()||!ids||!ids.length) return;
+  rdWaFetch('/wa/confirm-del',{ids:ids}).catch(function(e){ console.warn('[wa] confirm-del:',e); });
+}
+let _waPollBusy=false;
+function rdWaPollAnswers(){
+  if(!rdWaOn()||_waPollBusy) return;
+  _waPollBusy=true;
+  rdWaFetch('/wa/answers',{}).then(function(j){
+    _waPollBusy=false;
+    if(!(j&&j.ok&&Array.isArray(j.answers))||!j.answers.length) return;
+    const ack=[]; let changed=false;
+    j.answers.forEach(function(ans){
+      const a=(appointments||[]).find(function(x){ return x&&String(x.id)===String(ans.id); });
+      if(a){
+        if(!a.waAns||a.waAns.v!==ans.st){
+          a.waAns={v:ans.st, at:ans.at||Date.now()};
+          apptTouch(a); changed=true;
+          if(ans.st==='change'){
+            const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
+            try{ toast('↻','DEĞİŞİKLİK İSTEĞİ',((c&&c.name)||'Müşteri')+' — '+String(a.datetime).slice(0,16).replace('T',' ')+' randevusunu değiştirmek istiyor. Saat boşalabilir!','r'); }catch(e){}
+          }
+        }
+        ack.push(String(ans.id));
+      } else if((appointments||[]).length){
+        // No such booking in a loaded book — a deleted appointment or a test
+        // record. Acknowledge so the outbox stays small.
+        ack.push(String(ans.id));
+      }
+    });
+    if(changed){
+      try{ saveAll(); }catch(e){}
+      try{ renderWaAnswers(); }catch(e){}
+      try{ const pg=document.querySelector('.page.active'); if(pg&&pg.id==='page-gapreport') renderGapReport(); }catch(e){}
+    }
+    if(ack.length) rdWaFetch('/wa/answers',{ack:ack}).catch(function(){});
+  }).catch(function(e){ _waPollBusy=false; console.warn('[wa] answers poll:',e); });
+}
+setTimeout(rdWaPollAnswers, 8000);            // once the first sync has settled
+setInterval(rdWaPollAnswers, 60000);          // and then once a minute
+
+// The dashboard panel: who confirmed, who wants to change. The changes are
+// the ones that matter — each is a slot that can be refilled.
+function renderWaAnswers(){
+  const list=document.getElementById('dash-wa-ans-list');
+  const count=document.getElementById('dash-wa-ans-count');
+  if(!list) return;
+  const now=Date.now()-3600e3*2;
+  const answered=(appointments||[]).filter(function(a){
+    return a&&a.status==='confirmed'&&a.waAns&&new Date(a.datetime).getTime()>now;
+  }).sort(function(x,y){ return String(x.datetime).localeCompare(String(y.datetime)); });
+  const chg=answered.filter(function(a){ return a.waAns.v==='change'; });
+  const okd=answered.filter(function(a){ return a.waAns.v==='confirm'; });
+  if(count) count.textContent=String(answered.length);
+  if(!answered.length){
+    list.innerHTML='<div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div>';
+    return;
+  }
+  const row=function(a,ch){
+    const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
+    const nm=(c&&c.name)||'Müşteri';
+    const when=String(a.datetime).slice(5,16).replace('T',' · ');
+    const ph=(c&&c.phone)?((typeof normalizeWaPhone==='function')?normalizeWaPhone(c.phone):c.phone):'';
+    return '<div class="r24-item" style="'+(ch?'background:rgba(196,134,58,0.10);':'')+'">'
+      +'<div class="r24-left"><div class="r24-name">'+(ch?'↻ ':'✅ ')+nm+'</div>'
+      +'<div class="r24-meta">'+when+' · '+(a.service||'')+(a.staff?' · '+a.staff:'')+(ch?' — <b style="color:#c4863a;">saat boşalabilir, arayın</b>':'')+'</div></div>'
+      +(ch&&ph?'<a class="btn btn-sm" style="background:rgba(196,134,58,0.18);border:1px solid rgba(196,134,58,0.5);color:#c4863a;text-decoration:none;" href="tel:+'+ph+'">📞 Ara</a>':'')
+      +'</div>';
+  };
+  list.innerHTML=chg.map(function(a){return row(a,true);}).join('')+okd.map(function(a){return row(a,false);}).join('');
+}
 
 function send24hReminder(key, phone){
   const msg = dash24hMessages[key];
