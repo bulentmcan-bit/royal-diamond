@@ -86,6 +86,15 @@ function makeDevice() {
        '447493876052', 'a UK +44 number now schedules');
     is(vm.runInContext('rdWaPayload({id:4,datetime:"2026-09-01T10:00"}, {id:10,name:"X",phone:"99716784"})', d.ctx),
        null, 'a bare 8-digit local number stays rejected — and visible in the manual list');
+    is(vm.runInContext('rdWaPayload({id:5,datetime:"2026-09-01T10:00"}, {id:11,name:"Pembe",phone:"44796186474"})', d.ctx),
+       null, 'PEMBE\'s one-short UK number no longer schedules');
+    is(vm.runInContext('rdWaPhoneCheck("44796186474").st', d.ctx), 'bad', 'known country, wrong length → bad');
+    is(vm.runInContext('rdWaPhoneCheck("905338669933").st', d.ctx), 'ok', 'TR 12 digits → ok');
+    is(vm.runInContext('rdWaPhoneCheck("35850123456").st', d.ctx), 'unverified', 'unknown country code → unverified, accepted but marked');
+    is(vm.runInContext('rdWaPhoneCheck("357971569520027").st', d.ctx), 'bad', 'JULİA\'s 15-digit 357 → bad');
+    is(vm.runInContext('rdWaPhoneCheck("9090909090").st', d.ctx), 'invalid', 'the OTEL placeholder → invalid');
+    is(vm.runInContext('rdWaPhoneReason("44796186474")', d.ctx).includes('12 hane'), true,
+       'the reason speaks reception\'s language: how many digits +44 needs');
     is(vm.runInContext('rdWaPayload({id:1,datetime:"yarın"}, {id:7,name:"Ayşe",phone:"05338669933"})', d.ctx),
        null, 'a broken datetime → null');
     is(vm.runInContext('rdWaPayload({id:1,datetime:"2026-09-01T14:00"}, null)', d.ctx),

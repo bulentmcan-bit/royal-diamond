@@ -60,8 +60,20 @@ is(api.waPhone('35799716784'), '35799716784', 'south Cyprus 357… (the SUZSANNA
 is(api.waPhone('447493876052'), '447493876052', 'UK 44… (the PINAR case) accepted as-is');
 is(api.waPhone('+44 7493 876052'), '447493876052', '+44 form → digits with country code');
 is(api.waPhone('0035799716784'), '35799716784', '00357 international prefix stripped');
-is(api.waPhone('07493876052'), '907493876052', 'a leading 0 still reads as LOCAL (TR) — a UK 07… must be stored with 44');
+is(api.waPhone('07493876052'), null, 'a UK 07… home-format number is REFUSED (no longer TR-ified into a number that goes nowhere) — store it with 44');
+is(api.waPhone('05338669933'), '905338669933', 'a real TRNC local 05… still lifts to 90 5…');
 is(api.waPhone('99716784'), null, 'a bare 8-digit local number is ambiguous → null, shown for a human');
+console.log('1b. per-country length — the salon\'s real broken numbers stay refused');
+is(api.waPhone('44796186474'), null, 'PEMBE: UK one digit short (11) → null, never a stranger\'s phone');
+is(api.waPhone('357971569520027'), null, 'JULİA: 15-digit nonsense on 357 → null');
+is(api.waPhone('35797466005875'), null, 'Duaa: 357 too long → null');
+is(api.waPhone('3579973291211'), null, 'Yana: 357 too long → null');
+is(api.waPhone('9090909090'), null, 'OTEL: 10-digit placeholder → null');
+is(api.waPhone('9099801007'), null, 'Noni: too short → null');
+is(api.waPhone('61412345678'), '61412345678', 'Australia 61 at 11 digits passes');
+is(api.waPhone('966501234567'), '966501234567', 'Saudi 966 at 12 digits passes');
+is(api.waPhone('35850123456'), '35850123456', 'Finland 358 — unknown code → accepted UNVERIFIED, not rejected');
+is(api.waPhone('4479618647'), null, 'UK ten digits → null (basic shape)');
 
 console.log('2. the blocker client');
 is(api.waBlockedName('KAPALI — Personel'), true, 'the exact record name');

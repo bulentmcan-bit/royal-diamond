@@ -3544,6 +3544,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="r24-panel" id="dash-wa-ans-panel">
         <div class="r24-header">
           <div class="r24-title">📩 Müşteri Yanıtları <span class="r24-count" id="dash-wa-ans-count">0</span></div>
+          <button class="btn btn-sm" id="dash-phone-health-btn" onclick="rdWaPhoneHealth()" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" title="Mesaj alamayacak numarası olan müşteriler — en çok gelen en üstte">📵 Numara Sağlığı</button>
         </div>
         <div id="dash-wa-ans-list"><div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div></div>
       </div>
@@ -4769,6 +4770,14 @@ p, span, div, label, h1, h2, h3, h4 {
 </div>
 
 <!-- Kasa Düzelt — manually correct the day's cash / card / IBAN / owed breakdown -->
+<div class="overlay" id="mPhoneHealth">
+  <div class="modal" style="max-width:560px;">
+    <div class="mhdr"><div class="mtitle">📵 Numara Sağlığı</div><button class="mclose" onclick="closeModal('mPhoneHealth')">✕</button></div>
+    <p style="font-size:0.78rem;color:var(--muted);margin:0 0 10px;">Mesaj alamayacak numarası olan müşteriler — en çok gelen en üstte. Numarayı TAHMİN etmeyin: bir dahaki gelişinde ya da telefonla müşteriye sorun.</p>
+    <div id="phone-health-body" style="max-height:60vh;overflow-y:auto;"></div>
+    <div class="mfoot"><button class="btn btn-ghost" onclick="closeModal('mPhoneHealth')">Kapat</button></div>
+  </div>
+</div>
 <div class="overlay" id="mCcEdit">
   <div class="modal" style="max-width:470px;">
     <div class="mhdr"><div class="mtitle">✏️ Kasa Dağılımını Düzelt</div><button class="mclose" onclick="closeModal('mCcEdit')">✕</button></div>
@@ -5648,7 +5657,7 @@ function renderDashGrid(){
       const doneBorder = isMoneyOk ? 'rgba(232,132,122,0.4)' : 'rgba(230,168,80,0.45)';
       html += '<div style="background:'+(isDone?doneBg:isPast?'rgba(255,255,255,0.04)':'rgba(37,211,102,0.13)')+';border:1px solid '+(isDone?doneBorder:isPast?'rgba(255,255,255,0.1)':'rgba(37,211,102,0.25)')+';border-left:3px solid '+col+';border-radius:6px;padding:6px 7px;margin-bottom:5px;'+(isDone?'opacity:0.85;':'')+'">';
       const isBday = (a.birthday || (typeof isBirthdayAppt==='function' && isBirthdayAppt(a.clientId, a.datetime)));
-      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+'</div>';
+      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+((typeof rdWaPhoneMark==='function')?rdWaPhoneMark(a.clientId):'')+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
       html += '<div style="font-size:0.63rem;color:#6b8c70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;">'+a.service+'</div>';
       // Unpaid old debt on this customer — one small line so reception knows
@@ -8338,7 +8347,7 @@ function showClientDetail(id){
   document.getElementById("cd-title").textContent="👤 "+c.name;
   document.getElementById("cd-body").innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:11px 13px;font-size:.84rem;">
-      <span>📞 ${eh(c.phone||'—')}</span>
+      <span>📞 ${eh(c.phone||'—')}${typeof rdWaPhoneMark==='function'?rdWaPhoneMark(c.id):''}</span>
       <span>🎂 ${c.birthday?fDate(c.birthday+"T00:00"):"—"}</span>
       <span>💅 ${st.done.length} ziyaret</span>
       ${showP?`<span>💰 ₺${st.spend.toLocaleString('tr-TR')}</span>`:''}
@@ -8645,7 +8654,7 @@ function renderAppts(){
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:7px">
         <div class="avatar" style="background:${avC(c?.name)};width:26px;height:26px;font-size:0.68rem">${avI(c?.name)}</div>
-        <strong>${c?.name}</strong>${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
+        <strong>${c?.name}</strong>${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}${typeof rdWaPhoneMark==='function'?rdWaPhoneMark(a.clientId):''}${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
       <td>${a.service}</td>
       <td style="font-size:0.81rem">${fDT(a.datetime)}</td>
       <td style="color:var(--muted)">${a.duration}m</td>
@@ -9371,6 +9380,17 @@ function saveClient(){
   const name=document.getElementById("c-name").value.trim();
   const phone=normalizeWaPhone(document.getElementById("c-phone").value.trim());
   if(!name||!phone){toast("⚠️","Missing Fields","Name and phone required.","r");return;}
+  // The customer is standing at the desk RIGHT NOW — this is the only moment
+  // a wrong number can actually be fixed. A demonstrably broken one asks
+  // before it is saved; an unrecognised country code saves with a note.
+  try{
+    const _v = rdWaPhoneCheck(phone);
+    if(_v.st==='bad'||_v.st==='invalid'){
+      if(!confirm('📵 NUMARA HATALI görünüyor: '+rdWaPhoneReason(phone)+'\n\nBu numaraya WhatsApp/hatırlatma GÖNDERİLEMEZ. Müşteriye şimdi sorun.\n\nYine de böyle kaydedilsin mi?')) return;
+    } else if(_v.st==='unverified'){
+      toast('🌐','Ülke kodu tanınmadı', phone+' kaydedildi ama doğrulanamadı — mümkünse müşteriyle kontrol edin.','');
+    }
+  }catch(e){}
   if(_editClientId !== null){
     // EDIT MODE — update existing client
     const idx = clients.findIndex(x=>x.id===_editClientId);
@@ -11017,9 +11037,7 @@ function r24ItemHtml(group){
         <span>💅 ${servicesStr}</span>
         <span>${dateStr} · ${timesStr}</span>
         ${urgency}
-        ${(typeof rdWaPhoneOk==='function' && !(c&&c.phone&&rdWaPhoneOk(typeof normalizeWaPhone==='function'?normalizeWaPhone(String(c.phone)):String(c.phone))))
-          ? `<span style="color:#e34948;font-weight:800;">⚠️ ${c&&c.phone?'Numara uluslararası biçime çevrilemiyor — düzeltin, otomatik hatırlatma kurulamıyor':'Telefon numarası yok'}</span>`
-          : ''}
+        ${typeof rdWaPhoneRowWarn==='function'?rdWaPhoneRowWarn(c):''}
       </div>
       ${msg?.text ? `<div class="r24-msg-preview">${msg.text}</div>` :
         msg?.status === "loading" ? `<div class="r24-generating"><div class="dot"></div><div class="dot"></div><div class="dot"></div> Generating message…</div>` :
@@ -11091,6 +11109,16 @@ function markR24Sent(apptIds, text){
 
 async function renderDash24h(){
   try{ if(typeof renderWaAnswers==='function') renderWaAnswers(); }catch(e){}
+  // The health button carries its own count, red when anyone is unreachable.
+  try{
+    const hb=document.getElementById('dash-phone-health-btn');
+    if(hb&&typeof rdWaPhoneHealthRows==='function'){
+      const n=rdWaPhoneHealthRows().length;
+      hb.textContent='📵 Numara Sağlığı'+(n?' ('+n+')':'');
+      hb.style.color=n?'#e34948':'var(--gold)';
+      hb.style.borderColor=n?'rgba(227,73,72,0.5)':'rgba(212,169,106,0.35)';
+    }
+  }catch(e){}
   const list = document.getElementById("dash-r24-list");
   const countEl = document.getElementById("dash-r24-count");
   const sendBtn = document.getElementById("dash-r24-send-all");
@@ -11244,7 +11272,7 @@ function normalizeWaPhone(phone){
   // form a valid 90xxxxxxxxxx number, drop the garbage prefix.
   if(p.length >= 15){ const _c = p.slice(p.length-12); if(_c.startsWith("90")) p = _c; }
   if(p.startsWith("0")) p = "90" + p.slice(1);                 // local TRNC 0xxxxxxxxxx -> 90xxxxxxxxxx
-  else if(!p.startsWith("90") && p.length <= 10) p = "90" + p; // bare 10-digit local number -> assume 90
+  else if(/^5\d{9}$/.test(p)) p = "90" + p;                    // bare 5XXXXXXXXX -> a Turkish mobile missing its code; any OTHER bare 10 digits stays as typed and gets flagged, never silently TR-ified
   return p;
 }
 
@@ -11269,14 +11297,47 @@ const RD_WA_WORKER = 'https://rd-buttons.royaldiamond.workers.dev';
 function rdWaKey(){ try{ return localStorage.getItem('rdns_wa_key_v1')||''; }catch(e){ return ''; } }
 function rdWaOn(){ return !!rdWaKey(); }
 
-// A phone the reminders can actually reach: a Turkish mobile in 90… form, or
-// ANY international number carried with its country code — this is North
-// Cyprus, a 44 or a 357 is a normal customer, and Piyzi sends internationally
-// as long as the country code is there. 11–15 digits, no leading zero; what
-// normalizeWaPhone could not lift into that shape (a bare 8-digit local
-// number, a UK number stored in its 07… home form) is rejected — and shown,
-// never silently skipped.
-function rdWaPhoneOk(p){ return /^[1-9]\d{10,14}$/.test(String(p||'')); }
+// Per-country length table: country calling code → the TOTAL digit counts
+// (code included) a mobile-reachable number has there. Covers the countries
+// this salon actually sees; a code NOT here is not rejected — it is accepted
+// as UNVERIFIED and marked, never silently trusted. A code that IS here with
+// the wrong count is BAD: that message goes nowhere, or to a stranger.
+const WA_CC_LEN = {
+  '90':[12],  '44':[12],  '357':[11], '61':[11],  '966':[12], '39':[12],
+  '30':[12],  '49':[12,13],'7':[11],  '1':[11],   '971':[12], '98':[12],
+  '964':[13], '994':[12], '380':[12], '33':[11],  '31':[11],  '46':[11,12],
+  '972':[12], '20':[12],  '48':[11],  '43':[12,13],'32':[11], '41':[12],
+  '34':[11],  '351':[12], '40':[11],  '359':[12,13],'36':[11],'963':[12],'961':[11]
+};
+// The verdict on a normalized number. ok = known country, right length.
+// unverified = unknown country code — schedulable, but marked. bad = known
+// country, WRONG length. invalid = not even the right shape. Only ok and
+// unverified are ever allowed to schedule.
+function rdWaPhoneCheck(p){
+  p = String(p||'');
+  if(!/^[1-9]\d{10,14}$/.test(p)) return {st:'invalid'};
+  for(const len of [3,2,1]){
+    const cc = p.slice(0,len);
+    if(WA_CC_LEN[cc]){
+      let ok = WA_CC_LEN[cc].includes(p.length);
+      if(cc==='90' && ok && p[2]!=='5') ok = false;   // TR mobiles are 90 5…
+      return {st: ok?'ok':'bad', cc:cc};
+    }
+  }
+  return {st:'unverified'};
+}
+function rdWaPhoneOk(p){ const v=rdWaPhoneCheck(p); return v.st==='ok'||v.st==='unverified'; }
+// Why a number fails, in reception's language.
+function rdWaPhoneReason(p){
+  const v = rdWaPhoneCheck(p);
+  if(v.st==='ok') return '';
+  if(v.st==='unverified') return 'ülke kodu tanınmadı — doğrulanamadı';
+  if(v.st==='bad'){
+    if(v.cc==='90' && String(p||'').length===12) return 'Türk cep numarası 90 5… ile başlamalı';
+    return '+'+v.cc+' için '+WA_CC_LEN[v.cc].join(' ya da ')+' hane gerekir, '+String(p||'').length+' var';
+  }
+  return 'numara biçimi geçersiz';
+}
 
 // What /wa/schedule is asked, or null when this appointment must not produce
 // messages at all: no client, no phone that survives normalization (Turkish
@@ -11591,6 +11652,87 @@ function rdWaAnsInfo(id){
         ((c&&c.name)||'Müşteri')+' — '+ws+' tarihinde hatırlatma sayfasından yanıtladı.',
         a.waAns.v==='change'?'r':'g');
 }
+
+// ── Phone health: the flags and the list ────────────────────────────────────
+// A broken number must be seen where the person is — on the customer, on the
+// appointment, and at the moment of typing — never discovered by a message
+// that silently went nowhere.
+function rdWaPhoneMark(clientId){
+  try{
+    const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(clientId); });
+    if(!c) return '';
+    const p=c.phone?((typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone)):String(c.phone)):'';
+    if(c.phone){
+      const v=rdWaPhoneCheck(p);
+      if(v.st==='ok') return '';
+      if(v.st==='unverified') return ' <span title="Ülke kodu tanınmadı — numara doğrulanamadı" style="cursor:help;">🌐</span>';
+      return ' <span title="Numara hatalı: '+rdWaPhoneReason(p)+' — müşteriye sorun, mesaj gitmez" style="cursor:help;">📵</span>';
+    }
+    return ' <span title="Telefon numarası yok — mesaj gönderilemez" style="cursor:help;">📵</span>';
+  }catch(e){ return ''; }
+}
+function rdWaPhoneRowWarn(c){
+  try{
+    if(!c||!c.phone) return '<span style="color:#e34948;font-weight:800;">📵 Telefon numarası yok — hatırlatma gönderilemez</span>';
+    const p=(typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone)):String(c.phone);
+    const v=rdWaPhoneCheck(p);
+    if(v.st==='ok') return '';
+    if(v.st==='unverified') return '<span style="color:#c4863a;font-weight:800;">🌐 Ülke kodu tanınmadı — numara doğrulanamadı, yine de denenecek</span>';
+    return '<span style="color:#e34948;font-weight:800;">📵 Numara hatalı ('+rdWaPhoneReason(p)+') — müşteriye SORUN, otomatik hatırlatma kurulamıyor</span>';
+  }catch(e){ return ''; }
+}
+
+// The list the owner reads: every customer whose number cannot receive a
+// message, worst first by visits — a regular with a broken number matters
+// far more than a no-show who never came. Numbers are flagged, never
+// auto-"corrected": only the customer knows her own number.
+function rdWaPhoneHealthRows(){
+  return (clients||[]).map(function(c){
+    if(!c) return null;
+    const p=c.phone?((typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone)):String(c.phone)):'';
+    if(c.phone && rdWaPhoneOk(p)) return null;
+    if(!c.phone && !((c.visits||0)>0)) return null;   // numberless never-visitors: noise, not signal
+    return {c:c, p:p, why:c.phone?rdWaPhoneReason(p):'numara hiç yok'};
+  }).filter(Boolean).sort(function(x,y){ return (y.c.visits||0)-(x.c.visits||0); });
+}
+function rdWaPhoneHealth(){
+  const b=document.getElementById('phone-health-body'); if(!b) return;
+  const rows=rdWaPhoneHealthRows();
+  b.innerHTML = rows.length
+    ? rows.map(function(r){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--border);">'
+          +'<div style="flex:1;min-width:0;"><div style="font-weight:800;">'+(r.c.name||'—')
+          +' <span style="font-weight:700;color:'+((r.c.visits||0)>0?'#c4863a':'var(--muted)')+';font-size:0.74rem;">'+(r.c.visits||0)+' ziyaret</span></div>'
+          +'<div style="font-size:0.78rem;color:var(--muted);">📞 <code>'+(r.c.phone||'—')+'</code> — <span style="color:#e34948;font-weight:700;">'+r.why+'</span>'
+          +((r.c.lastVisit&&r.c.lastVisit!=='—')?' · son: '+r.c.lastVisit:'')+'</div></div>'
+          +'<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold);" onclick="closeModal(\'mPhoneHealth\');showClientDetail('+r.c.id+')">✏ Düzelt</button>'
+          +'</div>';
+      }).join('')
+    : '<p style="color:var(--wa);font-weight:700;padding:10px 0;">✅ Bütün numaralar sağlıklı — mesaj alamayacak müşteri yok.</p>';
+  openModal('mPhoneHealth');
+}
+
+// Entry-point validation: the hint appears under the phone box AS reception
+// types — the only moment a wrong number can actually be fixed is while the
+// customer is still standing at the desk.
+(function(){
+  function _phHint(){
+    const el=document.getElementById('c-phone'); if(!el) return;
+    let h=document.getElementById('c-phone-hint');
+    if(!h){ h=document.createElement('div'); h.id='c-phone-hint'; h.style.cssText='font-size:0.74rem;margin-top:4px;font-weight:700;'; el.parentElement.appendChild(h); }
+    const raw=el.value.trim();
+    if(!raw){ h.textContent=''; return; }
+    const p=(typeof normalizeWaPhone==='function')?normalizeWaPhone(raw):raw;
+    const v=rdWaPhoneCheck(p);
+    if(v.st==='ok'){ h.style.color='#1ea34f'; h.textContent='✓ '+p; }
+    else if(v.st==='unverified'){ h.style.color='#c4863a'; h.textContent='🌐 Ülke kodu tanınmadı — kaydedilebilir ama doğrulanamaz: '+p; }
+    else { h.style.color='#e34948'; h.textContent='📵 '+rdWaPhoneReason(p)+' — bu numaraya mesaj GİTMEZ'; }
+  }
+  setTimeout(function(){
+    const el=document.getElementById('c-phone');
+    if(el){ el.addEventListener('input', _phHint); el.addEventListener('focus', _phHint); }
+  }, 1200);
+})();
 
 function send24hReminder(key, phone){
   const msg = dash24hMessages[key];

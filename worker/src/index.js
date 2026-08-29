@@ -115,8 +115,11 @@ function smsPhone(raw) {
   let p = String(raw || '').replace(/[^0-9+]/g, '').replace(/^\+/, '');
   p = p.replace(/^0090/, '90').replace(/^090/, '90').replace(/^00/, '');
   if (p.startsWith('0')) p = '90' + p.slice(1);
-  else if (!p.startsWith('90') && p.length <= 10) p = '90' + p;
-  return /^90\d{10}$/.test(p) ? '+' + p : null;
+  // Only a bare 5XXXXXXXXX reads as a Turkish mobile missing its code —
+  // prefixing any other bare 10 digits used to invent a "Turkish" number out
+  // of a foreign or broken one, and the message went to nobody or a stranger.
+  else if (/^5\d{9}$/.test(p)) p = '90' + p;
+  return /^905\d{9}$/.test(p) ? '+' + p : null;
 }
 
 // The settled wording (18 Aug). Only the time changes — no name, so one
@@ -382,11 +385,35 @@ const waJson = (obj, status = 200) =>
 // 07… home form (indistinguishable from a Turkish local) — is null: a
 // reminder must never be fired at a mangled number, and the app SHOWS such
 // bookings in the manual list rather than skipping them silently.
+// Per-country length table, kept in step with the app's copy (WA_CC_LEN in
+// index.html). Known code + wrong length = the message goes nowhere or to a
+// stranger — refused. Unknown code = accepted unverified; the app marks it.
+const WA_CC_LEN = {
+  '90':[12],  '44':[12],  '357':[11], '61':[11],  '966':[12], '39':[12],
+  '30':[12],  '49':[12,13],'7':[11],  '1':[11],   '971':[12], '98':[12],
+  '964':[13], '994':[12], '380':[12], '33':[11],  '31':[11],  '46':[11,12],
+  '972':[12], '20':[12],  '48':[11],  '43':[12,13],'32':[11], '41':[12],
+  '34':[11],  '351':[12], '40':[11],  '359':[12,13],'36':[11],'963':[12],'961':[11]
+};
+function waPhoneCheck(p) {
+  p = String(p || '');
+  if (!/^[1-9]\d{10,14}$/.test(p)) return { st: 'invalid' };
+  for (const len of [3, 2, 1]) {
+    const cc = p.slice(0, len);
+    if (WA_CC_LEN[cc]) {
+      let ok = WA_CC_LEN[cc].includes(p.length);
+      if (cc === '90' && ok && p[2] !== '5') ok = false;   // TR mobiles are 90 5…
+      return { st: ok ? 'ok' : 'bad', cc };
+    }
+  }
+  return { st: 'unverified' };
+}
 function waPhone(raw) {
   const tr = smsPhone(raw);
-  if (tr) return tr.slice(1);
-  let p = String(raw || '').replace(/[^0-9+]/g, '').replace(/^\+/, '').replace(/^00/, '');
-  return /^[1-9]\d{10,14}$/.test(p) ? p : null;
+  const p = tr ? tr.slice(1)
+    : String(raw || '').replace(/[^0-9+]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  const v = waPhoneCheck(p);
+  return (v.st === 'ok' || v.st === 'unverified') ? p : null;
 }
 
 // The blocker "client" reception books to close out hours. It is not a person
