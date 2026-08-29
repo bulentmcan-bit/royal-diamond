@@ -12696,7 +12696,70 @@ function ccFlagNoTill(rows, hd){
   ops.forEach(o=>((o&&o.entries)||[]).forEach(e=>{ if(e&&e.apptId!=null) tilled.add(String(e.apptId)); }));
   rows.forEach(r=>{ if(r&&r.apptId!=null&&(r.amount||0)>0&&!tilled.has(String(r.apptId))) r.noTill=true; });
 }
+
+// ── The one-time archive repair ─────────────────────────────────────────────
+// Every archived day that carries per-entry detail gets its scalars re-summed
+// from the entries: op.total, op.commission (the same plain-rate formula the
+// load-time FORCE RESET block applies on every start, so the figure does not
+// flap between loads), and the day total. A detail-less legacy day is left
+// exactly as it is — there is nothing better to re-sum from. The scan is the
+// report; apply stamps h.ts so the repaired day WINS the per-day
+// newest-edit-wins merge on every other device instead of losing to a stale
+// copy.
+function rdKasaRepairScan(d){
+  const out=[];
+  ((d&&d.history)||[]).forEach(h=>{
+    if(!h||!h.date) return;
+    const ops=[];
+    (h.ops||[]).forEach(o=>{
+      if(!o||!o.name||!Array.isArray(o.entries)) return;
+      const sum=dtOpTotal(o);
+      const cur=(typeof o.total==='number')?o.total:0;
+      if(cur!==sum) ops.push({name:o.name, before:cur, after:sum});
+    });
+    if(ops.length) out.push({date:h.date, dayBefore:(typeof h.total==='number')?h.total:0, ops});
+  });
+  return out;
+}
+function rdKasaRepairApply(d, now){
+  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
+  const changes=rdKasaRepairScan(d);
+  changes.forEach(c=>{
+    const h=(d.history||[]).find(x=>x&&x.date===c.date);
+    if(!h) return;
+    c.ops.forEach(co=>{
+      const o=(h.ops||[]).find(x=>x&&x.name===co.name);
+      if(!o) return;
+      o.total=co.after;
+      o.commission=Math.round(co.after*(RATES[o.name]||0));
+    });
+    h.total=(h.ops||[]).reduce((s,o)=>s+((o&&o.total)||0),0);
+    c.dayAfter=h.total;
+    h.ts=now||Date.now();
+  });
+  return changes;
+}
 // KK-SLICE-END
+
+// Console-run driver: rdKasaRepair() reports what would change and touches
+// nothing; rdKasaRepair(true) applies, saves, and pushes through the normal
+// sync so every device receives the corrected days.
+function rdKasaRepair(apply){
+  const raw=localStorage.getItem('rdns_takings_v3');
+  if(!raw){ console.log('[kasa-repair] no takings data on this device'); return []; }
+  const d=JSON.parse(raw);
+  if(!apply) return rdKasaRepairScan(d);
+  const changes=rdKasaRepairApply(d, Date.now());
+  if(changes.length){
+    localStorage.setItem('rdns_takings_v3', JSON.stringify(d));
+    try{ dtState=dtLoadState(); }catch(e){}
+    try{ syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}')); }catch(e){}
+    try{ renderCashCheck(); }catch(e){}
+    try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+  }
+  console.log('[kasa-repair]', changes.length, 'day(s) repaired');
+  return changes;
+}
 function dtGrandTotal(){ return (((dtState||{}).operators)||[]).filter(o=>o&&o.active).reduce((s,o)=>s+dtOpTotal(o),0); }
 
 // Keep enough of each transaction to explain the day months later. A history

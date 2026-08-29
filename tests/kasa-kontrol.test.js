@@ -145,6 +145,28 @@ console.log('4. the root cause: a backdated checkout now leaves a real entry');
   is(ctx.dtState.history[0].ops[0].total, 4700, 'a legacy detail-less day still adds to its scalar (nothing better exists)');
 }
 
+console.log('5. the one-time archive repair');
+{
+  const ctx = makeCtx();
+  ctx.d = { history: [
+    hannah28Aug(),                                                            // stale scalar 12,600, entries 9,300
+    { date: '2026-08-20', ops: [{ name: 'Helen', total: 4200, count: 3 }], total: 4200 },  // legacy, no detail
+    { date: '2026-08-27', ops: [{ name: 'Lissa', total: 3000, count: 2,
+        entries: [{ amount: 2000, apptId: 1 }, { amount: 1000, apptId: 2 }] }], total: 3000 }, // already agrees
+  ] };
+  const scan = vm.runInContext('rdKasaRepairScan(d)', ctx);
+  is(scan, [{ date: '2026-08-28', dayBefore: 12600, ops: [{ name: 'Hannah', before: 12600, after: 9300 }] }],
+     'scan reports exactly the drifted day — legacy and agreeing days untouched');
+  const changes = vm.runInContext('rdKasaRepairApply(d, 1756400000000)', ctx);
+  is(changes[0].dayAfter, 9300, 'apply reports the day total after: ₺9,300');
+  is(ctx.d.history[0].ops[0].total, 9300, 'the scalar now equals the entries');
+  is(ctx.d.history[0].ops[0].commission, Math.round(9300 * 0.12), 'commission re-based on the true total');
+  is(ctx.d.history[0].total, 9300, 'the day total follows');
+  is(ctx.d.history[0].ts, 1756400000000, 'ts stamped — the repaired day wins the newest-edit merge everywhere');
+  is(ctx.d.history[1].ts, undefined, 'the untouched legacy day is not re-stamped');
+  is(vm.runInContext('rdKasaRepairScan(d)', ctx), [], 'a second scan finds nothing — the repair is idempotent');
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);
