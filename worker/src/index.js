@@ -363,7 +363,7 @@ function waSpec(raw) {
 // leaves out are not sent at all — Piyzi rejects a parameters block whose
 // counts differ from the template's (TEMPLATE_PARAMS_MISMATCH).
 function waFill(spec, vals) {
-  const sub = s => String(s).replace(/\{(name|service|date|time|when)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
+  const sub = s => String(s).replace(/\{(name|service|date|time|when|apptId)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
   const parameters = {};
   if (Array.isArray(spec.header) && spec.header.length) parameters.header = spec.header.map(sub);
   if (Array.isArray(spec.body) && spec.body.length) parameters.body = spec.body.map(sub);
@@ -424,11 +424,14 @@ function waLog(env, ctx, entry) {
 async function handleWa(req, env, ctx, url) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: WA_CORS });
 
-  // The same door key as the buttons, same constant-time comparison; without
-  // it the request never reaches Piyzi. 401 and nothing else — an unauthorised
-  // caller learns no route names and no reasons.
+  // The same constant-time comparison as the buttons' door, but /wa/ has its
+  // OWN key (WA_KEY) so the buttons' key never has to leave the buttons — the
+  // two rotate independently. BTN_KEY is accepted too, so nothing breaks if
+  // the owner ever uses it instead. Without either, 401 and nothing else — an
+  // unauthorised caller learns no route names and no reasons.
   const k = req.headers.get('x-rd-key') || url.searchParams.get('k') || '';
-  if (!env.BTN_KEY || !sameKey(k, env.BTN_KEY)) return new Response(null, { status: 401, headers: WA_CORS });
+  const doorOpen = (env.WA_KEY && sameKey(k, env.WA_KEY)) || (env.BTN_KEY && sameKey(k, env.BTN_KEY));
+  if (!doorOpen) return new Response(null, { status: 401, headers: WA_CORS });
 
   if (!env.PIYZI_API_KEY) {
     return waJson({ ok: false, error: { code: 'PIYZI_KEY_NOT_SET', message: 'Run: wrangler secret put PIYZI_API_KEY' } }, 503);
@@ -476,7 +479,7 @@ async function handleWa(req, env, ctx, url) {
 
     const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
     if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
-    const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc) };
+    const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
     const plan = waReminders(apptUtc, Date.now());
 
     const scheduled = [], failed = [];
@@ -551,6 +554,24 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
+    // The "Detaylar / Details" button on both approved WhatsApp templates
+    // links here — /r/<apptId>, baked into the templates at Meta, so this
+    // route must exist and must be public (it is tapped by customers). No
+    // appointment lookup yet (the book sits behind auth this worker does not
+    // hold): a small branded page with the change number beats the bare 404
+    // it would otherwise be. The id is deliberately not echoed into the page.
+    if (url.pathname.startsWith('/r/') || url.pathname === '/r') {
+      return new Response(`<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Royal Diamond — Randevu</title>
+<style>body{font-family:Georgia,serif;background:#161a16;color:#e9e2d2;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px;text-align:center}
+.c{max-width:420px}h1{color:#d4a96a;font-size:1.5rem;margin-bottom:4px}p{line-height:1.6;font-size:1.02rem}
+a{color:#d4a96a;font-weight:bold;text-decoration:none}.en{opacity:.75;font-size:.92rem;margin-top:18px}</style></head>
+<body><div class="c"><h1>Royal Diamond</h1><p>Nail &amp; Beauty Salon</p>
+<p>Randevunuz kayıtlıdır. Değişiklik veya iptal için lütfen bizi arayın:<br>
+<a href="tel:+905488933333">0548 893 3333</a></p>
+<p class="en">Your appointment is on record. To change or cancel, please call us.</p></div></body></html>`,
+        { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' } });
+    }
     if (url.pathname !== '/p') return reply('no', 404);
     if (req.method !== 'GET' && req.method !== 'HEAD') return reply('no', 405);
 

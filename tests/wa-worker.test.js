@@ -121,6 +121,14 @@ console.log('6. placeholder filling, in the template\'s own order');
   const out = api.waFill({ templateName: 'x', body: ['{name}'], buttons: { 0: 'g-{date}' } }, { name: 'A', date: '2026-09-01' });
   is(out.parameters.buttons, { 0: 'g-2026-09-01' }, 'button values substituted by index');
 }
+{
+  // The REAL approved templates (read 29 Aug): one body variable = the hour,
+  // one URL-button variable = the apptId, landing on this worker's /r/ page.
+  const spec = { templateName: 'pyz_randevu_hatirlatma_24saat', languageCode: 'tr', body: ['{time}'], buttons: { 0: '{apptId}' } };
+  const out = api.waFill(spec, { name: 'Ayşe', when: 'x', service: 'x', date: '2026-09-01', time: '14:00', apptId: '1756000000001' });
+  is(out.parameters.body, ['14:00'], 'the live 24h spec: body carries the hour alone');
+  is(out.parameters.buttons, { 0: '1756000000001' }, 'the live spec: button carries the apptId');
+}
 
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);

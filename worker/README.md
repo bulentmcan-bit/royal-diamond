@@ -207,9 +207,11 @@ first two buttons; do it before the third.
 
 Meta will not verify a North Cyprus business, so WhatsApp goes out through
 **Piyzi's** verified account: this worker talks to their API
-(`api.piyzi.com/api/v1`, header `X-Api-Key`). Four routes, all behind the same
-shared key as the buttons — sent as an `x-rd-key` header (or `k=` in the URL),
-anything without it gets a bare 401:
+(`api.piyzi.com/api/v1`, header `X-Api-Key`). Four routes, all behind a shared
+key — sent as an `x-rd-key` header (or `k=` in the URL), anything without it
+gets a bare 401. The `/wa/` routes have their **own** key, the wrangler secret
+`WA_KEY`, so the buttons' key never leaves the buttons (`BTN_KEY` is accepted
+too, and the two rotate independently):
 
 | Route | Does |
 |---|---|
@@ -247,16 +249,25 @@ curl -H "x-rd-key: <BTN_KEY>" https://rd-buttons.royaldiamond.workers.dev/wa/tem
 worker → Piyzi → WhatsApp. Each template in the list shows its real `name`,
 `language`, variable counts and a ready `examplePayload`.
 
-## Wiring the two reminder templates
+## The two reminder templates (wired 29 Aug 2026, from the live list)
 
-Their exact names and variable order are only knowable from that `/wa/templates`
-response, so they are **not** in the code: each is a one-line JSON spec in
-`wrangler.toml` (`WA_R24` for the 24-hour one, `WA_R1` for the 2-hour one),
-currently empty. Until both are filled in, `/wa/schedule` refuses with
-`TEMPLATES_NOT_CONFIGURED` — deliberately loud, instead of sending under a
-guessed name that would fail silently at Piyzi's end. Copy each template's
-`name` and variable order from its `examplePayload` into the spec (placeholders:
-`{name}` `{service}` `{date}` `{time}` `{when}`), then `wrangler deploy`.
+Each is a one-line JSON spec in `wrangler.toml` — `WA_R24` for
+`pyz_randevu_hatirlatma_24saat`, `WA_R1` for `pyz_randevu_hatirlatma_2saat`.
+Both approved templates carry exactly **one body variable (the hour)** and
+**one dynamic URL button** whose link is baked at Meta as this worker's own
+`/r/{{1}}` — the spec passes the apptId there, and the `/r/` route serves a
+small branded "your appointment is on record, call 0548 893 3333" page so the
+customer's "Detaylar / Details" tap never lands on a 404. (A third approved
+template, `pyz_randevu_hatirlatma`, is a zero-variable booking confirmation —
+available to `/wa/send`, not wired anywhere yet.)
 
-The app side (index.html) is deliberately **not wired yet** — that is the next
-job, after this is confirmed end to end.
+If a template is ever re-approved under a new name or with different
+variables, re-run the `/wa/templates` curl and update the spec (placeholders:
+`{name}` `{service}` `{date}` `{time}` `{when}` `{apptId}`), then
+`wrangler deploy`. If a spec ever goes missing or breaks, `/wa/schedule`
+refuses with `TEMPLATES_NOT_CONFIGURED` — deliberately loud, instead of
+sending under a wrong name that would fail silently at Piyzi's end.
+
+The app side lives in index.html (WA-SLICE markers): every booking schedules
+its own reminders, every cancellation or move kills them, dormant per device
+until the shared key is pasted in via the 🤖 button on the dashboard.

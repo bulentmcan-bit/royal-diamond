@@ -38,5 +38,9 @@ SMS_REMINDERS = "off"
 # header/body arrays must match the template's variableCounts exactly —
 # Piyzi rejects a mismatch. The Piyzi key itself is NEVER here: it is the
 # wrangler secret PIYZI_API_KEY, set by the owner.
-WA_R24 = ""
-WA_R1 = ""
+# Filled 29 Aug 2026 from the live GET /wa/templates response. Both approved
+# templates carry ONE body variable (the appointment hour) and ONE dynamic URL
+# button whose link is this worker's own /r/{{1}} page — the button value is
+# the apptId, so the customer's "Detaylar / Details" tap lands somewhere real.
+WA_R24 = '{"templateName":"pyz_randevu_hatirlatma_24saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}'
+WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}'
