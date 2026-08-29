@@ -23,3 +23,20 @@ crons = ["0 3 * * *", "0 4 * * *"]
 # secrets (SMSGATE_LOGIN, SMSGATE_PASSWORD, FB_SECRET), never in this file.
 [vars]
 SMS_REMINDERS = "off"
+
+# The two WhatsApp reminder templates, sent through Piyzi (routes under /wa/).
+# Empty means "not configured yet": /wa/schedule refuses with
+# TEMPLATES_NOT_CONFIGURED instead of sending under a guessed name that would
+# fail silently at Piyzi's end. To fill them in, call GET /wa/templates (see
+# README) and copy each template's REAL name and variable order from its
+# examplePayload. The value is one JSON object per template:
+#
+#   WA_R24 = '{"templateName":"<name from /wa/templates>","languageCode":"tr","body":["{name}","{when}"]}'
+#
+# Placeholders the worker substitutes per appointment: {name} {service}
+# {date} (YYYY-MM-DD) {time} (HH:MM) {when} ("1 Eylül 14:00", salon clock).
+# header/body arrays must match the template's variableCounts exactly —
+# Piyzi rejects a mismatch. The Piyzi key itself is NEVER here: it is the
+# wrangler secret PIYZI_API_KEY, set by the owner.
+WA_R24 = ""
+WA_R1 = ""

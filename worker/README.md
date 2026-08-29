@@ -200,3 +200,63 @@ first two buttons; do it before the third.
 - **Which client is in the chair.** The button says a manicure started, not who
   it is for. Tying presses to appointments is separate work.
 - **Undoing a press from the button.** Corrections stay on the board.
+
+---
+
+# The WhatsApp reminders (routes under `/wa/`)
+
+Meta will not verify a North Cyprus business, so WhatsApp goes out through
+**Piyzi's** verified account: this worker talks to their API
+(`api.piyzi.com/api/v1`, header `X-Api-Key`). Four routes, all behind the same
+shared key as the buttons — sent as an `x-rd-key` header (or `k=` in the URL),
+anything without it gets a bare 401:
+
+| Route | Does |
+|---|---|
+| `GET /wa/templates` | Proxies the approved-template list. Run once for setup, and for diagnosis. |
+| `POST /wa/schedule` | `{apptId, phone, name, dateISO, timeHHMM, service}` → schedules the 24-hour and 2-hour reminders at Piyzi; returns `{ok:true, scheduled:[{kind:"r24",uid},{kind:"r1",uid}]}`. A reminder whose send time is already past is skipped as normal (same-day booking). **Store the uids** — they are the only way to cancel. |
+| `POST /wa/cancel` | `{uids:[…]}` → cancels each; "already sent" and "already gone" count as success. |
+| `POST /wa/send` | `{phone, templateName, params}` → immediate send (the Google-review ask after checkout). |
+
+Phone numbers are normalised to `90XXXXXXXXXX`; anything that does not
+normalise to a Turkish mobile is refused rather than sent. The blocker client
+KAPALI — Personel is refused by name. Every schedule and cancel is logged
+(apptId, kind, uid, outcome) — `wrangler tail` shows it live, and a best-effort
+copy goes to `rdns_wa_log_v1` in Firebase.
+
+## The Piyzi key
+
+`pyz_live_…` from app.piyzi.com → My Business → Developer Tools. It has **no IP
+restriction**, so it is the only thing protecting the salon's WhatsApp number.
+It lives ONLY as a wrangler secret — never in this repo (public website!),
+never in wrangler.toml, never in a log line. Set it yourself, from this folder:
+
+```
+wrangler secret put PIYZI_API_KEY     # paste the key when asked
+```
+
+Until it is set, every `/wa/` route answers 503 `PIYZI_KEY_NOT_SET`.
+
+## First test, before the app touches any of this
+
+```
+curl -H "x-rd-key: <BTN_KEY>" https://rd-buttons.royaldiamond.workers.dev/wa/templates
+```
+
+`{"ok":true,"data":{"templates":[…]}}` back means the whole chain works —
+worker → Piyzi → WhatsApp. Each template in the list shows its real `name`,
+`language`, variable counts and a ready `examplePayload`.
+
+## Wiring the two reminder templates
+
+Their exact names and variable order are only knowable from that `/wa/templates`
+response, so they are **not** in the code: each is a one-line JSON spec in
+`wrangler.toml` (`WA_R24` for the 24-hour one, `WA_R1` for the 2-hour one),
+currently empty. Until both are filled in, `/wa/schedule` refuses with
+`TEMPLATES_NOT_CONFIGURED` — deliberately loud, instead of sending under a
+guessed name that would fail silently at Piyzi's end. Copy each template's
+`name` and variable order from its `examplePayload` into the spec (placeholders:
+`{name}` `{service}` `{date}` `{time}` `{when}`), then `wrangler deploy`.
+
+The app side (index.html) is deliberately **not wired yet** — that is the next
+job, after this is confirmed end to end.

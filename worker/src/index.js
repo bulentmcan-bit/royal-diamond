@@ -239,9 +239,306 @@ async function sendMorningReminders(env) {
   }
 }
 
+/* ── the WhatsApp reminders, via Piyzi ──────────────────────────────────────
+   Meta will not verify a North Cyprus business, so the salon's WhatsApp goes
+   out through Piyzi's verified account instead: their API schedules a template
+   message and their infrastructure sends it. Everything below is confirmed
+   against the live documentation at app.piyzi.com/business/developer-tools
+   (read 29 Aug 2026), not guessed from the screenshots:
+
+       GET    /whatsapp/templates          the approved templates + examplePayload
+       POST   /whatsapp/messages           send now — add scheduledAt (ISO 8601,
+                                           2 min..1 year ahead) and the SAME
+                                           endpoint schedules instead; there is
+                                           no separate POST /whatsapp/scheduled
+       GET    /whatsapp/scheduled          list planned sends
+       DELETE /whatsapp/scheduled/{uid}    cancel one — 409 if already sent
+
+   Every response is {"success":true,"data":…} or {"success":false,"error":
+   {"code","message"}}. Auth is the X-Api-Key header. Rate limits per key:
+   120 requests/min, 30 POSTs/min, 2000 POSTs/day — two reminders per booking
+   on a ~30-customer day never gets near any of them.
+
+   THE KEY. pyz_live_… lives ONLY as a wrangler secret (PIYZI_API_KEY). It has
+   no IP restriction, so it is the only thing between the internet and the
+   salon's WhatsApp number: never in this file, never in wrangler.toml, never
+   logged, never echoed back in a response.
+
+   WHICH TEMPLATES. Two are approved by Meta — a 24-hour and a 2-hour reminder
+   — but their exact names and variable order are only visible through
+   GET /whatsapp/templates with the real key. So they are NOT hard-coded here:
+   each lives as a small JSON spec in wrangler.toml (WA_R24 / WA_R1), filled in
+   once from what /wa/templates actually returns. Until then /wa/schedule
+   refuses loudly instead of sending under a guessed name that would fail
+   silently at Piyzi's end. */
+const PIYZI = 'https://api.piyzi.com/api/v1';
+
+// The app's routes answer the browser, so they need CORS; the shared key rides
+// in the x-rd-key header, which is what makes the preflight happen at all.
+const WA_CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-allow-headers': 'content-type,x-rd-key',
+  'access-control-max-age': '86400',
+  'cache-control': 'no-store'
+};
+const waJson = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', ...WA_CORS } });
+
+// What Piyzi expects on the wire. Reuses the SMS cleanup — digits only, local
+// 0xxx and bare forms lifted to country code 90 — and returns 90XXXXXXXXXX
+// (Piyzi accepts 05…, 5…, +90… and 90…; one canonical form keeps the logs
+// greppable). null for anything that does not come out a plausible Turkish
+// mobile: a reminder must never be fired at a mangled number.
+function waPhone(raw) {
+  const p = smsPhone(raw);
+  return p ? p.slice(1) : null;
+}
+
+// The blocker "client" reception books to close out hours. It is not a person
+// and must never receive a message, whatever number sits on the record.
+function waBlockedName(name) {
+  return /kapal[ıi]/i.test(String(name || ''));
+}
+
+// A salon wall-clock time → the UTC instant Piyzi wants in scheduledAt.
+// Same rule as the cron above: the offset belongs to the timezone database,
+// never to a hard-coded "+3" — Asia/Nicosia is +3 in summer and +2 in winter,
+// and the 24-hour reminder for a booking just after a clock change crosses
+// the seam. Two correction passes settle even those edge instants.
+function nicosiaWallToUtc(ymd, hhmm) {
+  const [Y, M, D] = String(ymd).split('-').map(Number);
+  const [h, mi] = String(hhmm).split(':').map(Number);
+  if (![Y, M, D, h, mi].every(Number.isFinite)) return NaN;
+  const want = Date.UTC(Y, M - 1, D, h, mi);
+  let t = want;
+  for (let i = 0; i < 2; i++) {
+    const p = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Nicosia', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date(t));
+    const g = k => Number(p.find(x => x.type === k).value);
+    t += want - Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'));
+  }
+  return t;
+}
+
+// "1 Eylül 14:00" — the human date-and-time a template variable carries,
+// in Turkish and on the salon's clock, matching the docs' own example
+// ("26 Ağustos 14:00").
+function waWhen(utcMs) {
+  return new Intl.DateTimeFormat('tr-TR', {
+    timeZone: 'Asia/Nicosia', day: 'numeric', month: 'long',
+    hour: '2-digit', minute: '2-digit'
+  }).format(new Date(utcMs)).replace(',', '');
+}
+
+// The two reminders an appointment earns: 24 hours before and 2 hours before.
+// (The short one is called r1 because that is the contract the app was
+// promised; it fires 2 hours out.) One already in the past is normal for a
+// same-day booking, not an error — Piyzi refuses anything nearer than 2
+// minutes, so the line is drawn at 3 to not race it.
+function waReminders(apptUtc, now) {
+  const due = [], skipped = [];
+  for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', apptUtc - 2 * 3600e3]]) {
+    if (at < now + 3 * 60e3) skipped.push({ kind, why: 'past' });
+    else due.push({ kind, at });
+  }
+  return { due, skipped };
+}
+
+// A template spec from wrangler.toml: {"templateName":"…","languageCode":"tr",
+// "header":["{name}"],"body":["{name}","{when}"]} — arrays in the template's
+// own variable order, buttons as an index→value object if the template has
+// them. null until it is really configured.
+function waSpec(raw) {
+  try {
+    const s = JSON.parse(raw || '');
+    return s && typeof s.templateName === 'string' && s.templateName ? s : null;
+  } catch { return null; }
+}
+
+// The spec's placeholders → this appointment's values, shaped exactly like
+// the documented POST /whatsapp/messages parameters block. Fields the spec
+// leaves out are not sent at all — Piyzi rejects a parameters block whose
+// counts differ from the template's (TEMPLATE_PARAMS_MISMATCH).
+function waFill(spec, vals) {
+  const sub = s => String(s).replace(/\{(name|service|date|time|when)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
+  const parameters = {};
+  if (Array.isArray(spec.header) && spec.header.length) parameters.header = spec.header.map(sub);
+  if (Array.isArray(spec.body) && spec.body.length) parameters.body = spec.body.map(sub);
+  if (spec.buttons && typeof spec.buttons === 'object') {
+    parameters.buttons = {};
+    for (const k of Object.keys(spec.buttons)) parameters.buttons[k] = sub(spec.buttons[k]);
+  }
+  return { templateName: spec.templateName, languageCode: spec.languageCode || 'tr', parameters };
+}
+
+// One call to Piyzi: 10-second timeout, one retry on a 5xx or a network
+// failure, never on a 4xx — a 4xx will say the same thing twice and the
+// retry would only spend the rate limit. Throws only if both attempts die
+// on the wire.
+async function piyziCall(env, method, path, body) {
+  const attempt = async () => {
+    const r = await fetch(PIYZI + path, {
+      method,
+      headers: { 'X-Api-Key': env.PIYZI_API_KEY, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10000)
+    });
+    let j = null;
+    try { j = await r.json(); } catch { /* a non-JSON body is reported by status alone */ }
+    return { status: r.status, body: j };
+  };
+  let first = null;
+  try { first = await attempt(); } catch { /* fall through to the one retry */ }
+  if (first && first.status < 500) return first;
+  return attempt();
+}
+
+// The caller gets Piyzi's error code and message — those are diagnosis — and
+// nothing else: no headers, no key, no raw request.
+function piyziErr(r) {
+  const e = r && r.body && r.body.error;
+  return e ? { code: String(e.code || ''), message: String(e.message || '') }
+           : { code: 'HTTP_' + (r ? r.status : 0), message: 'Piyzi returned an unexpected response' };
+}
+
+// Every schedule and cancel leaves a trace — apptId, kind, uid, outcome — so
+// a missing reminder can be walked back afterwards. console.log reaches
+// `wrangler tail`; the Firebase copy is durable but best-effort (the rules may
+// refuse an unsigned write there; that must never fail the request itself).
+function waLog(env, ctx, entry) {
+  console.log('[wa]', JSON.stringify(entry));
+  const key = (String(entry.apptId || entry.uid || 'x').replace(/[.#$/\[\]]/g, '_')
+    + '-' + (entry.op || '') + '-' + Date.now());
+  const auth = env.FB_SECRET ? '?auth=' + encodeURIComponent(env.FB_SECRET) : '';
+  const p = fetch(`${DB}/rdns_wa_log_v1/${key}.json${auth}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...entry, ts: { '.sv': 'timestamp' } }),
+    headers: { 'content-type': 'application/json' }
+  }).catch(() => {});
+  if (ctx) ctx.waitUntil(p);
+}
+
+async function handleWa(req, env, ctx, url) {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: WA_CORS });
+
+  // The same door key as the buttons, same constant-time comparison; without
+  // it the request never reaches Piyzi. 401 and nothing else — an unauthorised
+  // caller learns no route names and no reasons.
+  const k = req.headers.get('x-rd-key') || url.searchParams.get('k') || '';
+  if (!env.BTN_KEY || !sameKey(k, env.BTN_KEY)) return new Response(null, { status: 401, headers: WA_CORS });
+
+  if (!env.PIYZI_API_KEY) {
+    return waJson({ ok: false, error: { code: 'PIYZI_KEY_NOT_SET', message: 'Run: wrangler secret put PIYZI_API_KEY' } }, 503);
+  }
+
+  const route = url.pathname;
+
+  // ── GET /wa/templates — the setup and diagnosis window ────────────────────
+  // Run once to learn the real template names and examplePayload shapes, then
+  // fill WA_R24 / WA_R1 in wrangler.toml from what it says.
+  if (route === '/wa/templates' && req.method === 'GET') {
+    let r;
+    try { r = await piyziCall(env, 'GET', '/whatsapp/templates'); }
+    catch { return waJson({ ok: false, error: { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' } }, 502); }
+    if (!(r.body && r.body.success)) return waJson({ ok: false, error: piyziErr(r) }, r.status >= 400 ? r.status : 502);
+    const names = ((r.body.data && r.body.data.templates) || []).map(t => `${t.name}/${t.language}`);
+    console.log('[wa] templates on the account:', names.join(', ') || '(none)');
+    return waJson({ ok: true, data: r.body.data });
+  }
+
+  // Everything below changes state at Piyzi, so it is POST + JSON only.
+  if (req.method !== 'POST') return waJson({ ok: false, error: { code: 'METHOD', message: 'POST only' } }, 405);
+  let b;
+  try { b = await req.json(); } catch { return waJson({ ok: false, error: { code: 'INVALID_JSON', message: 'Body is not valid JSON' } }, 400); }
+
+  // ── POST /wa/schedule — the two reminders for one appointment ─────────────
+  if (route === '/wa/schedule') {
+    const { apptId, phone, name, dateISO, timeHHMM, service } = b || {};
+    if (!apptId || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO)) || !/^\d{2}:\d{2}$/.test(String(timeHHMM))) {
+      return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need apptId, dateISO (YYYY-MM-DD), timeHHMM (HH:MM)' } }, 400);
+    }
+    if (waBlockedName(name)) {
+      waLog(env, ctx, { op: 'schedule', apptId, outcome: 'refused-blocker-client' });
+      return waJson({ ok: false, error: { code: 'BLOCKED_CLIENT', message: 'KAPALI — Personel is not a customer; nothing sent' } }, 400);
+    }
+    const to = waPhone(phone);
+    if (!to) return waJson({ ok: false, error: { code: 'INVALID_PHONE', message: 'Not a Turkish mobile number after cleanup; nothing sent' } }, 400);
+
+    // Both specs must be real before either reminder goes: half-configured
+    // must fail loudly here, not half-send and fail quietly at Piyzi.
+    const specs = { r24: waSpec(env.WA_R24), r1: waSpec(env.WA_R1) };
+    if (!specs.r24 || !specs.r1) {
+      return waJson({ ok: false, error: { code: 'TEMPLATES_NOT_CONFIGURED', message: 'Call GET /wa/templates, then fill WA_R24 and WA_R1 in wrangler.toml and redeploy' } }, 503);
+    }
+
+    const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
+    if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
+    const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc) };
+    const plan = waReminders(apptUtc, Date.now());
+
+    const scheduled = [], failed = [];
+    for (const { kind, at } of plan.due) {
+      const payload = { phone: to, ...waFill(specs[kind], vals), scheduledAt: new Date(at).toISOString() };
+      let r = null, uid = null, err = null;
+      try { r = await piyziCall(env, 'POST', '/whatsapp/messages', payload); } catch { /* err set below */ }
+      if (r && r.body && r.body.success) uid = r.body.data && r.body.data.scheduledMessage && r.body.data.scheduledMessage.uid;
+      if (uid) scheduled.push({ kind, uid });
+      else { err = r ? piyziErr(r) : { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' }; failed.push({ kind, error: err }); }
+      waLog(env, ctx, { op: 'schedule', apptId, kind, uid: uid || null, to, at: new Date(at).toISOString(), outcome: uid ? 'scheduled' : 'failed:' + (err && err.code) });
+    }
+    for (const s of plan.skipped) waLog(env, ctx, { op: 'schedule', apptId, kind: s.kind, outcome: 'skipped-past' });
+
+    if (failed.length) return waJson({ ok: false, error: failed[0].error, scheduled, skipped: plan.skipped, failed }, 502);
+    return waJson({ ok: true, scheduled, skipped: plan.skipped });
+  }
+
+  // ── POST /wa/cancel — the appointment was cancelled or moved ──────────────
+  // "Already sent" (409) and "already gone" (404) are successes: the caller
+  // wanted it not pending, and it is not pending.
+  if (route === '/wa/cancel') {
+    const uids = Array.isArray(b && b.uids) ? b.uids.filter(u => typeof u === 'string' && u).slice(0, 20) : null;
+    if (!uids || !uids.length) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need uids: [ … ]' } }, 400);
+    const results = [];
+    for (const uid of uids) {
+      let r = null;
+      try { r = await piyziCall(env, 'DELETE', '/whatsapp/scheduled/' + encodeURIComponent(uid)); } catch { /* counted below */ }
+      const gone = !!(r && (r.status < 300 || r.status === 404 || r.status === 409));
+      results.push({ uid, ok: gone, code: r ? (r.body && r.body.error ? r.body.error.code : 'OK') : 'PIYZI_UNREACHABLE' });
+      waLog(env, ctx, { op: 'cancel', uid, outcome: gone ? 'cancelled' : 'failed:' + (r ? r.status : 'unreachable') });
+    }
+    return waJson({ ok: results.every(x => x.ok), results });
+  }
+
+  // ── POST /wa/send — immediate send (the Google review ask after checkout) ─
+  if (route === '/wa/send') {
+    const { phone, templateName, params, languageCode } = b || {};
+    if (!templateName) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need templateName' } }, 400);
+    const to = waPhone(phone);
+    if (!to) return waJson({ ok: false, error: { code: 'INVALID_PHONE', message: 'Not a Turkish mobile number after cleanup; nothing sent' } }, 400);
+    let r;
+    try {
+      r = await piyziCall(env, 'POST', '/whatsapp/messages', {
+        phone: to, templateName: String(templateName), languageCode: String(languageCode || 'tr'),
+        parameters: (params && typeof params === 'object') ? params : {}
+      });
+    } catch { return waJson({ ok: false, error: { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' } }, 502); }
+    const ok = !!(r.body && r.body.success);
+    const messageUid = ok && r.body.data ? r.body.data.messageUid : null;
+    waLog(env, ctx, { op: 'send', to, templateName: String(templateName), uid: messageUid, outcome: ok ? 'sent' : 'failed:' + piyziErr(r).code });
+    if (!ok) return waJson({ ok: false, error: piyziErr(r) }, r.status >= 400 ? r.status : 502);
+    return waJson({ ok: true, messageUid });
+  }
+
+  return waJson({ ok: false, error: { code: 'NOT_FOUND', message: 'No such route' } }, 404);
+}
+
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
-export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders };
+export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
+         waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waSpec, waFill };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -251,8 +548,9 @@ export default {
     await sendMorningReminders(env);
   },
 
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
     if (url.pathname !== '/p') return reply('no', 404);
     if (req.method !== 'GET' && req.method !== 'HEAD') return reply('no', 405);
 
