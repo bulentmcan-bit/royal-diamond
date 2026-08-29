@@ -6004,6 +6004,7 @@ function dashCompleteAppt(id){
 }
 
 // Auto-add completed appointment price to daily income history
+// DI-SLICE-START (the fixture tests run diAutoAdd/diAutoRemove as-is)
 function diAutoAdd(staffName, amount, datetime, apptId){
   try{
     if(!dtState) return;
@@ -6055,16 +6056,37 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       }
       let op = (day.ops||[]).find(function(o){return o.name===staffName;});
       if(!op){
-        op = {name:staffName, total:0, count:0, commission:0};
+        op = {name:staffName, total:0, count:0, commission:0, entries:[]};
         if(!day.ops) day.ops=[];
         day.ops.push(op);
       }
-      op.total  += amount;
+      // The transaction itself goes into the archive, not just the scalar.
+      // This branch used to do `op.total += amount` and nothing else — money
+      // with no entry behind it, which Kasa Kontrol can neither itemise nor
+      // reconcile (the 28 Aug 2026 ₺1,700 that made a Fark no data supported).
+      // Now the entry is written and, wherever the day carries per-entry
+      // detail, the scalar is RECOMPUTED from the entries so the two can
+      // never drift apart. Only a legacy detail-less day still adds to its
+      // scalar — there is no entry list there to keep honest.
+      if(Array.isArray(op.entries)){
+        let _lbl = "Appointment";
+        try{
+          const _ap = (typeof appointments!=='undefined') ? appointments.find(function(x){return String(x.id)===String(apptId);}) : null;
+          if(_ap){
+            const _nm = (typeof cName==='function') ? cName(_ap.clientId) : '';
+            _lbl = (_nm && _nm!=='Unknown' ? _nm+' — ' : '') + (_ap.service||'Appointment');
+          }
+        }catch(e){}
+        op.entries.push({service:_lbl, amount:amount, time:'', apptId:(apptId!=null?apptId:null), backdated:true});
+        op.total = op.entries.reduce(function(s,e){return s+((e&&e.amount)||0);},0);
+      } else {
+        op.total += amount;
+      }
       op.count  += 1;
       const rate = commPausedOn(staffName, dateKey) ? 0 : (DI_COMM[staffName]||0);
       const extra = (rate>0 && DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
       op.commission = Math.round(op.total * rate) + extra;
-      day.total = (day.ops||[]).reduce(function(s,o){return s+o.total;},0);
+      day.total = (day.ops||[]).reduce(function(s,o){return s+(o.total||0);},0);
       dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
       dtSaveState();
     }
@@ -6099,7 +6121,17 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       if(!day) return;
       let op = (day.ops||[]).find(function(o){return o.name===staffName;});
       if(!op) return;
-      op.total = Math.max(0, op.total - amount);
+      // Mirror of the add above: take the transaction out of the archive and
+      // recompute the scalar from what is left, so an undo of a backdated
+      // completion leaves entries and total agreeing.
+      if(Array.isArray(op.entries)){
+        let idx = apptId!=null ? op.entries.findIndex(function(e){return e&&String(e.apptId)===String(apptId);}) : -1;
+        if(idx<0) idx = op.entries.map(function(e){return e&&e.amount;}).lastIndexOf(amount);
+        if(idx>=0) op.entries.splice(idx,1);
+        op.total = op.entries.reduce(function(s,e){return s+((e&&e.amount)||0);},0);
+      } else {
+        op.total = Math.max(0, op.total - amount);
+      }
       op.count = Math.max(0, op.count - 1);
       const rate = commPausedOn(staffName, dateKey) ? 0 : (DI_COMM[staffName]||0);
       const extra = (rate>0 && DI_EXTRA[staffName]&&op.total>0) ? DI_EXTRA[staffName] : 0;
@@ -6113,6 +6145,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
     }
   }catch(e){ console.warn('diAutoRemove error:',e); }
 }
+// DI-SLICE-END
 
 // Money is filed under whichever technician was on the appointment at the
 // moment it was completed. Move the appointment to someone else afterwards and
@@ -12017,7 +12050,10 @@ function renderCashCheck(){
   }else if(typeof dtState!=="undefined"&&dtState&&dtState.history){
     const hd=dtState.history.find(x=>x.date===day);
     if(hd){
-      dtTotals={};(hd.ops||[]).forEach(o=>{dtTotals[o.name]=(typeof o.total==="number")?o.total:dtOpTotal(o);});
+      // The entries are the truth, the stored scalar only a legacy fallback —
+      // see ccPastDayTotals. (It used to be the other way round, which is how
+      // a hand-corrected archive kept showing its old, wrong Kasa forever.)
+      dtTotals=ccPastDayTotals(hd);
       dtMethods=hd.methods||null;
       // A past day: the live entries were cleared at the rollover, so the day's
       // archived transactions are what fill in the ÖDEME column and put the
@@ -12036,6 +12072,9 @@ function renderCashCheck(){
           staff:o.name, amount:e.amount||0, pay:e.pay||null, splits:e.splits||null,
           payNote:e.payNote||null, walkin:true, archived:true});
       });});
+      // A completed appointment whose money never reached the till record is
+      // the usual reason a past day's Fark reads short — say so on its row.
+      try{ ccFlagNoTill(rows, hd); }catch(e){}
     }
   }
 
@@ -12088,6 +12127,7 @@ function renderCashCheck(){
           +'<td style="font-weight:600;">'+r.client
             +(r.walkin?' <span class="badge badge-blue" style="font-size:0.6rem;">Elden</span>':'')
             +(r.orphan?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Bu paranın randevusu silinmiş. Kasa toplamına giriyor ama randevu toplamına girmiyor — Fark bu yüzden oluşuyor. Silmek için 🗑">⚠️ Karşılıksız</span>':'')
+            +(r.noTill?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Randevu tamamlanmış ama o günün kasa kayıtlarında bu paranın girişi yok — Fark bu yüzden eksik gösteriyor ve ödeme yöntemi kayıtsız. Para gerçekten alındıysa kasa kaydı elle tamamlanmalı.">⚠️ Kasa kaydı yok</span>':'')
             +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
@@ -12623,7 +12663,40 @@ window.addEventListener('DOMContentLoaded',function(){
 });
 
 function dtDateKey(){ return dtLocal(new Date()).slice(0,10); }
+// KK-SLICE-START (the fixture tests run this block as-is — keep it self-contained)
 function dtOpTotal(op){ return ((op&&op.entries)||[]).reduce((s,e)=>s+((e&&e.amount)||0),0); }
+
+// The per-technician Kasa figure for an ARCHIVED day. The transactions are the
+// truth: when a day carries per-entry detail, sum the entries — never the
+// stored scalar `total`. That scalar is written at the rollover and then
+// drifts: a duplicate entry deleted from the archive by hand left it high, and
+// diAutoAdd's backdated branch used to raise it without writing any entry at
+// all (28 Aug 2026, Hannah: entries said ₺9,300 while `total` said ₺12,600 and
+// no refresh could ever reconcile them). Only a legacy day archived before
+// entries were kept — no transaction detail at all — still reads its scalar,
+// because there is nothing better to read.
+function ccPastDayTotals(hd){
+  const t={};
+  ((hd&&hd.ops)||[]).forEach(o=>{
+    if(!o||!o.name) return;
+    t[o.name]=Array.isArray(o.entries)?dtOpTotal(o):((typeof o.total==="number")?o.total:0);
+  });
+  return t;
+}
+
+// Completed appointments whose money the till never recorded — a backdated
+// checkout that only bumped the old scalar, a lost write. They are the honest
+// explanation of a negative Fark, so they get flagged on their row instead of
+// being silently folded into any total. Only meaningful on a day that has
+// per-entry detail; a legacy detail-less day cannot tell, and flags nothing.
+function ccFlagNoTill(rows, hd){
+  const ops=(hd&&hd.ops)||[];
+  if(!ops.some(o=>o&&Array.isArray(o.entries)&&o.entries.length)) return;
+  const tilled=new Set();
+  ops.forEach(o=>((o&&o.entries)||[]).forEach(e=>{ if(e&&e.apptId!=null) tilled.add(String(e.apptId)); }));
+  rows.forEach(r=>{ if(r&&r.apptId!=null&&(r.amount||0)>0&&!tilled.has(String(r.apptId))) r.noTill=true; });
+}
+// KK-SLICE-END
 function dtGrandTotal(){ return (((dtState||{}).operators)||[]).filter(o=>o&&o.active).reduce((s,o)=>s+dtOpTotal(o),0); }
 
 // Keep enough of each transaction to explain the day months later. A history
