@@ -3425,6 +3425,7 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;invoice&#39;,this)" onclick="goto(&#39;invoice&#39;,this)"><span class="nav-icon">🧾</span><span data-i18n="nav_invoice">Fatura</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;monthly&#39;,this)" onclick="goto(&#39;monthly&#39;,this)"><span class="nav-icon">📊</span><span>Aylık P&L</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;takings&#39;,this)" onclick="goto(&#39;takings&#39;,this)"><span class="nav-icon">💰</span><span>Daily Takings</span></div>
+    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;doviz&#39;,this)" onclick="goto(&#39;doviz&#39;,this)"><span class="nav-icon">💱</span><span>Döviz &amp; Kurlar</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;cashcheck&#39;,this)" onclick="goto(&#39;cashcheck&#39;,this)"><span class="nav-icon">🧾</span><span>Kasa Kontrol</span><span id="dp-nav-badge" style="display:none;margin-left:auto;background:#e87a7a;color:#fff;font-size:0.68rem;font-weight:800;min-width:18px;height:18px;line-height:18px;text-align:center;border-radius:9px;padding:0 5px;">0</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;salary&#39;,this)" onclick="goto(&#39;salary&#39;,this)"><span class="nav-icon">💼</span><span>Salary</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;deductions&#39;,this)" onclick="goto(&#39;deductions&#39;,this)"><span class="nav-icon">✂️</span><span>Kesintiler</span></div>
@@ -3435,6 +3436,8 @@ p, span, div, label, h1, h2, h3, h4 {
     <hr class="sb-divider">
     <div class="sb-section" data-i18n="sec_comms">İletişim</div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
+    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;reviews&#39;,this)" onclick="goto(&#39;reviews&#39;,this)"><span class="nav-icon">⭐</span><span>Yorum İstekleri</span></div>
+    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;settings&#39;,this)" onclick="goto(&#39;settings&#39;,this)"><span class="nav-icon">⚙️</span><span>Ayarlar</span></div>
     <!-- Boss ↔ reception messages. Hidden until this device has been given a
          role (?role=owner / ?role=reception, once) — a machine with no role
          has no reason to show a door to a room it cannot enter. -->
@@ -3485,42 +3488,16 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="page active" id="page-dashboard">
       <div id="bday-banner"></div>
       <div id="occasion-banner"></div>
-      <!-- 💱 Sun Doviz compact FX bar -->
-      <div style="background:var(--card,#fff);border:1px solid var(--border,#e0e0e0);border-radius:14px;padding:10px 14px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <b style="font-size:0.78rem;color:var(--gold,#d4a96a);white-space:nowrap;">💱 Merkez Bankası Alış</b>
-          <input id="sun-r-gbp" type="number" step="any" placeholder="£" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
-          <input id="sun-r-usd" type="number" step="any" placeholder="$" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
-          <input id="sun-r-eur" type="number" step="any" placeholder="€" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
-          <button onclick="mbShow()" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 10px;font-family:inherit;font-size:0.72rem;font-weight:700;color:#888;cursor:pointer;">📊 MB Kurları</button>
-          <button onclick="rdSendPrices()" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:0.74rem;font-weight:800;color:#8a6420;cursor:pointer;">💰 Fiyat Listesi Gönder</button>
-          <button onclick="rdCopyPrices()" title="Instagram için kopyala" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 9px;font-family:inherit;font-size:0.74rem;color:#888;cursor:pointer;">📋</button>
-          <button onclick="rdEditPrices()" title="Fiyat listesini düzenle (PIN)" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 9px;font-family:inherit;font-size:0.74rem;color:#888;cursor:pointer;">✎</button>
-          <span id="sun-r-stale" style="font-size:0.74rem;font-weight:800;color:#c94040;"></span>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;">
-          <input id="sun-amt" type="number" step="any" placeholder="₺ tutar" oninput="sunConvCalc()" style="width:110px;border:1px solid var(--border,#ddd);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:0.92rem;font-weight:800;">
-          <span style="font-size:0.78rem;color:#666;white-space:nowrap;">= <b id="sun-o-gbp">—</b> <button onclick="sunConvSave('gbp')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
-          <span style="font-size:0.78rem;color:#666;white-space:nowrap;"><b id="sun-o-usd">—</b> <button onclick="sunConvSave('usd')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
-          <span style="font-size:0.78rem;color:#666;white-space:nowrap;"><b id="sun-o-eur">—</b> <button onclick="sunConvSave('eur')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
-          <span style="color:#ddd;">|</span>
-          <select id="sun-rev-cur" onchange="sunRevCalc()" style="border:1px solid var(--border,#ddd);border-radius:8px;padding:6px;font-family:inherit;font-size:0.8rem;font-weight:700;">
-            <option value="gbp">£</option><option value="usd">$</option><option value="eur">€</option>
-          </select>
-          <input id="sun-rev-amt" type="number" step="any" placeholder="döviz" oninput="sunRevCalc()" style="width:88px;border:1px solid var(--border,#ddd);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:0.92rem;font-weight:800;">
-          <span style="font-size:0.78rem;color:#666;white-space:nowrap;">= <b id="sun-rev-out" style="color:#3f6e50;">—</b> <button onclick="sunRevSave()" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
-        </div>
-        
-      </div>
-      <!-- Restore backup button - BIG and visible on mobile -->
-      <label style="display:block;width:100%;background:linear-gradient(135deg,rgba(37,211,102,0.25),rgba(37,211,102,0.1));border:2px solid rgba(37,211,102,0.6);border-radius:14px;padding:16px 20px;margin-bottom:16px;cursor:pointer;text-align:center;">
-        <div style="font-size:1.1rem;font-weight:800;color:#25d366;margin-bottom:4px;">📂 RESTORE BACKUP</div>
-        <div style="font-size:0.75rem;color:rgba(255,255,255,0.6);">Tap here to load your clients &amp; all data from JSON file</div>
-        <input type="file" accept=".json" style="display:none;" onchange="rdnsImportData(event)">
-      </label>
 
+      <!-- The whole dashboard, stripped to what must be acted on TODAY:
+           two numbers, then one line per waiting job — a line with a zero
+           count does not exist at all. Tapping a line opens its detail
+           (a hidden panel below, or the page that owns the job). If the
+           day is clean the screen is nearly empty, on purpose. -->
+      <div id="dash-big-tiles" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;"></div>
+      <div id="dash-actions" style="margin-bottom:16px;"></div>
       <!-- KESİNLEŞTİRİLECEK RANDEVULAR — pending rebooks that still need a time -->
-      <div class="r24-panel" id="rbq-panel" style="border-color:rgba(217,164,65,.55);">
+      <div class="r24-panel" id="rbq-panel" style="border-color:rgba(217,164,65,.55);display:none;">
         <div class="r24-header">
           <div class="r24-title" id="rbq-title">📌 Kesinleştirilecek Randevular <span class="r24-count" id="rbq-count" style="background:#d9a441;">0</span></div>
         </div>
@@ -3529,7 +3506,7 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
 
       <!-- 24-HOUR WHATSAPP REMINDERS PANEL -->
-      <div class="r24-panel">
+      <div class="r24-panel" id="dash-r24-panel" style="display:none;">
         <div class="r24-header">
           <div class="r24-title">⏰ 24 Saat Kala Hatırlatmalar <span class="r24-count" id="dash-r24-count">0</span> <span id="dash-wa-cover"></span></div>
           <button class="btn btn-sm" id="dash-wa-auto" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="rdWaSetup()" title="Otomatik WhatsApp hatırlatmaları (Piyzi) — anahtar bu cihaza girilince açılır">🤖 Oto: KAPALI</button>
@@ -3541,22 +3518,12 @@ p, span, div, label, h1, h2, h3, h4 {
       <!-- The customers' own answers, tapped on the reminder's confirm page.
            A ↻ here is a slot that may be about to open — reception calls,
            and the Gap Report shows the same booking marked amber. -->
-      <div class="r24-panel" id="dash-wa-ans-panel">
+      <div class="r24-panel" id="dash-wa-ans-panel" style="display:none;">
         <div class="r24-header">
           <div class="r24-title">📩 Müşteri Yanıtları <span class="r24-count" id="dash-wa-ans-count">0</span></div>
           <button class="btn btn-sm" id="dash-phone-health-btn" onclick="rdWaPhoneHealth()" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" title="Mesaj alamayacak numarası olan müşteriler — en çok gelen en üstte">📵 Numara Sağlığı</button>
         </div>
         <div id="dash-wa-ans-list"><div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div></div>
-      </div>
-
-      <!-- GOOGLE REVIEW REQUESTS PANEL -->
-      <div class="r24-panel" id="rv-panel" style="border-color:rgba(212,169,106,.55);">
-        <div class="r24-header">
-          <div class="r24-title">⭐ Google Yorum İstekleri <span class="r24-count" id="dash-rv-count" style="background:var(--gold);">0</span></div>
-          <button class="btn btn-gold btn-sm" id="dash-rv-send-all" style="display:none;" onclick="rvSendAll()">⭐ Hepsini Gönder</button>
-        </div>
-        <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;">Son 3 günde ✓ tamamlanan ve daha önce hiç yorum istenmemiş müşteriler. Sistem OTOMATİK GÖNDERMEZ — önce buradaki butona, sonra açılan WhatsApp'ta gönder tuşuna basın. Her müşteriye ömür boyu bir kez sorulur.</div>
-        <div id="dash-rv-list"><div class="r24-empty">Bugün gönderilecek yorum isteği yok.</div></div>
       </div>
 
       <!-- DAILY STAFF GRID -->
@@ -3579,7 +3546,7 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
 
       <!-- LIVE DAILY TAKINGS PANEL -->
-      <div class="dt-dash-panel">
+      <div class="dt-dash-panel" style="display:none;">
         <div class="dt-dash-hdr">
           <div style="display:flex;align-items:center;gap:12px;">
             <div class="dt-dash-icon">💰</div>
@@ -3600,7 +3567,7 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="dt-dash-ops" id="dt-dash-ops"><!-- filled by renderDashTakings() --></div>
       </div>
 
-      <div class="grid-4 stats-5">
+      <div class="grid-4 stats-5" style="display:none;">
         <div class="stat-card"><div class="stat-icon">👤</div><div class="stat-val" id="s-clients">0</div><div class="stat-lbl">Toplam Müşteri</div><div class="stat-change">↑ 2 this month</div></div>
         <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-val" id="s-upcoming">0</div><div class="stat-lbl">Yaklaşan</div><div class="stat-change">Active today</div></div>
         <div class="stat-card"><div class="stat-icon">💷</div><div class="stat-val" id="s-revenue">₺0</div><div class="stat-lbl">Gelir</div><div class="stat-change">↑ This month</div></div>
@@ -3610,13 +3577,13 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="stat-card"><div class="stat-icon">🚫</div><div class="stat-val" id="s-noshow">0</div><div class="stat-lbl">Gelmedi Bugün</div><div class="stat-change">No-show</div></div>
       </div>
       <!-- Sonraki randevu ölçümü — the numbers that change desk behaviour -->
-      <div class="grid-4 stats-5">
+      <div class="grid-4 stats-5" style="display:none;">
         <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-val" id="s-rb-rate">—</div><div class="stat-lbl" id="s-rb-rate-lbl">Sonraki randevu oranı</div><div class="stat-change" id="s-rb-rate-sub">bugün</div></div>
         <div class="stat-card"><div class="stat-icon">🧾</div><div class="stat-val" id="s-rb-ratio">0 / 0</div><div class="stat-lbl" id="s-rb-ratio-lbl">Çıkış / randevu</div><div class="stat-change">bugün</div></div>
         <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-val" id="s-rb-pending">0</div><div class="stat-lbl" id="s-rb-pending-lbl">Saat verilmemiş</div><div class="stat-change">kuyrukta</div></div>
         <div class="stat-card" style="cursor:pointer;" onclick="rbShowDeclineBreakdown()"><div class="stat-icon">🙅‍♀️</div><div class="stat-val" id="s-rb-declined">0</div><div class="stat-lbl" id="s-rb-declined-lbl">İstemiyor</div><div class="stat-change">bugün · nedenler için dokun</div></div>
       </div>
-      <div class="grid-2">
+      <div class="grid-2" style="display:none;">
         <div>
           <div class="card" style="margin-bottom:14px;">
             <div class="card-title" style="margin-bottom:10px;">📊 Bu Ay Özeti<span id="dash-month-rev" style="font-size:1rem;color:var(--wa);margin-left:auto;">₺0</span></div>
@@ -3665,6 +3632,63 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
     </div>
 
+
+    <!-- ════ DÖVİZ PAGE — the FX bar, unchanged, off the dashboard ════ -->
+    <div class="page" id="page-doviz">
+      <!-- 💱 Sun Doviz compact FX bar -->
+      <div style="background:var(--card,#fff);border:1px solid var(--border,#e0e0e0);border-radius:14px;padding:10px 14px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <b style="font-size:0.78rem;color:var(--gold,#d4a96a);white-space:nowrap;">💱 Merkez Bankası Alış</b>
+          <input id="sun-r-gbp" type="number" step="any" placeholder="£" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
+          <input id="sun-r-usd" type="number" step="any" placeholder="$" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
+          <input id="sun-r-eur" type="number" step="any" placeholder="€" oninput="sunManual();sunConvCalc();sunRevCalc()" style="width:74px;border:1px solid var(--border,#ddd);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:0.82rem;font-weight:700;">
+          <button onclick="mbShow()" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 10px;font-family:inherit;font-size:0.72rem;font-weight:700;color:#888;cursor:pointer;">📊 MB Kurları</button>
+          <button onclick="rdSendPrices()" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:0.74rem;font-weight:800;color:#8a6420;cursor:pointer;">💰 Fiyat Listesi Gönder</button>
+          <button onclick="rdCopyPrices()" title="Instagram için kopyala" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 9px;font-family:inherit;font-size:0.74rem;color:#888;cursor:pointer;">📋</button>
+          <button onclick="rdEditPrices()" title="Fiyat listesini düzenle (PIN)" style="border:1px solid var(--border,#ddd);background:none;border-radius:8px;padding:6px 9px;font-family:inherit;font-size:0.74rem;color:#888;cursor:pointer;">✎</button>
+          <span id="sun-r-stale" style="font-size:0.74rem;font-weight:800;color:#c94040;"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;">
+          <input id="sun-amt" type="number" step="any" placeholder="₺ tutar" oninput="sunConvCalc()" style="width:110px;border:1px solid var(--border,#ddd);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:0.92rem;font-weight:800;">
+          <span style="font-size:0.78rem;color:#666;white-space:nowrap;">= <b id="sun-o-gbp">—</b> <button onclick="sunConvSave('gbp')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
+          <span style="font-size:0.78rem;color:#666;white-space:nowrap;"><b id="sun-o-usd">—</b> <button onclick="sunConvSave('usd')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
+          <span style="font-size:0.78rem;color:#666;white-space:nowrap;"><b id="sun-o-eur">—</b> <button onclick="sunConvSave('eur')" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
+          <span style="color:#ddd;">|</span>
+          <select id="sun-rev-cur" onchange="sunRevCalc()" style="border:1px solid var(--border,#ddd);border-radius:8px;padding:6px;font-family:inherit;font-size:0.8rem;font-weight:700;">
+            <option value="gbp">£</option><option value="usd">$</option><option value="eur">€</option>
+          </select>
+          <input id="sun-rev-amt" type="number" step="any" placeholder="döviz" oninput="sunRevCalc()" style="width:88px;border:1px solid var(--border,#ddd);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:0.92rem;font-weight:800;">
+          <span style="font-size:0.78rem;color:#666;white-space:nowrap;">= <b id="sun-rev-out" style="color:#3f6e50;">—</b> <button onclick="sunRevSave()" style="border:1px solid var(--gold,#d4a96a);background:rgba(212,169,106,0.12);color:#8a6420;border-radius:6px;padding:2px 7px;font-family:inherit;font-size:0.62rem;font-weight:800;cursor:pointer;">💾</button></span>
+        </div>
+        
+      </div>
+    </div>
+
+    <!-- ════ YORUM İSTEKLERİ PAGE — a weekly job, not a daily panel ════ -->
+    <div class="page" id="page-reviews">
+      <!-- GOOGLE REVIEW REQUESTS PANEL -->
+      <div class="r24-panel" id="rv-panel" style="border-color:rgba(212,169,106,.55);">
+        <div class="r24-header">
+          <div class="r24-title">⭐ Google Yorum İstekleri <span class="r24-count" id="dash-rv-count" style="background:var(--gold);">0</span></div>
+          <button class="btn btn-gold btn-sm" id="dash-rv-send-all" style="display:none;" onclick="rvSendAll()">⭐ Hepsini Gönder</button>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;">Son 3 günde ✓ tamamlanan ve daha önce hiç yorum istenmemiş müşteriler. Sistem OTOMATİK GÖNDERMEZ — önce buradaki butona, sonra açılan WhatsApp'ta gönder tuşuna basın. Her müşteriye ömür boyu bir kez sorulur.</div>
+        <div id="dash-rv-list"><div class="r24-empty">Bugün gönderilecek yorum isteği yok.</div></div>
+      </div>
+
+    </div>
+
+    <!-- ════ AYARLAR PAGE — owner-only levers, PIN behind each ════ -->
+    <div class="page" id="page-settings">
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">📂 Yedekten Geri Yükle</div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 14px;">
+          Bu işlem salondaki <b>TÜM veriyi</b> seçilen dosyadakiyle <b>DEĞİŞTİRİR</b>.
+          Sadece patron içindir; devam etmek için PIN sorulur.</p>
+        <button class="btn" onclick="rdRestoreGate()" style="background:rgba(232,122,122,0.12);border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;">📂 Yedek dosyası seç (PIN)</button>
+        <input type="file" id="restore-file-input" accept=".json" style="display:none;" onchange="rdnsImportData(event)">
+      </div>
+    </div>
 
     <!-- ════ SALARY PAGE ════ -->
     <div class="page" id="page-deductions">
@@ -5151,6 +5175,9 @@ const PAGE_INFO={
   monthly:["Aylık P&L","Aylık ciro analizi, karlılık & döviz kurları"],
   reception:["Resepsiyon Komisyon","Günlük hedef 30 — ayda 900 müşteri & net %2 komisyon"],
   advance:["Avans","Personele verilen avanslar — maaştan kesilir"],
+  doviz:["Döviz & Kurlar","Merkez Bankası kurları, çevirici ve fiyat listesi"],
+  reviews:["Yorum İstekleri","Google yorumu istenecek müşteriler — haftalık iş"],
+  settings:["Ayarlar","Yedekten geri yükleme ve cihaz ayarları — patron"],
 };
 
 // ── Owner Security ───────────────────────────────────────────
@@ -8001,6 +8028,9 @@ function diEditDay(date){
 
 function renderDash(){
   try{ applyPriceOverrides(appointments); }catch(e){}
+  // The stripped top of the page: two numbers, then the day's waiting jobs.
+  try{ rdDashTiles(); }catch(e){}
+  try{ rdDashActions(); }catch(e){}
   renderDashGrid();
   try{ renderReviewCard(); }catch(e){}
   // Birthday banner
@@ -11641,6 +11671,96 @@ function rdWaAnsMark(a, mini){
       +((!mini&&ph)?' <a href="tel:+'+ph+'" onclick="'+stop.replace('event.preventDefault();','')+'" style="background:rgba(196,134,58,0.16);border:1px solid rgba(196,134,58,0.55);color:#c4863a;border-radius:6px;padding:0 6px;font-weight:800;text-decoration:none;">📞 Ara</a>':'');
   }catch(e){ return ''; }
 }
+// ── The stripped dashboard: two numbers and the day's waiting jobs ──────────
+// The rule is absolute: a line with a zero count does not render. If the day
+// is clean, the dashboard is nearly empty — and the one thing that does need
+// doing is impossible to miss. Big type: read at arm's length at the desk.
+function rdDashTiles(){
+  const el=document.getElementById('dash-big-tiles'); if(!el) return;
+  let kasa=0; try{ kasa=(typeof dtGrandTotal==='function')?dtGrandTotal():0; }catch(e){}
+  let inCount=0;
+  try{ const t=todayStr(); inCount=(appointments||[]).filter(a=>a&&a.status==='completed'&&apptDayStr(a)===t).length; }catch(e){}
+  el.innerHTML=
+    '<div class="stat-card" style="cursor:pointer;padding:18px 16px;" onclick="goto(\'takings\',null)" title="Detay: Daily Takings">'
+      +'<div class="stat-icon">💰</div><div class="stat-val" style="font-size:1.9rem;">₺'+Number(kasa||0).toLocaleString('tr-TR')+'</div>'
+      +'<div class="stat-lbl" style="font-size:0.92rem;">Bugünkü Kasa</div></div>'
+    +'<div class="stat-card" style="padding:18px 16px;">'
+      +'<div class="stat-icon">💅</div><div class="stat-val" style="font-size:1.9rem;">'+inCount+'</div>'
+      +'<div class="stat-lbl" style="font-size:0.92rem;">Bugün Gelen Müşteri</div></div>';
+}
+
+// Today's still-fillable empty slots — a compact restatement of the Gap
+// Report's grid (renderGapReport is the detailed original; keep the two in
+// step if the working grids ever change).
+function rdGapEmptyToday(){
+  try{
+    const TECHS=['Helen','Hannah','Lissa'];
+    const LEN={Helen:60,Hannah:30,Lissa:30};
+    const mk=(s,e,st)=>{const o=[];for(let m=s*60;m<=e*60;m+=st)o.push(m);return o;};
+    const G={Helen:mk(8,18,60),Hannah:mk(8,18.5,30),Lissa:mk(8,18.5,30)};
+    const t=todayStr(); const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
+    let empty=0;
+    TECHS.forEach(tech=>{
+      const appts=(appointments||[]).filter(a=>a&&a.status!=='cancelled'&&apptDayStr(a)===t&&String(a.staff||'').toLowerCase().includes(tech.toLowerCase()));
+      G[tech].forEach(m=>{
+        if(m<=nowMin) return;
+        const busy=appts.some(a=>{const d=new Date(a.datetime);const s=d.getHours()*60+d.getMinutes();const dur=parseInt(a.duration)||60;return m<s+dur&&m+LEN[tech]>s;});
+        if(!busy) empty++;
+      });
+    });
+    return empty;
+  }catch(e){ return 0; }
+}
+
+function rdDashReveal(id){
+  const p=document.getElementById(id); if(!p) return;
+  const opening=(p.style.display==='none');
+  p.style.display=opening?'':'none';
+  if(opening){ try{ p.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){} }
+}
+
+function rdDashActions(){
+  const el=document.getElementById('dash-actions'); if(!el) return;
+  const items=[]; const now=Date.now();
+  // saat verilecek: the rebook queue still waiting for a time
+  try{
+    const n=(typeof rbItems==='function')?rbItems().filter(i=>i&&i.status==='pending').length:0;
+    if(n) items.push({n:n, ic:'📌', txt:'randevuya saat verilecek', act:"rdDashReveal('rbq-panel')"});
+  }catch(e){}
+  // değişiklik isteyen: answers from the reminder page — the loud one
+  try{
+    const n=(appointments||[]).filter(a=>a&&a.status==='confirmed'&&a.waAns&&a.waAns.v==='change'&&new Date(a.datetime).getTime()>now-2*3600e3).length;
+    if(n) items.push({n:n, ic:'↻', txt:'müşteri saatini değiştirmek istiyor — arayın', amber:true, act:"rdDashReveal('dash-wa-ans-panel')"});
+  }catch(e){}
+  // doldurulacak boşluk: today's remaining empty chair-time
+  try{ const n=rdGapEmptyToday(); if(n) items.push({n:n, ic:'🪑', txt:'boş saat doldurulabilir', act:"goto('gapreport',null)"}); }catch(e){}
+  // ödenmemiş borç: deferred payments still open
+  try{ const n=(typeof dpOpen==='function')?dpOpen().length:0; if(n) items.push({n:n, ic:'💳', txt:'ödenmemiş borç takipte', act:"goto('cashcheck',null)"}); }catch(e){}
+  // elle gönderilecek hatırlatma: the exception report (unarmed-device bookings)
+  try{
+    const due=(appointments||[]).filter(a=>{const h=hrs(a.datetime);return a.status==='confirmed'&&h>0&&h<=25;});
+    const groups=groupR24ByClient(due)
+      .filter(g=>{const m=dash24hMessages['c'+g[0].clientId];return !(m&&m.status==='sent');})
+      .filter(g=>!r24AutoCovered(g));
+    if(groups.length) items.push({n:groups.length, ic:'⏰', txt:'hatırlatma elle gönderilecek', act:"rdDashReveal('dash-r24-panel')"});
+  }catch(e){}
+  el.innerHTML = items.length
+    ? items.map(i=>'<button onclick="'+i.act+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-bottom:8px;padding:15px 16px;border-radius:12px;cursor:pointer;font-family:inherit;font-size:1.05rem;font-weight:800;'
+        +(i.amber?'background:rgba(196,134,58,0.14);border:2px solid rgba(196,134,58,0.6);color:#c4863a;':'background:var(--card);border:1px solid var(--border);color:var(--text);')+'">'
+        +'<span style="font-size:1.25rem;">'+i.ic+'</span>'
+        +'<span style="background:'+(i.amber?'#c4863a':'var(--gold)')+';color:#fff;border-radius:20px;min-width:32px;text-align:center;padding:3px 10px;">'+i.n+'</span>'
+        +'<span>'+i.txt+'</span><span style="margin-left:auto;color:var(--muted);font-size:1.2rem;">›</span></button>').join('')
+    : '<div style="text-align:center;color:var(--wa);font-weight:700;padding:6px 0 2px;font-size:0.95rem;">✅ Bugün için bekleyen iş yok.</div>';
+}
+
+// Restoring a backup REPLACES everything — off the dashboard, behind the PIN,
+// on the settings page, unreachable by accident.
+function rdRestoreGate(){
+  if(typeof ownerPin==='function' && !ownerPin()) return;
+  const i=document.getElementById('restore-file-input');
+  if(i) i.click();
+}
+
 function rdWaAnsInfo(id){
   const a=(appointments||[]).find(function(x){ return x&&String(x.id)===String(id); });
   if(!a||!a.waAns) return;
