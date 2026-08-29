@@ -11689,6 +11689,7 @@ function rdWaPhoneRowWarn(c){
 function rdWaPhoneHealthRows(){
   return (clients||[]).map(function(c){
     if(!c) return null;
+    if(/kapal[ıi]/i.test(String(c.name||''))) return null;   // the hour-blocker is not a customer
     const p=c.phone?((typeof normalizeWaPhone==='function')?normalizeWaPhone(String(c.phone)):String(c.phone)):'';
     if(c.phone && rdWaPhoneOk(p)) return null;
     if(!c.phone && !((c.visits||0)>0)) return null;   // numberless never-visitors: noise, not signal
