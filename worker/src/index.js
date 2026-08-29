@@ -372,14 +372,21 @@ const WA_CORS = {
 const waJson = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', ...WA_CORS } });
 
-// What Piyzi expects on the wire. Reuses the SMS cleanup — digits only, local
-// 0xxx and bare forms lifted to country code 90 — and returns 90XXXXXXXXXX
-// (Piyzi accepts 05…, 5…, +90… and 90…; one canonical form keeps the logs
-// greppable). null for anything that does not come out a plausible Turkish
-// mobile: a reminder must never be fired at a mangled number.
+// What Piyzi expects on the wire. Turkish numbers go through the SMS cleanup
+// — digits only, local 0xxx and bare forms lifted to country code 90 — and
+// come out 90XXXXXXXXXX. Anything else is tried as an INTERNATIONAL number:
+// this is North Cyprus, a +44 or a 357 is a normal customer, and Piyzi's
+// docs accept any number carried with its country code. Accepted shape:
+// 11–15 digits, no leading zero (after a +/00 prefix is stripped). What does
+// not fit either — a bare 8-digit local number, a UK number stored in its
+// 07… home form (indistinguishable from a Turkish local) — is null: a
+// reminder must never be fired at a mangled number, and the app SHOWS such
+// bookings in the manual list rather than skipping them silently.
 function waPhone(raw) {
-  const p = smsPhone(raw);
-  return p ? p.slice(1) : null;
+  const tr = smsPhone(raw);
+  if (tr) return tr.slice(1);
+  let p = String(raw || '').replace(/[^0-9+]/g, '').replace(/^\+/, '').replace(/^00/, '');
+  return /^[1-9]\d{10,14}$/.test(p) ? p : null;
 }
 
 // The blocker "client" reception books to close out hours. It is not a person

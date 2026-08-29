@@ -56,6 +56,12 @@ is(api.waPhone('0090 533 866 9933'), '905338669933', '0090 international form');
 is(api.waPhone('12345'), null, 'too-short junk → null');
 is(api.waPhone(''), null, 'empty → null');
 is(api.waPhone(null), null, 'missing → null');
+is(api.waPhone('35799716784'), '35799716784', 'south Cyprus 357… (the SUZSANNA case) accepted as-is');
+is(api.waPhone('447493876052'), '447493876052', 'UK 44… (the PINAR case) accepted as-is');
+is(api.waPhone('+44 7493 876052'), '447493876052', '+44 form → digits with country code');
+is(api.waPhone('0035799716784'), '35799716784', '00357 international prefix stripped');
+is(api.waPhone('07493876052'), '907493876052', 'a leading 0 still reads as LOCAL (TR) — a UK 07… must be stored with 44');
+is(api.waPhone('99716784'), null, 'a bare 8-digit local number is ambiguous → null, shown for a human');
 
 console.log('2. the blocker client');
 is(api.waBlockedName('KAPALI — Personel'), true, 'the exact record name');

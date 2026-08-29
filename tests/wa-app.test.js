@@ -80,6 +80,12 @@ function makeDevice() {
        null, 'the KAPALI blocker → null');
     is(vm.runInContext('rdWaPayload({id:1,datetime:"2026-09-01T14:00"}, {id:7,name:"Ayşe",phone:"12345"})', d.ctx),
        null, 'a phone that does not clean up → null');
+    is(vm.runInContext('rdWaPayload({id:2,datetime:"2026-09-04T08:00",service:"M"}, {id:8,name:"Suzsanna",phone:"35799716784"}).phone', d.ctx),
+       '35799716784', 'a south Cyprus 357… number now schedules');
+    is(vm.runInContext('rdWaPayload({id:3,datetime:"2026-09-01T10:00",service:"M"}, {id:9,name:"Pınar",phone:"+44 7493 876052"}).phone', d.ctx),
+       '447493876052', 'a UK +44 number now schedules');
+    is(vm.runInContext('rdWaPayload({id:4,datetime:"2026-09-01T10:00"}, {id:10,name:"X",phone:"99716784"})', d.ctx),
+       null, 'a bare 8-digit local number stays rejected — and visible in the manual list');
     is(vm.runInContext('rdWaPayload({id:1,datetime:"yarın"}, {id:7,name:"Ayşe",phone:"05338669933"})', d.ctx),
        null, 'a broken datetime → null');
     is(vm.runInContext('rdWaPayload({id:1,datetime:"2026-09-01T14:00"}, null)', d.ctx),

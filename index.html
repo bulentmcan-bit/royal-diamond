@@ -11016,6 +11016,9 @@ function r24ItemHtml(group){
         <span>💅 ${servicesStr}</span>
         <span>${dateStr} · ${timesStr}</span>
         ${urgency}
+        ${(typeof rdWaPhoneOk==='function' && !(c&&c.phone&&rdWaPhoneOk(typeof normalizeWaPhone==='function'?normalizeWaPhone(String(c.phone)):String(c.phone))))
+          ? `<span style="color:#e34948;font-weight:800;">⚠️ ${c&&c.phone?'Numara uluslararası biçime çevrilemiyor — düzeltin, otomatik hatırlatma kurulamıyor':'Telefon numarası yok'}</span>`
+          : ''}
       </div>
       ${msg?.text ? `<div class="r24-msg-preview">${msg.text}</div>` :
         msg?.status === "loading" ? `<div class="r24-generating"><div class="dot"></div><div class="dot"></div><div class="dot"></div> Generating message…</div>` :
@@ -11265,16 +11268,25 @@ const RD_WA_WORKER = 'https://rd-buttons.royaldiamond.workers.dev';
 function rdWaKey(){ try{ return localStorage.getItem('rdns_wa_key_v1')||''; }catch(e){ return ''; } }
 function rdWaOn(){ return !!rdWaKey(); }
 
+// A phone the reminders can actually reach: a Turkish mobile in 90… form, or
+// ANY international number carried with its country code — this is North
+// Cyprus, a 44 or a 357 is a normal customer, and Piyzi sends internationally
+// as long as the country code is there. 11–15 digits, no leading zero; what
+// normalizeWaPhone could not lift into that shape (a bare 8-digit local
+// number, a UK number stored in its 07… home form) is rejected — and shown,
+// never silently skipped.
+function rdWaPhoneOk(p){ return /^[1-9]\d{10,14}$/.test(String(p||'')); }
+
 // What /wa/schedule is asked, or null when this appointment must not produce
-// messages at all: no client, no phone that cleans up to a real Turkish
-// mobile, the KAPALI hour-blocker, a malformed datetime. The worker re-checks
-// all of this — null here just saves the round trip.
+// messages at all: no client, no phone that survives normalization (Turkish
+// or international), the KAPALI hour-blocker, a malformed datetime. The
+// worker re-checks all of this — null here just saves the round trip.
 function rdWaPayload(a, c){
   if(!a || a.id==null || !c) return null;
   const name = String(c.name||'');
   if(/kapal[ıi]/i.test(name)) return null;
   const phone = (typeof normalizeWaPhone==='function') ? normalizeWaPhone(String(c.phone||'')) : String(c.phone||'');
-  if(!/^90\d{10}$/.test(phone)) return null;
+  if(!rdWaPhoneOk(phone)) return null;
   const dt = String(a.datetime||'');
   if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return null;
   return { apptId:String(a.id), phone:phone, name:name,
