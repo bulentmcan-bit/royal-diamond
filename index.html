@@ -4698,6 +4698,9 @@ p, span, div, label, h1, h2, h3, h4 {
   <div class="modal">
     <div class="mhdr"><div class="mtitle" id="modal-rebook-title">✅ Tedavi Tamamlandı</div></div>
     <div id="rb-info" style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:13px;margin-bottom:14px;font-size:0.84rem;line-height:1.8;"></div>
+    <!-- 💱 The till-side FX strip: the bill already converted, at the moment
+         a customer asks to pay in £/€/$. One or two lines, never more. -->
+    <div id="ck-fx" style="margin:-6px 0 12px;"></div>
     <input type="hidden" id="rb-price">
     <div class="fg" style="margin-bottom:6px;">
       <label class="flabel" id="flabel-rb-next">Sonraki randevu *</label>
@@ -8786,6 +8789,9 @@ function showRebookModal(a, c){
   // figure from a previous rebook sitting in the box).
   const _rbP=document.getElementById("rb-price");
   if(_rbP) _rbP.value = (a.price>0 ? a.price : (a._takingsAmount>0 ? a._takingsAmount : ''));
+  // 💱 The bill just landed in rb-price — show it converted while the
+  // customer is still at the till deciding how to pay.
+  try{ rdCkFxRender(); }catch(e){}
   // Reset the row. Nothing is preselected — the client's own rhythm shows up
   // as the gold "önerilen" day inside the calendar instead.
   ['rbk-pick','rbk-no'].forEach(id=>{const b=document.getElementById(id);if(b){b.classList.remove('rbk-sel');}});
@@ -11759,6 +11765,48 @@ function rdRestoreGate(){
   if(typeof ownerPin==='function' && !ownerPin()) return;
   const i=document.getElementById('restore-file-input');
   if(i) i.click();
+}
+
+// ── The checkout FX strip ───────────────────────────────────────────────────
+// The moment a customer asks to pay in £/€/$ is the checkout, so the answer
+// lives IN the checkout panel: today's buy rates on one small line and the
+// bill already converted on the next — she never retypes the amount. Tapping
+// a figure copies it. A stale or missing rate is said out loud and nothing is
+// converted with it: an old rate shown as today's is how a till goes wrong.
+function rdFxRates(){
+  try{
+    const s=JSON.parse(localStorage.getItem('rdns_sun_rates')||'null');
+    if(!s) return null;
+    return { g:parseFloat(s.g)||0, u:parseFloat(s.u)||0, e:parseFloat(s.e)||0,
+             d:s.d||'?', stale:(s.d!==new Date().toISOString().slice(0,10)) };
+  }catch(e){ return null; }
+}
+function rdCkFxRender(){
+  const el=document.getElementById('ck-fx'); if(!el) return;
+  const amt=parseFloat((document.getElementById('rb-price')||{}).value)||0;
+  const r=rdFxRates();
+  if(!r||!(r.g||r.e||r.u)){
+    el.innerHTML='<div style="font-size:0.78rem;color:#c94040;font-weight:800;">💱 Kur girilmemiş — dövizle ödeme almadan önce Döviz sayfasından bugünün alış kurlarını girin.</div>';
+    return;
+  }
+  if(r.stale){
+    el.innerHTML='<div style="font-size:0.78rem;color:#c94040;font-weight:800;">💱 Kurlar GÜNCEL DEĞİL ('+r.d+' tarihli) — bu kurlarla döviz almayın, önce Döviz sayfasından güncelleyin.</div>';
+    return;
+  }
+  const tr=v=>v.toFixed(2).replace('.',',');
+  let html='<div style="font-size:0.76rem;color:var(--muted);">💱 Bugünün alışı: '
+    +(r.g?'£'+tr(r.g):'')+(r.e?' · €'+tr(r.e):'')+(r.u?' · $'+tr(r.u):'')+'</div>';
+  if(amt>0){
+    const cur=(v,sym)=>{ const c=sym+tr(amt/v);
+      return '<span onclick="rdCkFxCopy(\''+c.replace(/'/g,'')+'\')" title="Dokun — kopyala" style="cursor:pointer;color:var(--gold);text-decoration:underline dotted;">'+c+'</span>'; };
+    const parts=[]; if(r.g)parts.push(cur(r.g,'£')); if(r.e)parts.push(cur(r.e,'€')); if(r.u)parts.push(cur(r.u,'$'));
+    html+='<div style="margin-top:3px;font-weight:800;font-size:0.95rem;">₺'+amt.toLocaleString('tr-TR')+' = '+parts.join(' / ')+'</div>';
+  }
+  el.innerHTML=html;
+}
+function rdCkFxCopy(txt){
+  try{ navigator.clipboard.writeText(txt); }catch(e){}
+  toast('💱','Kopyalandı',txt+' panoya alındı — söyleyin ya da fişe yazın.','g');
 }
 
 function rdWaAnsInfo(id){
