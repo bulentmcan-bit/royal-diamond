@@ -290,6 +290,40 @@ function makeDevice() {
     }
   }
 
+  console.log('11. checkout guards and the desk-side free times');
+  {
+    const mFree = html.match(/function rbFreeTimes\(staff, ds, dur\)\{[\s\S]*?\n\}/);
+    const mBlk = html.match(/function rdIsBlocker\(clientId\)\{[\s\S]*?\n\}/);
+    const mPrc = html.match(/function rdPriceConfirm\(p\)\{[\s\S]*?\n\}/);
+    if (!mFree || !mBlk || !mPrc) { fail++; console.log('  ✗ guard/flow functions not found'); }
+    else {
+      const d = makeDevice();
+      let confirms = [];
+      d.ctx.confirm = q => { confirms.push(q); return false; };   // reception taps İptal
+      vm.runInContext(mFree[0] + '\n' + mBlk[0] + '\n' + mPrc[0]
+        + ';__free=rbFreeTimes;__blk=rdIsBlocker;__prc=rdPriceConfirm;', d.ctx);
+      d.ctx.clients.push({ id: 90, name: 'KAPALI — Personel', phone: '' }, { id: 91, name: 'Ayşe', phone: '05338669933' });
+      d.ctx.appointments.push(
+        { id: 1, clientId: 91, staff: 'Hannah', status: 'confirmed', datetime: '2026-09-03T10:00', duration: 60 },
+        { id: 2, clientId: 91, staff: 'Hannah', status: 'cancelled', datetime: '2026-09-03T14:00', duration: 60 },
+        { id: 3, clientId: 91, staff: 'Helen', status: 'confirmed', datetime: '2026-09-03T09:00', duration: 60 });
+      const h = vm.runInContext('__free("Hannah","2026-09-03",60)', d.ctx);
+      is(h.includes('10:00') || h.includes('10:30'), false, 'a booked hour blocks every start it overlaps');
+      is(h.includes('09:00') && h.includes('14:00'), true, 'free starts offered — a CANCELLED booking blocks nothing');
+      is(h[0], '08:00', 'half-hourly grid starts at 08:00 for Hannah');
+      const he = vm.runInContext('__free("Helen","2026-09-03",60)', d.ctx);
+      is(he.includes('09:00'), false, 'Helen loses her booked 09:00');
+      is(he.includes('09:30'), false, 'Helen is hourly — no half-hour starts exist');
+      is(vm.runInContext('__free("Nihal","2026-09-03",60)', d.ctx), null, 'no grid for an unknown column → null, not a guess');
+      is(vm.runInContext('__blk(90)', d.ctx), true, 'KAPALI — Personel is the blocker');
+      is(vm.runInContext('__blk(91)', d.ctx), false, 'a customer is not');
+      is(vm.runInContext('__prc(1)', d.ctx), false, '₺1 asks, and İptal stops the write');
+      is(vm.runInContext('__prc(1500)', d.ctx), true, '₺1.500 asks nothing');
+      is(vm.runInContext('__prc(0)', d.ctx), true, '₺0 is allowed silently — sometimes real');
+      is(confirms.length, 1, 'exactly one question was asked, for the ₺1');
+    }
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);

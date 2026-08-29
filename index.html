@@ -4735,6 +4735,9 @@ p, span, div, label, h1, h2, h3, h4 {
       <button class="mclose" onclick="rdCkCalClose()">✕</button>
     </div>
     <div id="rbk-cal-grid"></div>
+    <!-- Free times appear HERE the instant a day is tapped — same panel,
+         no second screen, the customer still at the desk. -->
+    <div id="rbk-times"></div>
   </div>
 </div>
 
@@ -5695,7 +5698,14 @@ function renderDashGrid(){
       // appointment of the day).
       try{ html += (typeof dpDebtBadge==='function') ? dpDebtBadge(a.clientId) : ''; }catch(e){}
       html += '<div style="display:flex;gap:3px;">';
-      if(!isDone){
+      const _isBlk = (typeof rdIsBlocker==='function') && rdIsBlocker(a.clientId);
+      if(_isBlk){
+        // A held hour, not a customer: it can be moved (✏) or released (✕) —
+        // it can never be checked out, priced, or marked no-show.
+        html += '<span style="flex:1;text-align:center;font-size:0.62rem;font-weight:800;color:#888;background:rgba(150,150,150,0.14);border:1px dashed rgba(150,150,150,0.5);border-radius:4px;padding:2px 0;">⛔ KAPALI — saat tutucu</span>';
+        html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 44px;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏</button>';
+        html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
+      } else if(!isDone){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
         html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:#2f7fe0;border:1px solid #2f7fe0;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
@@ -5941,6 +5951,14 @@ function dashEditAppt(id){
             return;
           }
         }
+        // KAPALI holds an hour, it is not a customer: a price typed against it
+        // must never reach the till or complete it. Time/staff edits still save.
+        if(enteredPrice>0 && rdIsBlocker(live.clientId)){
+          toast('⛔','KAPALI — ücret yazılamaz','Saat tutucu kayda fiyat girilemez; kasaya hiçbir şey yazılmadı.','r');
+          return;
+        }
+        // ₺1 for a ₺1.500 job — one look before it lands anywhere.
+        if(!rdPriceConfirm(enteredPrice)) return;
         // The Fiyat box is pre-filled with the price already recorded. Only run
         // the discount maths when a genuinely new figure was typed, otherwise
         // simply reopening and pressing Update would shave 30% off every time.
@@ -6057,6 +6075,14 @@ function dashCompleteAppt(id){
 function diAutoAdd(staffName, amount, datetime, apptId){
   try{
     if(!dtState) return;
+    // The KAPALI slot-blocker must never put money in the till — last line of
+    // defence, whatever path tried to.
+    try{
+      if(typeof rdIsBlocker==='function' && apptId!=null){
+        const _ba=(typeof appointments!=='undefined')?appointments.find(function(x){return x&&String(x.id)===String(apptId);}):null;
+        if(_ba && rdIsBlocker(_ba.clientId)){ console.warn('diAutoAdd REFUSED: blocker client, appt', apptId); return; }
+      }
+    }catch(e){}
     const dateKey = (datetime||dtLocal(new Date())).slice(0,10);
     const todayKey = dtDateKey();
 
@@ -8855,6 +8881,24 @@ function satPick(val){
   if(ctx.cb) ctx.cb();   // the parked checkout finishes NOW — nothing else is asked
 }
 
+// The slot-blocker "client" reception books when a technician is out (doctor,
+// bank). It holds an hour; it is NOT a customer, and nothing about money may
+// ever touch it — no checkout, no till entry, no commission.
+function rdIsBlocker(clientId){
+  try{
+    const c=(clients||[]).find(x=>x&&String(x.id)===String(clientId));
+    return /kapal[ıi]/i.test(String((c&&c.name)||''));
+  }catch(e){ return false; }
+}
+
+// A price under ₺100 is sometimes real (a nail repair, a zero) and sometimes
+// a ₺1.500 typed as ₺1 — so it asks, once, and never blocks.
+function rdPriceConfirm(p){
+  p=parseInt(p)||0;
+  if(p>0&&p<100) return confirm('₺'+p+' doğru mu?\n\nÇok düşük görünüyor — 1.500 yerine 1 yazılmış olabilir.\nEminseniz Tamam, düzeltecekseniz İptal.');
+  return true;
+}
+
 function completeAppt(id){
   // Done no longer completes anything on its own: it opens the checkout
   // panel, and NOTHING is written until ✓ Çıkışı Tamamla passes all three
@@ -8862,6 +8906,7 @@ function completeAppt(id){
   // rebook intent then land in the SAME save — a crash can never leave one
   // without the other.
   const a=appointments.find(x=>String(x.id)===String(id));if(!a)return;
+  if(rdIsBlocker(a.clientId)){ toast('⛔','KAPALI — çıkış yapılamaz','Bu kayıt bir saat tutucudur, müşteri değildir. Saati açmak için ✕ ile iptal edin.','r'); return; }
   const c=cObj(a.clientId);
   if(a.status==='completed'){ toast('ℹ','Zaten tamamlandı','Bu randevunun çıkışı zaten yapılmış.',''); return; }
   showRebookModal(a, c);
@@ -9106,6 +9151,7 @@ function rdCkPick(which){
     rdCkCalOpen(a);
     return; // the gate opens when a day is actually tapped
   } else { // İstemiyor — deliberately the slower path
+    try{ rdCkDropNewAppt(); }catch(e){}
     _ckState.sel='no'; _ckState.source=null; _ckState.targetDate=null;
     rdCkMark('rbk-no');
     if(dEl) dEl.style.display='block';
@@ -9154,15 +9200,132 @@ function rdCkCalOpen(a){
   grid.innerHTML=html;
   document.getElementById('rbkCalOv').style.display='flex';
 }
-function rdCkCalTap(ds){
+// A technician's free start times on a day — the same working grids the Gap
+// Report draws (Helen hourly 8–18, Hannah & Lissa half-hourly 8–18:30; keep
+// in step if those ever change), minus every hour her existing bookings
+// cover. Pure local arithmetic: the times appear the instant a day is tapped.
+function rbFreeTimes(staff, ds, dur){
+  try{
+    dur=Math.min(60,parseInt(dur)||60);
+    const s=String(staff||'').toLowerCase();
+    const tech=['Helen','Hannah','Lissa'].find(t=>s.includes(t.toLowerCase()));
+    if(!tech) return null;   // unknown column: no grid to offer
+    const mk=(a,b,st)=>{const o=[];for(let m=a*60;m<=b*60;m+=st)o.push(m);return o;};
+    const grid=(tech==='Helen')?mk(8,18,60):mk(8,18.5,30);
+    const busy=(appointments||[]).filter(a=>{
+      if(!a||a.status==='cancelled') return false;
+      if(String(a.datetime||'').slice(0,10)!==ds) return false;
+      return String(a.staff||'').toLowerCase().includes(tech.toLowerCase());
+    }).map(a=>{const d=new Date(a.datetime);const b=d.getHours()*60+d.getMinutes();return [b, b+(parseInt(a.duration)||60)];});
+    const p=n=>String(n).padStart(2,'0');
+    return grid.filter(m=>!busy.some(w=>m<w[1]&&m+dur>w[0])).map(m=>p(Math.floor(m/60))+':'+p(m%60));
+  }catch(e){ return null; }
+}
+
+// Day tapped → her free times, instantly, in the same panel. The hour she is
+// checking out of comes first when it is free — most customers keep their
+// hour. Booking happens on the TIME tap: a real confirmed appointment with
+// its reminders, no queue, no callback. "Saat sonra verilecek" survives only
+// as the small dashed path at the bottom, for the customer who genuinely
+// cannot decide at the desk.
+function rdCkCalTap(ds){ rdCkShowTimes(ds); }
+function rdCkShowTimes(ds){
+  if(!_ckState||!rebookPending) return;
+  const a=rebookPending.appt;
+  const box=document.getElementById('rbk-times'); if(!box) return;
+  const dur=Math.min(60,parseInt(a.duration)||60);
+  const free=rbFreeTimes(a.staff, ds, dur);
+  const usual=String(a.datetime||'').slice(11,16);
+  const head='<div style="font-weight:800;margin:12px 0 8px;font-size:0.95rem;">🕐 '+rbFmtDate(ds)+' — '+(a.staff||'')+' boş saatleri</div>';
+  const later='<div style="margin-top:12px;text-align:center;"><button type="button" onclick="rdCkLater(\''+ds+'\')" style="background:none;border:1px dashed var(--border);border-radius:8px;padding:7px 12px;color:var(--muted);font-family:inherit;font-size:0.74rem;cursor:pointer;">⏳ Saat sonra verilecek — müşteri şimdi karar veremiyor</button></div>';
+  if(free===null){
+    box.innerHTML=head+'<div style="color:var(--muted);font-size:0.85rem;">Bu personelin saat çizelgesi yok — saati telefonla verin.</div>'+later;
+  } else if(!free.length){
+    // Full day: say so at once and offer the nearest days that DO have room —
+    // she must never go back and start again.
+    let alts=[]; const d0=new Date(ds+'T12:00');
+    for(let i=1;i<=14&&alts.length<3;i++){
+      const d=new Date(d0); d.setDate(d0.getDate()+i);
+      if(d.getDay()===0) continue;
+      const ads=dtLocal(d).slice(0,10);
+      const f=rbFreeTimes(a.staff, ads, dur);
+      if(f&&f.length) alts.push({ds:ads,n:f.length});
+    }
+    box.innerHTML=head
+      +'<div style="color:#e34948;font-weight:800;font-size:0.9rem;margin-bottom:8px;">❌ '+(a.staff||'')+' bu gün tamamen dolu.</div>'
+      +(alts.length?'<div style="font-size:0.8rem;color:var(--muted);margin-bottom:6px;">En yakın boş günler:</div><div style="display:flex;gap:8px;flex-wrap:wrap;">'
+        +alts.map(x=>'<button type="button" onclick="rdCkShowTimes(\''+x.ds+'\')" style="background:rgba(212,169,106,0.14);border:1px solid rgba(212,169,106,0.45);border-radius:9px;padding:10px 14px;font-family:inherit;font-weight:800;font-size:0.88rem;color:var(--gold);cursor:pointer;">'+rbFmtDate(x.ds)+' <span style="font-weight:700;color:var(--muted);font-size:0.72rem;">('+x.n+' boş)</span></button>').join('')+'</div>':'')
+      +later;
+  } else {
+    const ordered=free.includes(usual)?[usual].concat(free.filter(t=>t!==usual)):free.slice();
+    box.innerHTML=head
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      +ordered.map(t=>{
+        const isU=(t===usual);
+        return '<button type="button" onclick="rdCkTimeTap(\''+ds+'\',\''+t+'\')" style="min-width:86px;padding:13px 10px;border-radius:10px;font-family:inherit;font-weight:800;font-size:1.05rem;cursor:pointer;'
+          +(isU?'background:linear-gradient(135deg,#d4a96a,#c49554);border:2px solid #d4a96a;color:#fff;':'background:var(--card);border:1px solid var(--border);color:var(--text);')
+          +'">'+t+(isU?'<div style="font-size:0.58rem;font-weight:800;">HER ZAMANKİ SAATİ</div>':'')+'</button>';
+      }).join('')+'</div>'+later;
+  }
+  try{ box.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){}
+}
+// A time was tapped (the appointment exists) and then the answer changed —
+// the freshly created booking must not stay behind as an orphan.
+function rdCkDropNewAppt(){
+  try{
+    if(!_ckState||!_ckState.newApptId) return;
+    const na=apptById(_ckState.newApptId);
+    if(na){
+      try{ rdWaCancel(na); }catch(e){}
+      try{ apptTombAdd(na.id,'checkout time abandoned (answer changed)'); }catch(e){}
+      appointments=appointments.filter(x=>x&&x.id!==na.id);
+      saveAll();
+      try{ renderAppts(); renderDash(); updateApptBadge(); }catch(e){}
+    }
+    _ckState.newApptId=null;
+  }catch(e){}
+}
+// The exception path — the old behaviour, now deliberately the small one.
+function rdCkLater(ds){
   if(!_ckState) return;
+  rdCkDropNewAppt();
   _ckState.sel='picked'; _ckState.source='picked'; _ckState.targetDate=ds; _ckState.declineReason=null;
+  _ckState.newApptId=null;
   const dEl=document.getElementById('rbk-decline'); if(dEl) dEl.style.display='none';
   rdCkMark('rbk-pick');
   const tEl=document.getElementById('rbk-target'); if(tEl) tEl.textContent='📅 '+rbFmtDate(ds)+' — '+_('rb_time_later');
   rdCkCalClose(); rdCkGate();
 }
-function rdCkCalClose(){ const o=document.getElementById('rbkCalOv'); if(o) o.style.display='none'; }
+// The time tap: the appointment exists from this moment — confirmed, with its
+// WhatsApp reminders scheduled — before the panel even closes. Tapping a
+// different time afterwards MOVES that same appointment, never doubles it.
+function rdCkTimeTap(ds, hhmm){
+  if(!_ckState||!rebookPending) return;
+  const a=rebookPending.appt;
+  let na=_ckState.newApptId?apptById(_ckState.newApptId):null;
+  if(na){
+    na.datetime=ds+'T'+hhmm; apptTouch(na); saveAll();
+    try{ rdWaReschedule(na); }catch(e){}
+  } else {
+    na={id:Date.now(),clientId:a.clientId,service:a.service,datetime:ds+'T'+hhmm,
+        duration:Math.min(60,parseInt(a.duration)||60),price:0,staff:a.staff,
+        status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null};
+    appointments.push(na);
+    try{ _rdLogApptCreate(na,'checkout-time'); }catch(e){}
+    saveAll();
+    try{ rdWaSchedule(na); }catch(e){}
+  }
+  _ckState.sel='booked'; _ckState.source='desk'; _ckState.targetDate=ds;
+  _ckState.targetTime=hhmm; _ckState.newApptId=na.id; _ckState.declineReason=null;
+  const dEl=document.getElementById('rbk-decline'); if(dEl) dEl.style.display='none';
+  rdCkMark('rbk-pick');
+  const tEl=document.getElementById('rbk-target');
+  if(tEl) tEl.textContent='✅ '+rbFmtDate(ds)+' · '+hhmm+' — randevu oluşturuldu';
+  rdCkCalClose(); rdCkGate();
+  try{ renderAppts(); renderDash(); updateApptBadge(); }catch(e){}
+  toast('📅','Randevu verildi',(rebookPending.client?.name||'')+' → '+rbFmtDate(ds)+' · '+hhmm+' — hatırlatmaları da kuruldu.','g');
+}
+function rdCkCalClose(){ const o=document.getElementById('rbkCalOv'); if(o) o.style.display='none'; const b=document.getElementById('rbk-times'); if(b) b.innerHTML=''; }
 
 // ── ✓ Çıkışı Tamamla — all three gates, then checkout + rebook in one save ──
 function rdCheckoutDone(){
@@ -9173,6 +9336,10 @@ function rdCheckoutDone(){
   const appt=apptById(rebookPending.appt.id)||rebookPending.appt;
   const answered=(_ckState.sel==='no'&&_ckState.declineReason)||(_ckState.sel&&_ckState.sel!=='no'&&_ckState.targetDate);
   if(!answered){ rdCkGate(); return; }
+  if(rdIsBlocker(appt.clientId)){
+    toast('⛔','KAPALI — çıkış yapılamaz','Saat tutucu kayıt tamamlanamaz; kasaya hiçbir şey yazılmadı.','r');
+    closeModal('mRebook'); rebookPending=null; _ckState=null; return;
+  }
   const price=parseInt(document.getElementById('rb-price')?.value)||0;
   // 😊 MANDATORY — the same parked-continuation gate as before: no till entry
   // before the satisfaction answer; the button press re-runs this whole click.
@@ -9180,6 +9347,9 @@ function rdCheckoutDone(){
     satAsk(appt, function(){ rdCheckoutDone(); });
     return;
   }
+  // ₺1 for a ₺1.500 job: make her look twice, after the satisfaction gate so
+  // the question is asked exactly once, on the pass that actually writes.
+  if(price>0 && !appt._takingsAmount && !rdPriceConfirm(price)) return;
   // Money — unchanged path; diAutoAdd asks the ödeme question (pmAsk) itself.
   if(price>0){ appt.price=price; appt._pts=Date.now(); }
   if(price>0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount=price; appt._pts=Date.now(); }
@@ -9197,11 +9367,15 @@ function rdCheckoutDone(){
     duration: Math.min(60, parseInt(appt.duration)||60),
     targetDate: _ckState.sel==='no' ? null : _ckState.targetDate,
     source: _ckState.sel==='no' ? null : _ckState.source,
-    status: _ckState.sel==='no' ? 'declined' : 'pending',
+    // 'booked' = the desk gave date AND time and the real appointment already
+    // exists — nothing to chase, nothing in the queue. 'pending' survives only
+    // for the deliberate "saat sonra verilecek" exception.
+    status: _ckState.sel==='no' ? 'declined' : (_ckState.sel==='booked' ? 'booked' : 'pending'),
     declineReason: _ckState.sel==='no' ? _ckState.declineReason : null,
     declineNote: _ckState.sel==='no' ? String(document.getElementById('rbk-decline-note')?.value||'').slice(0,120) : '',
     createdAt: Date.now(), createdBy: rbDevId(),
-    resolvedAt: null, resolvedApptId: null
+    resolvedAt: _ckState.sel==='booked' ? Date.now() : null,
+    resolvedApptId: _ckState.sel==='booked' ? String(_ckState.newApptId||'') : null
   };
   rbUpsert(item);
   saveAll();
@@ -9209,7 +9383,9 @@ function rdCheckoutDone(){
   closeModal('mRebook'); rebookPending=null; _ckState=null;
   // If the customer still owes from before, ask while she is at the till.
   setTimeout(function(){ try{dpKasaCheck(_dpId);}catch(e){} },350);
-  if(item.status==='pending'){
+  if(item.status==='booked'){
+    toast('✅','Çıkış tamam',(client?.name||'')+' — sonraki randevusu gün VE saatiyle verildi. Aranacak kimse yok.','g');
+  } else if(item.status==='pending'){
     toast('📌',_('rb_provisional'),(client?.name||'')+' → '+rbFmtDate(item.targetDate)+' · '+_('rb_time_later'),'g');
   } else {
     toast('🙅‍♀️',_('rb_decline'),(client?.name||'')+' — '+rbReasonLabel(item.declineReason),'');
@@ -12798,7 +12974,12 @@ function renderCashCheck(){
             +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
-          +'<td>'+(r.collect==='deferred'?'<span class="badge" style="background:rgba(212,169,106,0.16);color:var(--gold);">📆 Vadeli</span>':(r.collect==='unpaid'?'<span class="badge badge-rose">⛔ Ödenmedi</span>':ccPayBadge(r.pay,r.splits,r.payNote)))+'</td>'
+          +'<td>'+(r.collect==='deferred'?'<span class="badge" style="background:rgba(212,169,106,0.16);color:var(--gold);">📆 Vadeli</span>'
+            :(r.collect==='unpaid'?'<span class="badge badge-rose">⛔ Ödenmedi</span>'
+            // Money in, method unknown: not a quiet dash — a completed job with
+            // no ödeme yöntemi is visibly wrong on its own row.
+            :(r.apptId&&r.amount>0&&!r.pay&&!r.splits?'<span class="badge badge-rose" style="font-weight:800;" title="Para kaydedilmiş ama nasıl ödendiği girilmemiş — personele sorun">⛔ Yöntem girilmemiş</span>'
+            :ccPayBadge(r.pay,r.splits,r.payNote))))+'</td>'
           +'<td style="white-space:nowrap;">'
           // An archived row is a read-only copy of a day that has already closed.
           // The delete buttons all act on TODAY's live entries, so offering them
