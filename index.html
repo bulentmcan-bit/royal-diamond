@@ -16615,8 +16615,31 @@ if('serviceWorker' in navigator){
     return true;
   }
 
+  // The device holding the PLAYER role is the salon's speaker, and a reload —
+  // however polite — stops the music. During opening hours that is never
+  // worth a version bump: the update waits until the salon is shut (or the
+  // role is not held), full stop. No pill either — a pill is an invitation
+  // to interrupt the music with a tap. A person can still reload by hand;
+  // this only silences the machinery.
+  function playerOnDuty(){
+    try{
+      var r=window.rdnsAudioRole;
+      if(!(r && r.isPlayer && r.isPlayer())) return false;
+      var h=new Date().getHours();
+      return h>=7 && h<20;
+    }catch(e){ return false; }
+  }
+
   function attempt(){
     if(!pending || waiting) return;
+    if(playerOnDuty()){
+      // The speaker, mid-day: not now. Look again every few minutes so the
+      // 20:00 boundary (or the role moving elsewhere) is caught the same
+      // evening — the update lands then, through the normal quiet-moment door.
+      waiting=true;
+      setTimeout(function(){ waiting=false; attempt(); }, 5*60*1000);
+      return;
+    }
     // The quiet spell is a courtesy, and on reception's tablet — touched every few
     // seconds from open to close — it can simply never arrive. That is how a device
     // ends up running yesterday's code all day with nothing but a pill in the
@@ -19342,6 +19365,24 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       });
       el.addEventListener('playing', function(){ fails=0; paintMusic(); });
       el.addEventListener('pause', paintMusic);
+      // A restored round lands mid-song: the saved seconds are applied the
+      // moment the RIGHT track's length is known — and only if they fall
+      // safely inside it, so a stale figure can never seek past the end and
+      // skip the track. Any other track loading first disarms the seek.
+      el.addEventListener('loadedmetadata', function(){
+        if(!pendingSeek) return;
+        var t=tracks[order[at]], sk=pendingSeek;
+        pendingSeek=0;
+        if(!(t && String(t.name)===pendingSeekName)) return;
+        try{ if(el.duration && el.duration-sk>5) el.currentTime=sk; }catch(e){}
+      });
+      // The played position is written down every few seconds while the music
+      // runs — cheap, and it is what lets a reload (or a crash) come back to
+      // the middle of the song instead of its top.
+      el.addEventListener('timeupdate', function(){
+        var n2=Date.now();
+        if(n2-lastPosT>5000){ lastPosT=n2; posSave(); }
+      });
       return el;
     }
 
@@ -19415,11 +19456,17 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     // it are written down at every track change, and the morning carries on
     // from where the evening stopped, so the whole library gets heard over a
     // week instead of the same first hour forever.
-    function posSave(){
+    var pendingSeek=0, pendingSeekName='', lastPosT=0;
+    // atStart says the track has only just been chosen — the element still
+    // holds the PREVIOUS song, so its clock must not be written down as this
+    // one's. The mid-song saves come from timeupdate, where the clock is real.
+    function posSave(atStart){
       try{
         if(at<0 || !tracks.length) return;
+        var sec=0;
+        if(!atStart){ try{ if(el && el.currentTime>10) sec=Math.floor(el.currentTime); }catch(e){} }
         localStorage.setItem('rdns_cbm_pos',
-          JSON.stringify({o:order, a:at, n:String((tracks[order[at]]||{}).name||'')}));
+          JSON.stringify({o:order, a:at, n:String((tracks[order[at]]||{}).name||''), s:sec}));
       }catch(e){}
     }
     // True only when yesterday's saved round still fits TODAY's library
@@ -19439,6 +19486,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       }
       if(String((tracks[p.o[p.a]]||{}).name||'')!==String(p.n||'')) return false;
       order=p.o; at=p.a;
+      // The seek is armed for THIS track only: applied on its loadedmetadata,
+      // discarded the moment anything else loads first.
+      pendingSeek=(typeof p.s==='number' && p.s>10) ? p.s : 0;
+      pendingSeekName=pendingSeek ? String(p.n||'') : '';
       return true;
     }
     // Switch playback onto the library without dropping the song mid-note: the
@@ -19451,16 +19502,20 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       tracks=files; lib=true; fails=0;
       var idx=-1, i;
       if(curName) for(i=0;i<tracks.length;i++) if(tracks[i].name===curName){ idx=i; break; }
+      var resumed=false;
       if(idx>=0){
         order=shuffle(tracks.length);
         if(!shufOn()) at=idx;   // identity order: the track's own index IS its place
         else { var p=order.indexOf(idx); if(p>0){ order.splice(p,1); order.unshift(idx); } at=0; }
       }
-      else if(!posRestore()){
+      else if(posRestore()){
+        resumed=true;   // a resumed round PLAYS its saved track, never skips past it
+      }
+      else {
         order=shuffle(tracks.length); at=-1;
       }
       paintMusic();
-      if(wanted && tracks.length && (!el || el.paused)) step(1);
+      if(wanted && tracks.length && (!el || el.paused)) step(resumed?0:1);
     }
     // Bring what was just picked INTO the library: copy what is new, keep what
     // is already there, and stop at the size cap rather than silently filling
@@ -19664,7 +19719,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       }
       if(at<0) at=order.length-1;
       var t=tracks[order[at]];
-      posSave();   // every track change writes the round down — tomorrow starts HERE
+      posSave(true);   // every track change writes the round down — tomorrow starts HERE
       fileOf(t).then(function(f){
         var old=url;
         url=URL.createObjectURL(f);
@@ -19991,6 +20046,69 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
 
   // Last night's folder, picked up again before anybody asks for it.
   try{ Music.restore(); }catch(e){}
+  // The music must come back by ITSELF after a reload — an update, a crash, a
+  // discarded tab. If it was playing when the page went down (rdns_cbm_musicon)
+  // and this device may be the speaker, play() is attempted outright: a laptop
+  // that has played music daily is one the browser lets autoplay. Only an
+  // actual NotAllowedError falls back to the click bar — the old
+  // wait-for-a-tap is now the exception, not the rule. Two attempts, because
+  // the library may still be adopting at the first.
+  (function(){
+    var tries=0;
+    function comeback(){
+      try{
+        if(!Music || Music.wanted() || Music.playing()) return;
+        if(localStorage.getItem('rdns_cbm_musicon')!=='1') return;
+        var r=window.rdnsAudioRole;
+        if(r && !r.mayPlay()) return;
+        if(Music.count()>0){ Music.play(); return; }
+      }catch(e){}
+      if(++tries<4) setTimeout(comeback, 3000);   // the library adopts within seconds
+    }
+    setTimeout(comeback, 2500);
+  })();
+  // ── PLAYER HEALTH — see the browser doing it, instead of guessing ─────────
+  // The three ways a tab dies quietly: DISCARDED (Chrome killed it and this
+  // load is the comeback — document.wasDiscarded), FROZEN (Page Lifecycle put
+  // it to sleep in place), and the TIMER GAP (a 15-second clock that suddenly
+  // reads minutes — the tab was suspended without saying so). Each is written
+  // to the console, kept in a local ring (rdns_player_health, last 50), shown
+  // on the music panel, and pushed to rdns_audio_v1/health so it is visible
+  // from the owner's machine. A resume also nudges revive(), so the report
+  // and the recovery are the same moment.
+  (function(){
+    var TXT={ discarded:'⚠ Tarayıcı bu sekmeyi kapatıp geri açtı (discard) — müzik kaldığı yerden sürüyor',
+              frozen:'⚠ Tarayıcı sekmeyi dondurdu (freeze)',
+              resumed:'ℹ Sekme uykudan döndü — müzik toparlanıyor',
+              'timer-gap':'⚠ Sekme uyutulmuş — zamanlayıcıda boşluk' };
+    function report(kind, ms){
+      try{ console.warn('[player-health]', kind, ms?Math.round(ms/1000)+'s':''); }catch(e){}
+      try{
+        var log=JSON.parse(localStorage.getItem('rdns_player_health')||'[]');
+        log.push({k:kind, ms:ms||0, at:new Date().toISOString().slice(0,19)});
+        localStorage.setItem('rdns_player_health', JSON.stringify(log.slice(-50)));
+      }catch(e){}
+      try{
+        var r=window.rdnsAudioRole, dev=(r&&r.myDev)?String(r.myDev()).slice(0,12):'';
+        firebase.database().ref('rdns_audio_v1/health').set({
+          dev:dev, kind:kind, ms:ms||0, seen:new Date().toLocaleString('tr-TR'),
+          at:firebase.database.ServerValue.TIMESTAMP
+        }).catch(function(){});
+      }catch(e){}
+      try{ if(window.cbmMusic&&TXT[kind]) cbmMusic.note(TXT[kind]+(ms?' ('+Math.round(ms/1000)+' sn)':'')); }catch(e){}
+      try{ if(kind!=='frozen'&&window.cbmMusic) cbmMusic.revive(); }catch(e){}
+    }
+    try{ if(document.wasDiscarded) report('discarded'); }catch(e){}
+    try{
+      document.addEventListener('freeze', function(){ report('frozen'); });
+      document.addEventListener('resume', function(){ report('resumed'); });
+    }catch(e){}
+    var last=Date.now();
+    setInterval(function(){
+      var n=Date.now(), gap=n-last; last=n;
+      if(gap>90000) report('timer-gap', gap);
+    }, 15000);
+  })();
 
   function paintMusic(){
     var b=document.getElementById('mus-play'), t=document.getElementById('mus-title');
@@ -21649,7 +21767,13 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     return (now()-hb)<60000;
   }
   // The one gate every play() in the music module asks before making a sound.
-  window.rdnsAudioRole={ mayPlay:function(){ var p=playerId(); return !p || p===myId; } };
+  // isPlayer is the auto-updater's question: the device that IS the salon's
+  // speaker must never be reloaded out from under the music mid-day, so the
+  // updater asks this before touching anything (cached answer counts — a
+  // morning reload must not open an update window while Firebase connects).
+  window.rdnsAudioRole={ mayPlay:function(){ var p=playerId(); return !p || p===myId; },
+                         isPlayer:function(){ return isPlayer(); },
+                         myDev:function(){ return myId; } };
 
   /* ── ids: the rule that broke the sync once already ── */
   function newId(){ return String(Date.now())+'_'+Math.floor(Math.random()*100000); }
@@ -21730,6 +21854,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     if(!force && sig===lastStateSig && Date.now()-lastStatePush<15000) return;
     lastStateSig=sig; lastStatePush=Date.now();
     s.ts=TS();
+    // Which BUILD this player runs — document.lastModified changes with every
+    // deploy, so a stale tab is visible from any other machine instead of
+    // being guessed at (31 Aug: two library wipes traced to exactly that).
+    try{ s.v=String(document.lastModified||''); }catch(e){}
     db.ref(PATH+'/state').set(s)
       .catch(function(e){ try{ console.warn('[music-remote] state write failed:',e); }catch(_){} });
   }

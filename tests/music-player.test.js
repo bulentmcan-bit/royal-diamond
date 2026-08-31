@@ -258,6 +258,32 @@ function makeAudioEl() {
     ok(morning.Music.title() === 'Gamma', 'and the round carries on into the unheard half');
   }
 
+  // 7c — the reload lands mid-song: saved seconds, applied to the right track
+  {
+    const store2 = { rdns_cbm_shuffle: '0',
+      rdns_cbm_pos: JSON.stringify({ o: [0, 1, 2], a: 1, n: 'Beta.mp3', s: 120 }) };
+    const opfs = makeOpfs();
+    opfs.files['Alpha.mp3'] = 1e6; opfs.files['Beta.mp3'] = 1e6; opfs.files['Gamma.mp3'] = 1e6;
+    const d = makeLibCtx(store2, opfs);
+    d.Music.restore(); await tick(50);
+    d.Music.play(); await tick();
+    d.el.duration = 200; d.el.currentTime = 0; d.el.fire('loadedmetadata'); await tick();
+    ok(d.Music.title() === 'Beta' && d.el.currentTime === 120,
+       'the reload lands 2:00 into Beta — the middle of the song, not its top');
+  }
+  {
+    // a stale figure at the very end must not seek past it and skip the track
+    const store2 = { rdns_cbm_shuffle: '0',
+      rdns_cbm_pos: JSON.stringify({ o: [0, 1], a: 0, n: 'Alpha.mp3', s: 198 }) };
+    const opfs = makeOpfs();
+    opfs.files['Alpha.mp3'] = 1e6; opfs.files['Beta.mp3'] = 1e6;
+    const d = makeLibCtx(store2, opfs);
+    d.Music.restore(); await tick(50);
+    d.Music.play(); await tick();
+    d.el.duration = 200; d.el.currentTime = 0; d.el.fire('loadedmetadata'); await tick();
+    ok(d.el.currentTime === 0, 'seconds within a breath of the end are ignored — the song plays, never skips');
+  }
+
   // 7b — a changed library refuses yesterday's round and starts clean
   {
     const store2 = { rdns_cbm_shuffle: '0', rdns_cbm_musicon: '0',
