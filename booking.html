@@ -16,6 +16,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="crown-config.js"></script>
 <style>
 :root{--gold:#c9a05a;--goldD:#8a6420;--dark:#141614;--card:#ffffff;--bg:#f7f5f2;--rose:#e8847a;--wa:#25D366;--ok:#2e9e5b;--text:#1f1f1f;--muted:#777;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -33,6 +34,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-
 .chip.free.sel{background:var(--gold);border-color:var(--goldD);color:#fff;box-shadow:0 0 0 2px var(--goldD);}
 .chip.full{background:#efeeec;border-color:#e4e2de;color:#b5b2ac;cursor:not-allowed;text-decoration:line-through;}
 .chip.past{background:#efeeec;border-color:#e4e2de;color:#c5c2bc;cursor:not-allowed;}
+.chip.closed{background:#efeeec;border-color:#e4e2de;color:#b5b2ac;cursor:not-allowed;text-align:center;}
+.chip.closed small{display:block;font-size:0.6rem;font-weight:800;letter-spacing:0.5px;color:#a8a49d;}
+.closed-note{font-size:0.72rem;color:var(--muted);margin-top:8px;}
 .legend{display:flex;gap:14px;font-size:0.7rem;color:var(--muted);margin-top:8px;align-items:center;}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;}
 .dot.g{background:var(--gold);} .dot.x{background:#c9c6c0;}
@@ -59,6 +63,7 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
   <div class="conn" id="conn"><span class="spin"></span>Müsait saatler yükleniyor…</div>
   <div class="lbl">📅 Gün Seçin / Choose a day</div>
   <div class="chips" id="days"></div>
+  <div class="closed-note" id="closedNote"></div>
   <div class="lbl">🕐 Saat / Time <span style="font-weight:400;text-transform:none;color:var(--muted);">— altın çerçeveliler müsait</span></div>
   <div class="chips" id="times"></div>
   <div class="legend"><span><span class="dot g"></span>Müsait / Available</span><span><span class="dot x"></span>Dolu / Full</span></div>
@@ -116,19 +121,72 @@ const aylar=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas'
 const pad=n=>String(n).padStart(2,'0');
 const dKey=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 
+// ── Closed days ──
+// Which days the salon is shut lives in crown-config.js (closedWeekdays +
+// closedDates) — the same setting the salon's own screens read, so this page
+// can never offer a day the diary calls closed. Belt and braces: the salon
+// also publishes `_closed` on each closed day's availability, so a cached
+// copy of the config still greys the day from the live data.
+//
+// FAIL CLOSED: a config that is missing, stale, emptied or throwing must
+// never open Sundays to customers — every broken path below lands on
+// "Sunday is closed", and only a config that affirmatively lists the closed
+// weekdays gets to say otherwise. A wrongly grey Sunday costs nothing; a
+// wrongly open one sends a customer to a locked door.
+function bkClosed(d){
+  const av=avail&&avail[dKey(d)];
+  if(av&&av._closed)return true;
+  try{
+    const w=window.CROWN&&CROWN.closedWeekdays;
+    if(Array.isArray(w)&&w.length){
+      if(w.indexOf(d.getDay())!==-1)return true;
+    }else if(d.getDay()===0)return true;
+    return !!(window.CROWN&&CROWN.isClosedDay&&CROWN.isClosedDay(d));
+  }catch(e){return d.getDay()===0;}
+}
+// The small line under the day row: a greyed day with no words reads as
+// "fully booked", so the weekly closing is SAID — in both languages.
+function closedNoteText(){
+  const gunlerEn=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  let wds=[0];
+  try{if(window.CROWN&&Array.isArray(CROWN.closedWeekdays))wds=CROWN.closedWeekdays;}catch(e){}
+  if(!wds.length)return '';
+  const tr=wds.map(i=>gunler[i]).join(' ve '), en=wds.map(i=>gunlerEn[i]+'s').join(' and ');
+  return '🚫 '+tr+' günleri kapalıyız / Closed on '+en+'.';
+}
+
 // ── Build day chips ──
 const dayList=[];
-for(let i=0;i<14;i++){
-  const d=new Date();d.setDate(d.getDate()+i);
-  dayList.push(d);
-  const c=document.createElement('button');c.className='chip';c.type='button';
-  c.textContent=(i===0?'Bugün':i===1?'Yarın':gunler[d.getDay()])+' '+d.getDate()+' '+aylar[d.getMonth()];
-  c.onclick=()=>{selDay=d;selTime=null;[...dEl.children].forEach(x=>x.classList.remove('sel'));c.classList.add('sel');renderTimes();};
-  dEl.appendChild(c);
+function renderDays(){
+  dEl.innerHTML='';
+  dayList.length=0;
+  for(let i=0;i<14;i++){
+    const d=new Date();d.setDate(d.getDate()+i);
+    dayList.push(d);
+    const c=document.createElement('button');c.type='button';
+    const label=(i===0?'Bugün':i===1?'Yarın':gunler[d.getDay()])+' '+d.getDate()+' '+aylar[d.getMonth()];
+    if(bkClosed(d)){
+      // Shown, greyed and SAYING so — a hidden or bare grey day loses the
+      // customer who would happily have taken the Monday.
+      c.className='chip closed';c.disabled=true;c.title='Kapalı / Closed';
+      c.innerHTML='';c.appendChild(document.createTextNode(label));
+      const s=document.createElement('small');s.textContent='Kapalı';c.appendChild(s);
+      if(selDay&&dKey(selDay)===dKey(d)){selDay=null;selTime=null;renderTimes();}
+    }else{
+      c.className='chip';c.textContent=label;
+      if(selDay&&dKey(selDay)===dKey(d))c.classList.add('sel');
+      c.onclick=()=>{selDay=d;selTime=null;[...dEl.children].forEach(x=>x.classList.remove('sel'));c.classList.add('sel');renderTimes();};
+    }
+    dEl.appendChild(c);
+  }
+  const note=document.getElementById('closedNote');
+  if(note)note.textContent=closedNoteText();
 }
+renderDays();
 
 // ── Time chips: green if free, gray if full/past ──
 function slotState(day,slot){
+  if(bkClosed(day))return 'closed';
   const now=new Date();
   const [h,m]=slot.split(':').map(Number);
   const sd=new Date(day);sd.setHours(h,m,0,0);
@@ -157,6 +215,7 @@ function renderTimes(){
     const c=document.createElement('button');c.type='button';c.textContent=t;
     if(st==='free'){c.className='chip free';}
     else if(st==='full'){c.className='chip full';c.disabled=true;c.title='Dolu / Full';}
+    else if(st==='closed'){c.className='chip closed';c.disabled=true;c.title='Kapalı / Closed';}
     else if(st==='past'){c.className='chip past';c.disabled=true;}
     else{c.className='chip';}
     if(selTime===t&&!c.disabled)c.classList.add('sel');
@@ -188,6 +247,7 @@ try{
       avail=snap.val()||null;
       if(avail){connEl.innerHTML='🟢 Canlı müsaitlik aktif / Live availability on';}
       else{connEl.innerHTML='Müsaitlik bilgisi henüz yok — talebiniz yine de iletilir.';}
+      renderDays();
       renderTimes();
     });
     setTimeout(()=>{if(!avail)connEl.innerHTML='Müsaitlik bilgisi yüklenemedi — talebiniz yine de iletilir.';},8000);
@@ -208,6 +268,7 @@ function send(){
   const nm=document.getElementById('nm').value.trim();
   const ph=document.getElementById('ph').value.trim();
   if(!selDay){alert('Lütfen bir gün seçin. / Please choose a day.');return;}
+  if(bkClosed(selDay)){alert('O gün salonumuz kapalı — lütfen başka bir gün seçin. / We are closed that day, please choose another.');selDay=null;selTime=null;renderDays();renderTimes();return;}
   if(!selTime){alert('Lütfen müsait bir saat seçin. / Please choose an available time.');return;}
   if(!nm){alert('Lütfen adınızı yazın. / Please enter your name.');return;}
   if(!ph||ph.replace(/\D/g,'').length<7){alert('Lütfen geçerli bir telefon yazın. / Please enter a valid phone.');return;}

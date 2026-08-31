@@ -70,6 +70,45 @@ window.CROWN = {
   slotDefault: 60,
   slotMins: {},        // key -> 60, filled from Firebase at runtime
 
+  /* ── When the salon is CLOSED ───────────────────────────────────────────────
+     THIS IS THE ONE PLACE. The customer booking page, the Gap Report, the
+     checkout calendar, auto-rebook and the diary's own save all ask
+     isClosedDay() below — change these two lists and every screen follows.
+
+     closedWeekdays — the weekly closing days, as weekday numbers:
+       0=Pazar, 1=Pazartesi … 6=Cumartesi. Today that is Sunday only.
+
+     closedDates — one-off closures: a bayram, a public holiday, a day the
+     salon simply shuts. One 'YYYY-MM-DD' string per day, e.g.:
+
+       closedDates: ['2026-10-29', '2027-01-01'],
+
+     Add the date and the booking page greys it out with "Kapalı" the same
+     as a Sunday; remove it when the day is past (stale ones are harmless —
+     a date already gone blocks nothing). Bookings ALREADY in the diary on a
+     date you close are never touched: the dashboard raises a 🚫 line
+     listing them so reception can ring each customer. */
+  closedWeekdays: [0],
+  closedDates: [],
+
+  /* Is the salon shut on this day? Takes a Date or anything that starts
+     'YYYY-MM-DD' (a date key, a datetime string). Unreadable INPUT counts
+     as open — a parse failure must never grey the whole calendar out. But a
+     missing or emptied closedWeekdays list fails CLOSED: it falls back to
+     Sunday, because "someone deleted a line" must never quietly open the
+     salon's closing day to customers. Genuinely opening Sundays is done by
+     writing the real closed days here, not by leaving the list empty. */
+  isClosedDay: function(d){
+    var dt = (d instanceof Date) ? d : new Date(String(d).slice(0,10) + 'T12:00:00');
+    if (isNaN(dt)) return false;
+    var wds = (Array.isArray(this.closedWeekdays) && this.closedWeekdays.length)
+      ? this.closedWeekdays : [0];
+    if (wds.indexOf(dt.getDay()) !== -1) return true;
+    var p = function(n){ return String(n).padStart(2,'0'); };
+    var key = dt.getFullYear() + '-' + p(dt.getMonth()+1) + '-' + p(dt.getDate());
+    return (this.closedDates || []).indexOf(key) !== -1;
+  },
+
   /* The kinds of job. Manicure and pedicure each have a wall screen of their
      own (?area=…); eyelashes do not — a lash job shows on BOTH boards the way
      an other-screen job always has, counting down with its own colour. That

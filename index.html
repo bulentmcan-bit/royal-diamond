@@ -2025,6 +2025,28 @@
   // These are START times only. They are not working hours, and they say
   // nothing about existing bookings: a job already in the diary runs for the
   // length it was written with, and the maps below know she is busy throughout.
+  // Is the salon SHUT on this day? The answer lives in crown-config.js
+  // (closedWeekdays + closedDates) — the one place — and every screen that
+  // deals in days asks this one function: the availability published to the
+  // customer page, the online-request handler, the Gap Report, the checkout
+  // calendar, auto-rebook and the diary's own save. Takes a Date or anything
+  // starting 'YYYY-MM-DD'.
+  //
+  // FAIL CLOSED: before crown-config.js has loaded (it comes further down the
+  // file), and equally if the config is stale, emptied or throwing, Sunday —
+  // the long-standing closing day — answers closed on its own. Only a config
+  // that affirmatively lists the closed weekdays gets to open a Sunday.
+  function rdIsClosedDay(d){
+    const dt=(d instanceof Date)?d:new Date(String(d).slice(0,10)+'T12:00:00');
+    if(isNaN(dt))return false;
+    try{
+      const w=window.CROWN&&CROWN.closedWeekdays;
+      if(Array.isArray(w)&&w.length){
+        if(w.indexOf(dt.getDay())!==-1)return true;
+      }else if(dt.getDay()===0)return true;
+      return !!(window.CROWN&&CROWN.isClosedDay&&CROWN.isClosedDay(dt));
+    }catch(e){return dt.getDay()===0;}
+  }
   const _obGrid=(firstMin,lastMin,stepMin)=>{
     const a=[];
     for(let m=firstMin;m<=lastMin;m+=stepMin) a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
@@ -2111,6 +2133,16 @@
         for(let i=0;i<RD_OB_DAYS;i++){
           const d=new Date();d.setDate(d.getDate()+i);
           const key=_obDateKey(d);
+          // A closed day is published as closed — `_closed` for the current
+          // booking page to say "Kapalı", and every slot at full capacity so
+          // an older cached copy of the page at least shows the day as Dolu
+          // rather than bookable.
+          if(rdIsClosedDay(d)){
+            const slots={_closed:1};
+            RD_OB_UNION.forEach(s=>{slots[s]={b:_obCap(s),c:_obCap(s)};});
+            days[key]=slots;
+            continue;
+          }
           const maps=_obDayMaps(key);
           const slots={};
           RD_OB_UNION.forEach(s=>{
@@ -2145,6 +2177,16 @@
     if(!req||!req.date||!req.time)return;
     _fbDb.ref('rdns_booking_requests/'+id+'/handled').once('value').then(hs=>{
       if(hs.val())return;
+      // A stale cached booking page can still ask for a closed day — the
+      // request is refused HERE, never written into the diary, and reception
+      // is told to ring with another day.
+      if(rdIsClosedDay(req.date)){
+        _obMarkProcessed(id);
+        _fbDb.ref('rdns_booking_requests/'+id).update({handled:'closed',handledAt:Date.now()}).catch(e=>console.warn('[OB] handled-flag write error:',e));
+        try{toast('🚫','ONLINE TALEP — SALON KAPALI ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama o gün salon KAPALI. Tel: '+(req.phone||'—')+' — arayıp başka gün verin.','r');}catch(e){}
+        publishAvailability();
+        return;
+      }
       const maps=_obDayMaps(req.date);
       const cap=_obCap(req.time);
       const booked=maps.total[req.time]||0;
@@ -3524,6 +3566,19 @@ p, span, div, label, h1, h2, h3, h4 {
           <button class="btn btn-sm" id="dash-phone-health-btn" onclick="rdWaPhoneHealth()" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" title="Mesaj alamayacak numarası olan müşteriler — en çok gelen en üstte">📵 Numara Sağlığı</button>
         </div>
         <div id="dash-wa-ans-list"><div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div></div>
+      </div>
+
+      <!-- KAPALI GÜNE DÜŞEN RANDEVULAR — a booking that landed on a day the
+           salon is shut (Sunday, or a date marked closed in crown-config.js).
+           Nothing here is ever deleted by the system: each customer must be
+           RUNG and moved by hand — the line only disappears when the booking's
+           day is changed or it is cancelled. -->
+      <div class="r24-panel" id="dash-closed-panel" style="border-color:rgba(227,73,72,.55);display:none;">
+        <div class="r24-header">
+          <div class="r24-title">🚫 Kapalı Güne Düşen Randevular <span class="r24-count" id="dash-closed-count" style="background:#e34948;">0</span></div>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;">Bu randevular salonun KAPALI olduğu bir güne denk geliyor. Müşteriyi arayıp yeni gün verin — sistem hiçbirini silmez; randevunun günü değişince liste kendiliğinden düşer.</div>
+        <div id="dash-closed-list"></div>
       </div>
 
       <!-- DAILY STAFF GRID -->
@@ -5025,6 +5080,7 @@ function add3W(originalDt, staffMember, svcMins){
   for(let dayOffset = 0; dayOffset < 14; dayOffset++){
     const candidate = new Date(base);
     candidate.setDate(base.getDate() + dayOffset);
+    if(rdIsClosedDay(candidate)) continue;   // kapalı güne randevu aranmaz
 
 
     // Try the same time first, then shift 1 hour at a time within 08:00-18:00
@@ -5057,16 +5113,18 @@ function add3W(originalDt, staffMember, svcMins){
     }
   }
 
-  // Fallback — same time + 3 weeks, Monday if Sunday
+  // Fallback — same time + 3 weeks, walked forward past any closed day
   const fallback = new Date(originalDt);
   fallback.setDate(fallback.getDate() + 21);
-  if(fallback.getDay() === 0) fallback.setDate(fallback.getDate() + 1);
+  for(let g=0; g<14 && rdIsClosedDay(fallback); g++) fallback.setDate(fallback.getDate() + 1);
   return dtLocal(fallback);
 }
 
+// Kept its old name; it now steps past EVERY closed day (crown-config.js),
+// not Sundays alone.
 function nextNonSunday(dt){
   const d=new Date(dt);
-  if(d.getDay()===0) d.setDate(d.getDate()+1);
+  for(let g=0; g<14 && rdIsClosedDay(d); g++) d.setDate(d.getDate()+1);
   return dtLocal(d);
 }
 
@@ -8759,7 +8817,13 @@ function saveAppt(){
   const svc=document.getElementById("a-service").value;
   let dt=document.getElementById("a-dt").value;
   if(!cid||!svc||!dt){toast("⚠️","Missing Fields","Fill in all required fields.","r");return;}
-  // Block Sunday bookings
+  // A closed day (crown-config.js: closedWeekdays / closedDates) is not
+  // refused outright at the desk — the owner may open specially — but it is
+  // never booked silently: the question must be answered first.
+  try{
+    if(typeof rdIsClosedDay==='function'&&rdIsClosedDay(dt)&&
+       !confirm('🚫 Bu tarih salonun KAPALI günü (Pazar veya kapalı işaretli gün).\nYine de randevu kaydedilsin mi?')){return;}
+  }catch(e){}
   const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:Math.min(60, parseInt(document.getElementById("a-dur").value)||60),price:parseInt(document.getElementById("a-price").value)||0,staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
   if(isBirthdayAppt(cid, dt)){ a.birthday = true; }
   appointments.push(a);
@@ -9121,10 +9185,10 @@ function rbSuggestSource(a){
   }catch(e){}
   return '3w';
 }
-// Target = appointment day + N days; a Sunday lands on the Saturday BEFORE.
+// Target = appointment day + N days; a closed day lands on the open day BEFORE.
 function rbTargetFrom(a,days){
   const d=new Date(a.datetime); d.setDate(d.getDate()+days);
-  if(d.getDay()===0) d.setDate(d.getDate()-1);
+  for(let g=0; g<14 && rdIsClosedDay(d); g++) d.setDate(d.getDate()-1);
   return dtLocal(d).slice(0,10);
 }
 function rdCkGate(){
@@ -9185,7 +9249,7 @@ function rdCkCalOpen(a){
   for(let i=0;i<56;i++){
     const d=new Date(start); d.setDate(start.getDate()+i);
     const ds=dtLocal(d).slice(0,10);
-    const sun=d.getDay()===0;
+    const sun=rdIsClosedDay(d);   // Pazar VE kapalı işaretli günler (crown-config.js)
     const isSug=ds===tSug;
     html+='<div class="rbk-cal-day'+(sun?' rbk-off':'')+(isSug?' rbk-sug':'')+'"'
       +(sun?'':' onclick="rdCkCalTap(\''+ds+'\')"')
@@ -9246,7 +9310,7 @@ function rdCkShowTimes(ds){
     let alts=[]; const d0=new Date(ds+'T12:00');
     for(let i=1;i<=14&&alts.length<3;i++){
       const d=new Date(d0); d.setDate(d0.getDate()+i);
-      if(d.getDay()===0) continue;
+      if(rdIsClosedDay(d)) continue;
       const ads=dtLocal(d).slice(0,10);
       const f=rbFreeTimes(a.staff, ads, dur);
       if(f&&f.length) alts.push({ds:ads,n:f.length});
@@ -11901,9 +11965,52 @@ function rdDashReveal(id){
   if(opening){ try{ p.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){} }
 }
 
+// Every future booking that sits on a day the salon is SHUT — a Sunday, or a
+// date since marked closed in crown-config.js. Found, listed, never touched:
+// deleting one would delete a customer who thinks she has an appointment.
+// KAPALI–Personel hour-blockers are not customers and are left out.
+function rdClosedDayAppts(){
+  try{
+    const today=todayStr();
+    return (appointments||[]).filter(a=>{
+      if(!a||a.status==='cancelled'||a.status==='completed') return false;
+      const ds=String(a.datetime||'').slice(0,10);
+      if(!ds||ds<today) return false;
+      if(!rdIsClosedDay(ds)) return false;
+      try{ if(typeof rdIsBlocker==='function'&&rdIsBlocker(a.clientId)) return false; }catch(e){}
+      return true;
+    }).sort((x,y)=>String(x.datetime).localeCompare(String(y.datetime)));
+  }catch(e){ return []; }
+}
+function rdRenderClosedPanel(bad){
+  const cnt=document.getElementById('dash-closed-count'); if(cnt) cnt.textContent=bad.length;
+  const list=document.getElementById('dash-closed-list'); if(!list) return;
+  if(!bad.length){ list.innerHTML='<div class="r24-empty">✅ Kapalı güne düşen randevu yok.</div>'; return; }
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  list.innerHTML=bad.map(a=>{
+    const c=(typeof cObj==='function')?cObj(a.clientId):null;
+    const d=new Date(a.datetime);
+    const when=isNaN(d)?String(a.datetime):d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'})+' '+String(a.datetime).slice(11,16);
+    const ph=c&&c.phone?String(c.phone):'';
+    return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;margin-bottom:8px;border:1px solid rgba(227,73,72,0.4);border-radius:10px;background:rgba(227,73,72,0.06);font-size:0.85rem;">'
+      +'<span style="font-weight:800;color:#e34948;">'+esc(when)+'</span>'
+      +'<span style="font-weight:800;">'+esc(c?c.name:'Müşteri #'+a.clientId)+'</span>'
+      +(a.staff?'<span style="color:var(--muted);">'+esc(a.staff)+'</span>':'')
+      +(a.service?'<span style="color:var(--muted);">'+esc(a.service)+'</span>':'')
+      +(ph?'<a href="tel:'+esc(ph.replace(/\s/g,''))+'" style="margin-left:auto;font-weight:800;color:var(--gold);text-decoration:none;">📞 '+esc(ph)+'</a>':'<span style="margin-left:auto;color:#e34948;font-weight:800;">telefon yok</span>')
+      +'</div>';
+  }).join('');
+}
+
 function rdDashActions(){
   const el=document.getElementById('dash-actions'); if(!el) return;
   const items=[]; const now=Date.now();
+  // kapalı güne düşen randevu: a customer to RING — the loudest line, first
+  try{
+    const bad=rdClosedDayAppts();
+    rdRenderClosedPanel(bad);
+    if(bad.length) items.push({n:bad.length, ic:'🚫', txt:'randevu KAPALI güne denk geliyor — müşteriyi arayın', amber:true, act:"rdDashReveal('dash-closed-panel')"});
+  }catch(e){}
   // saat verilecek: the rebook queue still waiting for a time
   try{
     const n=(typeof rbItems==='function')?rbItems().filter(i=>i&&i.status==='pending').length:0;
@@ -16947,7 +17054,7 @@ window.addEventListener('load',function(){
   const FCL_NOTICE = 45;        // bugün için: müşterinin gelmesi için en az 45 dk
   const FCL_DAYS_SHOWN = 3;     // kaç çalışma günü listelensin (seçili gün dahil)
   const FCL_SOURCE = 4;         // her gün için kaç gün ilerisinden müşteri çekilsin
-  const FCL_CLOSED_DAY = 0;     // Pazar kapalı
+  // Kapalı günler crown-config.js'te (closedWeekdays/closedDates) — rdIsClosedDay sorar.
 
   // appointments/clients are declared with `let` so they are NOT on window —
   // read them through the scope chain instead.
@@ -16982,7 +17089,7 @@ window.addEventListener('load',function(){
     if(!start) start = new Date();
     var out = [], cur = new Date(start), guard = 0;
     while(out.length < FCL_DAYS_SHOWN && guard++ < 21){
-      if(cur.getDay() !== FCL_CLOSED_DAY) out.push(new Date(cur));
+      if(!rdIsClosedDay(cur)) out.push(new Date(cur));
       cur.setDate(cur.getDate()+1);
     }
     return out;
