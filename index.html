@@ -11951,6 +11951,18 @@ setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
    the sync); a snooze is per-device. */
 const RD_CALL_LEAD_MS   = 60*60000;   // ring inside the last hour before arrival
 const RD_CALL_SNOOZE_MS = 5*60000;    // "cevap vermedi" and the snooze link both wait this long
+// WHOSE screen this is. The alert is RECEPTION's job — she is the one at the
+// desk with the diary and the phone — and it must never take over the
+// owner's laptop. The device role is the messaging feature's flag
+// (?role=reception, once, into rdns_msg_role), and the answer FAILS CLOSED:
+// owner, no role set, or localStorage unreadable all mean NOT shown. The
+// owner losing his screen every hour is worse than reception missing one
+// prompt, so doubt silences the alert; a machine that should show it is
+// told so explicitly, once, with ?role=reception.
+function rdCallRoleOk(){
+  try{ return localStorage.getItem('rdns_msg_role')==='reception'; }
+  catch(e){ return false; }
+}
 function rdCallStore(){ try{ return JSON.parse(localStorage.getItem('rdns_callalert_v1')||'{}'); }catch(e){ return {}; } }
 function rdCallSave(m){
   try{
@@ -12078,6 +12090,14 @@ function rdCallSnooze(){
 }
 function rdCallTick(){
   try{
+    // Not reception's screen → nothing, ever. Checked every tick, not once
+    // at load, so taking a role off a machine (?role=0) silences it at the
+    // next half minute — and an overlay already up comes down.
+    if(!rdCallRoleOk()){
+      const ovr=document.getElementById('rdca-ov');
+      if(ovr) ovr.style.display='none';
+      return;
+    }
     const ov=document.getElementById('rdca-ov');
     if(ov && ov.style.display!=='none' && _rdCallIx<_rdCallDue.length) return;   // one is on screen — let it be answered
     const due=rdCallScan(appointments, clients, rdCallStore(), Date.now());

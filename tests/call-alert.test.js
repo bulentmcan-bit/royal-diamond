@@ -125,6 +125,52 @@ console.log('6. who never gets rung');
   is(due.length === 1 && due[0].carrier.id, 11, 'a cancelled first hands the alert to what is now first');
 }
 
+console.log('7. the alert is RECEPTION\'s screen only — role gate fails closed');
+{
+  const role = v => vm.runInContext(
+    v === null ? 'localStorage.removeItem("rdns_msg_role"); rdCallRoleOk()'
+               : 'localStorage.setItem("rdns_msg_role",' + JSON.stringify(v) + '); rdCallRoleOk()', ctx);
+  is(role('reception'), true, 'reception → shown');
+  is(role('owner'), false, 'owner → NEVER shown');
+  is(role(null), false, 'no role set → doubt → not shown');
+  is(role('Reception'), false, 'anything not exactly "reception" → not shown');
+  // localStorage itself throwing (private mode, blocked storage) → not shown
+  const broken = { localStorage: { getItem: () => { throw new Error('blocked'); } }, console: ctx.console, Date, JSON, String };
+  vm.createContext(broken);
+  vm.runInContext(caSlice.replace(/^[\s\S]*?function rdCallRoleOk/, 'function rdCallRoleOk'), broken);
+  is(vm.runInContext('rdCallRoleOk()', broken), false, 'unreadable storage → doubt → not shown');
+}
+
+console.log('8. role=owner never RENDERS — the real rdCallTick, pinned');
+{
+  const tickSrc = html.match(/function rdCallTick\(\)\{[\s\S]*?\n\}/);
+  if (!tickSrc) { fail++; console.log('  ✗ rdCallTick not found in index.html'); }
+  else {
+    // A customer genuinely due right now, so only the role gate can stop it.
+    const p = n => String(n).padStart(2, '0');
+    const soon = new Date(Date.now() + 30 * 60000);
+    const dt = soon.getFullYear() + '-' + p(soon.getMonth() + 1) + '-' + p(soon.getDate()) + 'T' + p(soon.getHours()) + ':' + p(soon.getMinutes());
+    ctx.appointments = [{ id: 10, clientId: 1, status: 'confirmed', datetime: dt }];
+    ctx.clients = cls;
+    const ov = { style: { display: 'flex' } };                       // an overlay already up
+    ctx.document = { getElementById: id => (id === 'rdca-ov' ? ov : null) };
+    vm.runInContext(
+      'var _rdCallDue=[],_rdCallIx=0,_renders=0; function rdCallRender(){_renders++;}\n' + tickSrc[0], ctx);
+
+    vm.runInContext('localStorage.setItem("rdns_msg_role","owner")', ctx);
+    vm.runInContext('rdCallTick()', ctx);
+    is(vm.runInContext('_renders', ctx), 0, 'owner + a due customer → rdCallRender is never called');
+    is(ov.style.display, 'none', 'and an overlay somehow already up is taken DOWN');
+
+    vm.runInContext('localStorage.removeItem("rdns_msg_role")', ctx);
+    vm.runInContext('rdCallTick()', ctx);
+    is(vm.runInContext('_renders', ctx), 0, 'no role → still never rendered');
+
+    vm.runInContext('localStorage.setItem("rdns_msg_role","reception"); rdCallTick()', ctx);
+    is(vm.runInContext('_renders', ctx), 1, 'reception with the same due customer → rendered, unchanged');
+  }
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);
