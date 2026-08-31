@@ -140,6 +140,136 @@ function makeAudioEl() {
   ok(unlocked > 0 && Music.playing(), 'the first click resumes the music');
   ok((docListeners.click || []).length === 0 && (docListeners.keydown || []).length === 0, 'the bar and its listeners are gone');
 
+  // ── a fake OPFS, so the library paths run for real ─────────────────────────
+  function makeOpfs() {
+    const files = {};   // name → size
+    const dir = {
+      values() {
+        const names = Object.keys(files);
+        let i = 0;
+        return { next: () => Promise.resolve(i < names.length
+          ? { done: false, value: { kind: 'file', name: names[i], getFile: (n => () => Promise.resolve({ name: n, size: files[n] }))(names[i++]) } }
+          : { done: true }) };
+      },
+      getFileHandle(n) {
+        return Promise.resolve({
+          createWritable: () => Promise.resolve({ write(f) { files[n] = f.size || 1; return Promise.resolve(); }, close: () => Promise.resolve() }),
+          getFile: () => Promise.resolve({ name: n, size: files[n] }),
+        });
+      },
+      removeEntry(n) { delete files[n]; return Promise.resolve(); },
+    };
+    return { files, storage: { getDirectory: () => Promise.resolve({ getDirectoryHandle: () => Promise.resolve(dir) }), persist: () => Promise.resolve(true) } };
+  }
+  function makeLibCtx(store, opfs) {
+    const el2 = makeAudioEl();
+    const win2 = {};
+    const c = {
+      window: win2,
+      localStorage: {
+        getItem: k => (k in store ? store[k] : null),
+        setItem: (k, v) => { store[k] = String(v); },
+        removeItem: k => { delete store[k]; },
+      },
+      document: { getElementById: id => (id === 'cbm-audio' ? el2 : null) },
+      navigator: { storage: opfs.storage },
+      indexedDB: undefined,
+      URL: { createObjectURL: f => 'blob:' + (f && f.name), revokeObjectURL() {} },
+      // the shared config caps the library at 1 MB (for the cap test above);
+      // these scenarios need room, so they carry a real-sized cap
+      C: Object.assign({}, ctx.C, { music: Object.assign({}, ctx.C.music, { maxLibraryMB: 2048 }) }),
+      paintMusic() {},
+      console: { log() {}, warn() {}, error() {} },
+      setTimeout, clearTimeout, setInterval: () => 0, clearInterval: () => {},
+      Promise, Date, JSON, Math, Object, Array, String, Number, Boolean, isFinite, isNaN, parseInt, parseFloat,
+    };
+    vm.createContext(c);
+    vm.runInContext(musicSlice + '\n;__music = Music;', c, { filename: 'music-lib.js' });
+    win2.cbmMusic = c.__music;
+    return { Music: c.__music, el: el2 };
+  }
+
+  // 5 — a folder ADDS to the library, never replaces it
+  {
+    const store2 = { rdns_cbm_shuffle: '0' };
+    const opfs = makeOpfs();
+    opfs.files['English1.mp3'] = 5e6; opfs.files['English2.mp3'] = 5e6;   // the 77 English tracks, in miniature
+    const d = makeLibCtx(store2, opfs);
+    d.Music.fromFiles([{ name: 'Turkish1.mp3', size: 4e6 }]);             // the owner's Turkish folder
+    await tick(50);
+    ok(Object.keys(opfs.files).sort().join(',') === 'English1.mp3,English2.mp3,Turkish1.mp3',
+       'the Turkish folder went IN — and the English tracks are still there');
+    ok(d.Music.count() === 3, 'playback now runs on the merged library, all three');
+    ok(/1 yeni eklendi/.test(d.Music.note()), 'the import says how many were added');
+  }
+
+  // 6 — the import tally: skipped non-music, the giant single file, duplicates kept
+  {
+    const store2 = { rdns_cbm_shuffle: '0' };
+    const opfs = makeOpfs();
+    opfs.files['Same.mp3'] = 5e6;
+    const d = makeLibCtx(store2, opfs);
+    d.Music.fromFiles([
+      { name: 'Same.mp3', size: 5e6 },                 // identical: kept, not re-copied
+      { name: 'BigMix.mp3', size: 1300 * 1048576 },    // the 1.3 GB album-in-one-file
+      { name: 'cover.jpg', size: 1e5 },                // not music
+    ]);
+    await tick(50);
+    const n = d.Music.note();
+    ok(/1 yeni eklendi/.test(n) && /1 zaten vardı/.test(n), 'added and already-there both counted');
+    ok(/1 dosya müzik değil/.test(n), 'the skipped cover.jpg is said out loud');
+    ok(/⚠ 100 MB üzeri dosya: BigMix \(1300 MB\)/.test(n) && /karıştırılamaz/.test(n),
+       'the continuous-mix warning names the file and says why it is a problem');
+  }
+
+  // 6b — same name, DIFFERENT song → suffixed, never overwritten
+  {
+    const store2 = { rdns_cbm_shuffle: '0' };
+    const opfs = makeOpfs();
+    opfs.files['01 Intro.mp3'] = 5e6;
+    const d = makeLibCtx(store2, opfs);
+    d.Music.fromFiles([{ name: '01 Intro.mp3', size: 7e6 }]);   // another album's intro
+    await tick(50);
+    ok(opfs.files['01 Intro.mp3'] === 5e6 && opfs.files['01 Intro (2).mp3'] === 7e6,
+       'the twin keeps its own file under a suffix — nothing is written over');
+  }
+
+  // 7 — the morning carries on where the evening stopped
+  {
+    const store2 = { rdns_cbm_shuffle: '0', rdns_cbm_musicvol: '21' };
+    const opfs = makeOpfs();
+    opfs.files['Alpha.mp3'] = 1e6; opfs.files['Beta.mp3'] = 1e6; opfs.files['Gamma.mp3'] = 1e6;
+    const evening = makeLibCtx(store2, opfs);
+    evening.Music.restore(); await tick(50);
+    evening.Music.play(); await tick();
+    evening.Music.next(); await tick();
+    ok(evening.Music.title() === 'Beta', 'the evening ends on Beta');
+    const saved = JSON.parse(store2.rdns_cbm_pos || 'null');
+    ok(saved && saved.n === 'Beta.mp3' && saved.a === 1, 'the position is written down as it plays');
+    // the same laptop, next morning: same localStorage, same OPFS, fresh page
+    const morning = makeLibCtx(store2, opfs);
+    morning.Music.restore(); await tick(50);
+    ok(morning.Music.index() === 1 && morning.Music.title() === 'Beta',
+       'the morning remembers where the evening stopped');
+    morning.Music.play(); await tick();
+    ok(morning.Music.playing() && morning.Music.index() === 1,
+       'play resumes the saved track — never track one');
+    morning.Music.next(); await tick();
+    ok(morning.Music.title() === 'Gamma', 'and the round carries on into the unheard half');
+  }
+
+  // 7b — a changed library refuses yesterday's round and starts clean
+  {
+    const store2 = { rdns_cbm_shuffle: '0', rdns_cbm_musicon: '0',
+      rdns_cbm_pos: JSON.stringify({ o: [0, 1], a: 1, n: 'Beta.mp3' }) };
+    const opfs = makeOpfs();
+    opfs.files['Alpha.mp3'] = 1e6; opfs.files['Beta.mp3'] = 1e6; opfs.files['New.mp3'] = 1e6;
+    const d = makeLibCtx(store2, opfs);
+    d.Music.restore(); await tick(50);
+    d.Music.play(); await tick();
+    ok(d.Music.index() === 0, 'a saved round that no longer fits is discarded — play starts fresh, no wrong song');
+  }
+
   console.log('');
   if (fails) { console.error(fails + ' FAILED'); process.exit(1); }
   console.log('all music player tests passed');
