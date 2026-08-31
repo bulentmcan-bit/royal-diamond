@@ -206,11 +206,82 @@ function makeDevice() {
     ];
     const scan = vm.runInContext(
       'rdWaBackfillScan(' + JSON.stringify(appts) + ',' + JSON.stringify(cls) + ',' + now + ')', d.ctx);
-    is(scan.eligible.map(e => e.id), [10, 11], 'only the two un-reminded future bookings are eligible');
-    is(scan.eligible.map(e => e.both), [true, false], '50h out gets both; 6h out gets only the 2-hour one');
-    is([scan.already, scan.tooSoon, scan.blocked, scan.noPhone], [1, 1, 1, 1],
-       'uids-already / too-soon / KAPALI / no-phone each counted, none scheduled');
+    // One reminder per customer per day: 11 (18:00) rides 12's group — 12 is
+    // the day's first booking, and 12 being too close to send is the day's
+    // answer, not a reason to fall through to the later hour.
+    is(scan.eligible.map(e => e.id), [10], 'only the un-reminded future CARRIER is eligible');
+    is(scan.eligible.map(e => e.both), [true], '50h out gets both reminders');
+    is([scan.already, scan.tooSoon, scan.blocked, scan.noPhone, scan.grouped], [1, 1, 1, 1, 1],
+       'uids-already / too-soon / KAPALI / no-phone / covered-by-group each counted, none scheduled');
+    is(scan.dupes, [], 'no later booking is still holding its own uids');
     is(scan.eligible[0].payload.timeHHMM, '14:00', 'the payload is the same one a fresh booking would send');
+  }
+
+  console.log('7b. the scan finds pre-rule duplicates to cancel');
+  {
+    const d = makeDevice();
+    const now = new Date('2026-08-29T12:00').getTime();
+    const cls = [{ id: 1, name: 'Pınar Mahşeker', phone: '05338669933' }];
+    const appts = [
+      { id: 20, clientId: 1, status: 'confirmed', datetime: '2026-09-02T09:00', service: 'M', wa: { u: ['A24', 'A1'], t: 1 } },
+      { id: 21, clientId: 1, status: 'confirmed', datetime: '2026-09-02T10:00', service: 'P', wa: { u: ['B24', 'B1'], t: 1 } },
+    ];
+    const scan = vm.runInContext(
+      'rdWaBackfillScan(' + JSON.stringify(appts) + ',' + JSON.stringify(cls) + ',' + now + ')', d.ctx);
+    is(scan.dupes.map(x => x.id), [21], 'the 10:00 booking\'s own reminder set is the duplicate');
+    is(scan.already, 1, 'the 09:00 carrier keeps its set');
+    is(scan.eligible, [], 'nothing new to schedule');
+  }
+
+  console.log('12. one visit, one reminder set — the group rules live');
+  {
+    // A second booking later the same day schedules NOTHING of its own.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Pınar Mahşeker', phone: '05338669933' });
+    d.ctx.appointments.push(
+      { id: 1, clientId: 7, status: 'confirmed', service: 'M', datetime: '2026-09-02T09:00', wa: { u: ['A24', 'A1'], d: '2026-09-02', t: 1 } },
+      { id: 2, clientId: 7, status: 'confirmed', service: 'P', datetime: '2026-09-02T10:00' });
+    vm.runInContext('rdWaSchedule(appointments[1])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 0, 'her 09:00 already carries the visit — the 10:00 sends nothing');
+    is(d.ctx.appointments[1].wa, undefined, 'and stores nothing');
+  }
+  {
+    // A booking EARLIER than the carrier takes the reminders over:
+    // the new first is scheduled BEFORE the old set is cancelled.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Pınar Mahşeker', phone: '05338669933' });
+    d.ctx.appointments.push(
+      { id: 1, clientId: 7, status: 'confirmed', service: 'M', datetime: '2026-09-02T09:00', wa: { u: ['A24', 'A1'], d: '2026-09-02', t: 1 } },
+      { id: 2, clientId: 7, status: 'confirmed', service: 'P', datetime: '2026-09-02T08:00' });
+    d.ctx.reply = { ok: true, scheduled: [{ kind: 'r24', uid: 'N24' }, { kind: 'r1', uid: 'N1' }], skipped: [], results: [] };
+    vm.runInContext('rdWaSchedule(appointments[1])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.map(c => c.url.split('/wa/')[1]), ['schedule', 'cancel'],
+       'new first scheduled first, old set cancelled after — a half-failure spams, never silences');
+    is(JSON.parse(d.calls[0].opts.body).timeHHMM, '08:00', 'the messages now say 08:00 — when she must arrive');
+    is(JSON.parse(d.calls[1].opts.body), { uids: ['A24', 'A1'] }, 'the 09:00\'s set dies');
+    is(d.ctx.appointments[1].wa.u, ['N24', 'N1'], 'the 08:00 carries the visit now');
+    is(d.ctx.appointments[0].wa.x, ['A24', 'A1'], 'the 09:00 keeps only the killed trace');
+  }
+  {
+    // The carrier is CANCELLED → the reminders move to what is now first.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Sitare Hanım', phone: '05338669933' });
+    const first = { id: 1, clientId: 7, status: 'confirmed', service: 'M', datetime: '2026-09-02T09:00', wa: { u: ['A24', 'A1'], d: '2026-09-02', t: 1 } };
+    d.ctx.appointments.push(first,
+      { id: 2, clientId: 7, status: 'confirmed', service: 'P', datetime: '2026-09-02T11:00' });
+    first.status = 'cancelled';   // the caller flips status before rdWaCancel, as cancelAppt does
+    d.ctx.reply = { ok: true, scheduled: [{ kind: 'r24', uid: 'N24' }, { kind: 'r1', uid: 'N1' }], skipped: [], results: [] };
+    vm.runInContext('rdWaCancel(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.map(c => c.url.split('/wa/')[1]), ['cancel', 'schedule'],
+       'the dead booking\'s set dies, and the 11:00 inherits the visit');
+    is(JSON.parse(d.calls[1].opts.body).timeHHMM, '11:00', 'timed off what is now her first appointment');
+    is(d.ctx.appointments[1].wa.u, ['N24', 'N1'], 'she is never left reminder-less');
   }
 
   console.log('8. the manual panel no longer double-messages');

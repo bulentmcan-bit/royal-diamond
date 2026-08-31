@@ -20,7 +20,12 @@ const i0 = html.indexOf(START);
 const END = 'function rdCkGate(){';
 const i1 = html.indexOf(END, i0);
 if (i0 < 0 || i1 <= i0) { console.error('✗ marker not found — rbSuggestSource/rdCkGate moved'); process.exit(1); }
-const slice = html.slice(i0, i1);
+// rbTargetFrom walks closed days through the REAL rdIsClosedDay (closed-day
+// work, Aug 2026) — pull it in too, with the CROWN config it consults absent
+// so its Sunday fallback answers, same as a page where crown-config failed.
+const closedFn = html.match(/function rdIsClosedDay\(d\)\{[\s\S]*?\n  \}/);
+if (!closedFn) { console.error('✗ rdIsClosedDay not found'); process.exit(1); }
+const slice = closedFn[0] + '\n' + html.slice(i0, i1);
 
 const ctx = {
   appointments: [],

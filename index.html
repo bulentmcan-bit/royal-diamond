@@ -6102,7 +6102,7 @@ function dashEditAppt(id){
         // point at the OLD hour — kill them and book fresh ones for the new.
         // A checkout through this same popup is not a move (the visit is
         // already happening), so only a still-confirmed booking reschedules.
-        try{ if(_oldDt !== live.datetime && live.status==='confirmed') rdWaReschedule(live); }catch(e){}
+        try{ if(_oldDt !== live.datetime && live.status==='confirmed') rdWaReschedule(live, String(_oldDt||'').slice(0,10)); }catch(e){}
         closeModal('mAppt');
         saveBtn.textContent = '+ Randevu';
         saveBtn.onclick = saveAppt;
@@ -9368,8 +9368,9 @@ function rdCkTimeTap(ds, hhmm){
   const a=rebookPending.appt;
   let na=_ckState.newApptId?apptById(_ckState.newApptId):null;
   if(na){
+    const _prevDay=String(na.datetime||'').slice(0,10);
     na.datetime=ds+'T'+hhmm; apptTouch(na); saveAll();
-    try{ rdWaReschedule(na); }catch(e){}
+    try{ rdWaReschedule(na, _prevDay); }catch(e){}
   } else {
     na={id:Date.now(),clientId:a.clientId,service:a.service,datetime:ds+'T'+hhmm,
         duration:Math.min(60,parseInt(a.duration)||60),price:0,staff:a.staff,
@@ -11639,11 +11640,74 @@ function rdWaFetch(path, body){
   }).then(function(r){ return r.json(); });
 }
 
+// ── One reminder set per customer per day ───────────────────────────────────
+// Reminders belong to the customer's VISIT, not to each booking. Her group
+// for a day is every booking she has on that date that is not cancelled, and
+// the FIRST of them is the CARRIER — the one whose start time the 24-hour and
+// 2-hour messages are computed from, because that is when she must arrive.
+// The later bookings in the group send nothing of their own: Pınar with 09:00
+// and 10:00 is one visit, one pair of messages, saying 09:00.
+//
+// The day is the whole grouping rule, on purpose — a 09:00 and a 16:00 are
+// still one customer-day here. Splitting a day into separate visits at some
+// hour gap is a policy decision management has not made yet; when it is made,
+// rdWaGroup below is the ONE place the split goes.
+function rdWaDayOf(a){
+  const dt=String((a&&a.datetime)||'');
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt) ? dt.slice(0,10) : null;
+}
+function rdWaGroup(clientId, dayISO, book){
+  return ((book||appointments)||[]).filter(function(a){
+    return a && a.status!=='cancelled' && String(a.clientId)===String(clientId) && rdWaDayOf(a)===dayISO;
+  }).sort(function(x,y){
+    const c=String(x.datetime).localeCompare(String(y.datetime));
+    return c || (String(x.id)<String(y.id)?-1:1);
+  });
+}
+function rdWaCarrier(clientId, dayISO, book){
+  const g=rdWaGroup(clientId, dayISO, book);
+  return g.length ? g[0] : null;
+}
+function rdWaHasUids(a){ return !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length); }
+
+// Bring one (customer, day) group to the rule: the carrier holds the
+// reminders and nobody else does. The carrier is scheduled FIRST and the
+// stray uids on later bookings are cancelled AFTER, so a network failure
+// mid-way can leave a redundant reminder standing but never leave the
+// customer with none. Already-sent messages are never re-sent: the worker
+// skips any send whose moment is past, and Piyzi counts cancelling a sent
+// message as already done. `excludeId` is the booking that is dying right
+// now — its caller may not have taken it out of the array yet.
+function rdWaGroupSync(clientId, dayISO, excludeId){
+  try{
+    if(!rdWaOn() || clientId==null || !dayISO) return;
+    const g=rdWaGroup(clientId, dayISO).filter(function(a){
+      return excludeId==null || String(a.id)!==String(excludeId);
+    });
+    if(!g.length) return;
+    if(!rdWaHasUids(g[0])) rdWaScheduleNow(g[0]);
+    for(let i=1;i<g.length;i++){ if(rdWaHasUids(g[i])) rdWaCancelUids(g[i]); }
+  }catch(e){ console.warn('[wa] group sync error:', e); }
+}
+
+// A booking was made: its customer-day group decides what happens. The new
+// booking later than the carrier → nothing (her visit already has its
+// messages). Earlier than the carrier → it IS the carrier now: it gets the
+// messages and the old ones die.
+function rdWaSchedule(a){
+  try{
+    if(!rdWaOn() || !a) return;
+    rdWaGroupSync(a.clientId, rdWaDayOf(a));
+  }catch(e){ console.warn('[wa] schedule error:', e); }
+}
+
 // Fire-and-forget: booking must never wait on (or break on) the reminder
 // machinery. On success the uids land on the LIVE record — re-found by id,
 // because a cloud snapshot can swap the array while the request is in the
-// air — and are stamped so the merge carries them to every device.
-function rdWaSchedule(a){
+// air — and are stamped so the merge carries them to every device. wa.d
+// remembers which DAY the uids serve, so a later move knows which group to
+// re-anchor.
+function rdWaScheduleNow(a){
   try{
     if(!rdWaOn() || !a) return;
     const c = (clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
@@ -11653,7 +11717,7 @@ function rdWaSchedule(a){
       const live = (typeof apptById==='function') ? apptById(a.id) : null;
       if(!live) return;
       if(j && j.ok){
-        live.wa = { u:(j.scheduled||[]).map(function(s){ return s.uid; }), t:Date.now() };
+        live.wa = { u:(j.scheduled||[]).map(function(s){ return s.uid; }), d:p.dateISO, t:Date.now() };
         apptTouch(live); saveAll();
         // The confirm page learns this booking's public face (date, time,
         // service — nothing else) the moment its reminders exist.
@@ -11672,15 +11736,16 @@ function rdWaSchedule(a){
   }catch(e){ console.warn('[wa] schedule error:', e); }
 }
 
-// A cancellation kills what is still pending. "Already sent" and "already
-// gone" count as killed at the worker, so this cannot fail for being late.
-// The uids move from wa.u to wa.x — the record keeps its trace, and a second
-// cancel finds nothing to send.
-function rdWaCancel(a){
+// Kills THIS booking's pending sends, and nothing else. "Already sent" and
+// "already gone" count as killed at the worker, so this cannot fail for
+// being late. The uids move from wa.u to wa.x — the record keeps its trace,
+// and a second cancel finds nothing to send.
+function rdWaCancelUids(a){
   try{
-    if(!rdWaOn() || !a || !a.wa || !Array.isArray(a.wa.u) || !a.wa.u.length) return;
+    if(!rdWaOn() || !a || !rdWaHasUids(a)) return;
     const uids = a.wa.u.slice();
     a.wa = { x:uids, t:Date.now() };
+    try{ apptTouch(a); }catch(e){}
     try{ if(a.waAns) delete a.waAns; }catch(e){}       // a dead booking's answer no longer applies
     try{ rdWaConfirmDel([String(a.id)]); }catch(e){}   // the confirm page forgets a dead booking
     rdWaFetch('/wa/cancel', { uids:uids }).then(function(j){
@@ -11690,13 +11755,36 @@ function rdWaCancel(a){
   }catch(e){ console.warn('[wa] cancel error:', e); }
 }
 
+// This booking is dead (cancelled or deleted). Its own sends die — and if it
+// was CARRYING the customer-day's reminders, the group re-anchors onto
+// whatever booking is now first, so she is never left reminder-less because
+// the booking that happened to hold them was the one cancelled.
+function rdWaCancel(a){
+  try{
+    if(!a) return;
+    const carried = rdWaHasUids(a);
+    const day = (a.wa && a.wa.d) || rdWaDayOf(a);
+    rdWaCancelUids(a);
+    if(carried) rdWaGroupSync(a.clientId, day, a.id);
+  }catch(e){ console.warn('[wa] cancel error:', e); }
+}
+
 // A moved booking: the reminders for the OLD hour are lies now — kill them
-// and book fresh ones for the new hour. The customer's answer belonged to
-// the old hour too, so it comes off the record; the fresh reminder will ask
-// again.
-function rdWaReschedule(a){
+// and let both touched groups settle: the day it moved TO (where it may or
+// may not be the new first) and the day it LEFT (whose reminders it may have
+// been carrying — wa.d remembers, or the caller passes what the datetime was
+// before the edit). The customer's answer belonged to the old hour too, so
+// it comes off the record; the fresh reminder will ask again.
+function rdWaReschedule(a, oldDay){
   try{ if(a&&a.waAns){ delete a.waAns; apptTouch(a); } }catch(e){}
-  try{ rdWaCancel(a); rdWaSchedule(a); }catch(e){ console.warn('[wa] reschedule error:', e); }
+  try{
+    if(!a) return;
+    const from = oldDay || (a.wa && a.wa.d) || null;
+    rdWaCancelUids(a);
+    const day = rdWaDayOf(a);
+    rdWaGroupSync(a.clientId, day);
+    if(from && from!==day) rdWaGroupSync(a.clientId, from, a.id);
+  }catch(e){ console.warn('[wa] reschedule error:', e); }
 }
 
 // The one-time backfill's eyes: which of the book's confirmed FUTURE
@@ -11705,14 +11793,25 @@ function rdWaReschedule(a){
 // made or moved), so anything booked before a device was armed has nothing at
 // Piyzi and never will — this scan is how those are found. Pure: it takes the
 // book and the clock, decides, and touches nothing.
+// Group-aware since the one-per-customer-per-day rule: only a group's
+// CARRIER can be eligible. A later booking in a group is `grouped` — covered
+// by the carrier's messages, correct and not missing — unless it still HOLDS
+// live uids from before the rule, in which case it is a `dupe` the apply-run
+// cancels (after the carriers are scheduled, never before).
 function rdWaBackfillScan(appts, cls, now){
-  const out={eligible:[], already:0, tooSoon:0, blocked:0, noPhone:0};
+  const out={eligible:[], already:0, tooSoon:0, blocked:0, noPhone:0, grouped:0, dupes:[]};
   (appts||[]).forEach(a=>{
     if(!a||a.status!=='confirmed') return;
     const dt=String(a.datetime||'');
     if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return;
     const t=new Date(dt).getTime();               // device local = salon clock
     if(!(t>now)) return;                          // future bookings only
+    const carrier=rdWaCarrier(a.clientId, dt.slice(0,10), appts);
+    if(carrier && String(carrier.id)!==String(a.id)){
+      if(a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length) out.dupes.push({ id:a.id });
+      else out.grouped++;
+      return;
+    }
     if(a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length){ out.already++; return; }   // makes a re-run idempotent
     // Nearer than the 2-hour reminder (plus the worker's 3-minute floor):
     // both send times are already past — normal, not an error, but calling
@@ -11744,7 +11843,9 @@ async function rdWaBackfill(apply){
     alreadyHaveUids: scan.already,
     tooSoonBothPast: scan.tooSoon,
     kapaliBlocked: scan.blocked,
-    noValidPhone: scan.noPhone
+    noValidPhone: scan.noPhone,
+    coveredByGroup: scan.grouped,
+    duplicatesToCancel: scan.dupes.length
   };
   if(!apply){ console.log('[wa-backfill] DRY RUN', JSON.stringify(report)); return report; }
   let ok=0, fail=0, failures=[], i=0;
@@ -11754,7 +11855,7 @@ async function rdWaBackfill(apply){
       const j=await rdWaFetch('/wa/schedule', e.payload);
       if(j&&j.ok){
         const live=(typeof apptById==='function')?apptById(e.id):null;
-        if(live){ live.wa={u:(j.scheduled||[]).map(s=>s.uid), t:Date.now()}; apptTouch(live); try{ rdWaConfirmPush([live]); }catch(_){} }
+        if(live){ live.wa={u:(j.scheduled||[]).map(s=>s.uid), d:e.payload.dateISO, t:Date.now()}; apptTouch(live); try{ rdWaConfirmPush([live]); }catch(_){} }
         ok++;
       } else { fail++; failures.push({apptId:e.payload.apptId, error:j&&j.error}); }
     }catch(err){ fail++; failures.push({apptId:e.payload.apptId, error:String(err)}); }
@@ -11765,9 +11866,19 @@ async function rdWaBackfill(apply){
     if(i%10===0) console.log('[wa-backfill]', i+'/'+scan.eligible.length, 'ok:'+ok, 'fail:'+fail);
     await new Promise(r=>setTimeout(r, 4500));
   }
+  // The duplicates — later bookings in a group still holding their own uids
+  // from before the one-per-customer-per-day rule — are cancelled only AFTER
+  // the carriers are scheduled: a run that dies half-way leaves a customer
+  // with a redundant reminder, never with none. rdWaCancelUids moves u → x
+  // on the record, so a re-run finds nothing left to cancel.
+  let dupOk=0;
+  for(const dp of scan.dupes){
+    const live=(typeof apptById==='function')?apptById(dp.id):null;
+    if(live&&rdWaHasUids(live)){ rdWaCancelUids(live); dupOk++; try{ saveAll(); }catch(_){} await new Promise(r=>setTimeout(r, 2500)); }
+  }
   try{ saveAll(); }catch(_){}
-  console.log('[wa-backfill] DONE — scheduled:', ok, 'failed:', fail);
-  return Object.assign({}, report, { scheduledOk:ok, failed:fail, failures:failures.slice(0,20) });
+  console.log('[wa-backfill] DONE — scheduled:', ok, 'failed:', fail, 'duplicates cancelled:', dupOk);
+  return Object.assign({}, report, { scheduledOk:ok, failed:fail, duplicatesCancelled:dupOk, failures:failures.slice(0,20) });
 }
 
 // The 🤖 button on the dashboard reminders panel: owner PIN, then paste the
@@ -11805,6 +11916,160 @@ function rdWaSetup(){
   }
 }
 setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
+
+// CALLALERT-SLICE-START (fixture-tested — keep this block pure and self-contained)
+/* ── 1 SAAT KALA — the reception call alert ─────────────────────────────────
+   One hour before a customer's FIRST appointment of the day, reception's
+   screen is told to RING HER NOW: a no-show discovered an hour out can still
+   be filled; one discovered at the hour cannot. The approved design (the
+   full-screen gold card) is rendered below the slice; here lives the pure
+   decision.
+
+   ONE alert per customer per day, the same rule as her WhatsApp reminders and
+   through the same rdWaGroup: her group's first booking sets the moment,
+   however many bookings the visit holds. No alert at all when any booking of
+   the group already carries a waAns — she has answered the WhatsApp reminder
+   (or an earlier call), and ringing her again is pestering — or when one is
+   already completed, because she is standing in the salon. KAPALI is a door,
+   not a customer. Answers are per-salon (they land on the booking and ride
+   the sync); a snooze is per-device. */
+const RD_CALL_LEAD_MS   = 60*60000;   // ring inside the last hour before arrival
+const RD_CALL_SNOOZE_MS = 5*60000;    // "cevap vermedi" and the snooze link both wait this long
+function rdCallStore(){ try{ return JSON.parse(localStorage.getItem('rdns_callalert_v1')||'{}'); }catch(e){ return {}; } }
+function rdCallSave(m){
+  try{
+    // Yesterday's keys are dead weight — the day is in the key, so trim by it.
+    const p=function(n){ return String(n).padStart(2,'0'); };
+    const d=new Date(), today=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+    const keep={};
+    Object.keys(m).forEach(function(k){ if(String(k).split('|')[1]>=today) keep[k]=m[k]; });
+    localStorage.setItem('rdns_callalert_v1', JSON.stringify(keep));
+  }catch(e){}
+}
+// Pure: who must be rung right now. Returns one entry per due customer-day —
+// {key, carrier, group, client} — earliest arrival first.
+function rdCallScan(appts, cls, store, now){
+  const due=[], seen={};
+  (appts||[]).forEach(function(a){
+    if(!a||a.status!=='confirmed') return;
+    const day=rdWaDayOf(a); if(!day) return;
+    const key=String(a.clientId)+'|'+day;
+    if(seen[key]) return; seen[key]=1;
+    const g=rdWaGroup(a.clientId, day, appts);          // her whole visit, cancelled excluded
+    if(!g.length) return;
+    if(g.some(function(x){ return x.status==='completed'; })) return;   // she is already here
+    if(g.some(function(x){ return x.waAns; })) return;                  // she already answered
+    const T=new Date(g[0].datetime).getTime();
+    if(!(T-now>0 && T-now<=RD_CALL_LEAD_MS)) return;
+    const c=(cls||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
+    if(/kapal[ıi]/i.test(String((c&&c.name)||''))) return;
+    const st=(store||{})[key];
+    if(st && (st.s==='ok'||st.s==='no')) return;                        // answered at the desk
+    if(st && st.s==='zzz' && now<st.until) return;                      // snoozed, not yet
+    due.push({ key:key, carrier:g[0], group:g, client:c||null });
+  });
+  due.sort(function(x,y){ return String(x.carrier.datetime).localeCompare(String(y.carrier.datetime)); });
+  return due;
+}
+// CALLALERT-SLICE-END
+
+// ── The overlay itself — the approved bir-saat-kala-uyari design, fed real
+//    data. Queue of several due customers → "1 / 3", answered or snoozed one
+//    by one. Geliyor / Gelemiyor land on the CARRIER booking as waAns — the
+//    same field the WhatsApp buttons write — so the green dot, the amber ↻,
+//    the dashboard line and the Gap Report all just work, and the answer
+//    syncs to every device. ──
+let _rdCallDue=[], _rdCallIx=0;
+function rdCallEnsureDom(){
+  if(document.getElementById('rdca-ov')) return;
+  const css='#rdca-ov{position:fixed;inset:0;z-index:99997;background:#0d0f0c;color:#f6f2e8;display:none;align-items:center;justify-content:center;padding:24px;font-family:inherit;}'
+    +'#rdca-ov .rdca-wrap{width:100%;max-width:860px;text-align:center;}'
+    +'#rdca-ov .rdca-kicker{display:inline-flex;align-items:center;gap:10px;background:#d9a441;color:#22190a;font-weight:800;font-size:15px;letter-spacing:2.5px;padding:9px 22px;border-radius:40px;margin-bottom:26px;}'
+    +'#rdca-ov .rdca-pulse{width:11px;height:11px;border-radius:50%;background:#22190a;animation:rdcaP 1.4s infinite;}'
+    +'@keyframes rdcaP{0%,100%{opacity:1}50%{opacity:.25}}'
+    +'#rdca-ov .rdca-lead{font-size:15px;letter-spacing:1.5px;text-transform:uppercase;color:#9a9384;margin-bottom:8px;}'
+    +'#rdca-ov .rdca-name{font-family:Georgia,serif;font-size:58px;line-height:1.1;color:#e8c579;margin-bottom:6px;}'
+    +'#rdca-ov .rdca-meta{font-size:19px;color:#cfc8b8;margin-bottom:30px;}#rdca-ov .rdca-meta b{color:#f6f2e8;}'
+    +'#rdca-ov .rdca-tel{font-family:Georgia,serif;font-size:40px;letter-spacing:2px;color:#fff;margin-bottom:6px;text-decoration:none;display:block;}'
+    +'#rdca-ov .rdca-telnote{font-size:13px;color:#9a9384;margin-bottom:26px;}'
+    +'#rdca-ov .rdca-call{display:block;width:100%;background:#2f8f3a;color:#fff;border:0;border-radius:16px;padding:26px;font-size:30px;font-weight:800;letter-spacing:1px;margin-bottom:22px;cursor:pointer;text-decoration:none;}'
+    +'#rdca-ov .rdca-q{font-size:14px;letter-spacing:1.2px;text-transform:uppercase;color:#9a9384;margin-bottom:12px;}'
+    +'#rdca-ov .rdca-row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:26px;}'
+    +'#rdca-ov .rdca-b{flex:1;min-width:170px;border:1.6px solid #4a4a40;background:#171a15;color:#f6f2e8;border-radius:13px;padding:18px 12px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;}'
+    +'#rdca-ov .rdca-b.ok{border-color:#2f8f3a;background:#12220f;color:#8fe39a;}'
+    +'#rdca-ov .rdca-b.no{border-color:#b3261e;background:#241110;color:#f2a9a4;}'
+    +'#rdca-ov .rdca-b.na{border-color:#8a6d2f;background:#221c10;color:#e8c579;}'
+    +'#rdca-ov .rdca-snooze{background:none;border:0;color:#7d7768;font-size:14px;text-decoration:underline;cursor:pointer;font-family:inherit;}'
+    +'#rdca-ov .rdca-why{margin-top:30px;font-size:13.5px;color:#7d7768;line-height:1.7;max-width:620px;margin-left:auto;margin-right:auto;}'
+    +'#rdca-ov .rdca-multi{margin-top:22px;font-size:13px;color:#9a9384;border-top:1px solid #2a2a24;padding-top:16px;}'
+    +'@media(max-width:640px){#rdca-ov .rdca-name{font-size:40px}#rdca-ov .rdca-tel{font-size:31px}#rdca-ov .rdca-call{font-size:23px;padding:20px}}';
+  const st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
+  const ov=document.createElement('div'); ov.id='rdca-ov';
+  ov.innerHTML='<div class="rdca-wrap" id="rdca-wrap"></div>';
+  document.body.appendChild(ov);
+}
+function rdCallEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function rdCallRender(){
+  rdCallEnsureDom();
+  const ov=document.getElementById('rdca-ov'), w=document.getElementById('rdca-wrap');
+  if(!ov||!w) return;
+  if(_rdCallIx>=_rdCallDue.length){ ov.style.display='none'; return; }
+  const d=_rdCallDue[_rdCallIx], a=d.carrier, c=d.client||{};
+  const hh=String(a.datetime).slice(11,16);
+  const rest=d.group.slice(1).map(function(x){ return String(x.datetime).slice(11,16)+(x.service?' '+x.service:''); }).join(' · ');
+  const ph=String(c.phone||'').trim();
+  const tel=ph?('tel:'+ph.replace(/[^\d+]/g,'')):null;
+  w.innerHTML=
+    '<div class="rdca-kicker"><span class="rdca-pulse"></span> 1 SAAT KALDI</div>'
+    +'<div class="rdca-lead">Bu müşteriyi şimdi arayın</div>'
+    +'<div class="rdca-name">'+rdCallEsc(c.name||('Müşteri #'+a.clientId))+'</div>'
+    +'<div class="rdca-meta">Bugün <b>'+rdCallEsc(hh)+'</b>'
+      +(a.service?' &nbsp;·&nbsp; '+rdCallEsc(a.service):'')
+      +(a.staff?' &nbsp;·&nbsp; <b>'+rdCallEsc(a.staff)+'</b>':'')
+      +(rest?'<br><span style="font-size:14px;color:#9a9384;">Aynı gün devamı: '+rdCallEsc(rest)+' — tek hatırlatma, saat '+rdCallEsc(hh)+'</span>':'')+'</div>'
+    +(ph?('<a class="rdca-tel" href="'+tel+'">'+rdCallEsc(ph)+'</a>'):'<div class="rdca-tel" style="color:#f2a9a4;">telefon kayıtlı değil</div>')
+    +'<div class="rdca-telnote">'+(c.visits?(c.visits+' ziyaret'):'')+'</div>'
+    +(ph?('<a class="rdca-call" href="'+tel+'">📞 ARA</a>'):'')
+    +'<div class="rdca-q">Aradıktan sonra seçin</div>'
+    +'<div class="rdca-row">'
+    +'<button type="button" class="rdca-b ok" onclick="rdCallAns(\'ok\')">✓ Geliyor</button>'
+    +'<button type="button" class="rdca-b no" onclick="rdCallAns(\'no\')">✕ Gelemiyor</button>'
+    +'<button type="button" class="rdca-b na" onclick="rdCallSnooze()">↻ Cevap vermedi</button>'
+    +'</div>'
+    +'<button type="button" class="rdca-snooze" onclick="rdCallSnooze()">5 dakika sonra hatırlat</button>'
+    +'<div class="rdca-why">Müşteri gelmiyorsa o saati şimdi doldurabiliriz — bir saat sonra doldurulamaz. “Gelemiyor” seçilirse randevu amber ↻ ile işaretlenir ve Boşluk Raporu’na düşer.</div>'
+    +(_rdCallDue.length>1?('<div class="rdca-multi">Aynı saatte birden fazla müşteri var — sırayla gösterilir — <b>'+(_rdCallIx+1)+' / '+_rdCallDue.length+'</b></div>'):'');
+  ov.style.display='flex';
+}
+function rdCallAns(v){
+  try{
+    const d=_rdCallDue[_rdCallIx]; if(!d) return;
+    const live=(typeof apptById==='function')?apptById(d.carrier.id):d.carrier;
+    if(live){ live.waAns={ v:(v==='ok'?'confirm':'change'), at:Date.now(), src:'call' }; try{ apptTouch(live); }catch(e){} }
+    const m=rdCallStore(); m[d.key]={ s:v, at:Date.now() }; rdCallSave(m);
+    try{ saveAll(); }catch(e){}
+    try{ renderDash(); renderAppts(); }catch(e){}
+    if(v==='no'){ try{ toast('↻','GELEMİYOR — saat boşalıyor', (d.client&&d.client.name||'Müşteri')+' '+String(d.carrier.datetime).slice(11,16)+' gelemiyor — Boşluk Raporu amber gösterir, saati doldurun.','r'); }catch(e){} }
+  }catch(e){ console.warn('[call] answer error:', e); }
+  _rdCallIx++; rdCallRender();
+}
+function rdCallSnooze(){
+  try{
+    const d=_rdCallDue[_rdCallIx]; if(!d) return;
+    const m=rdCallStore(); m[d.key]={ s:'zzz', until:Date.now()+RD_CALL_SNOOZE_MS, at:Date.now() }; rdCallSave(m);
+  }catch(e){}
+  _rdCallIx++; rdCallRender();
+}
+function rdCallTick(){
+  try{
+    const ov=document.getElementById('rdca-ov');
+    if(ov && ov.style.display!=='none' && _rdCallIx<_rdCallDue.length) return;   // one is on screen — let it be answered
+    const due=rdCallScan(appointments, clients, rdCallStore(), Date.now());
+    if(!due.length){ if(ov) ov.style.display='none'; return; }
+    _rdCallDue=due; _rdCallIx=0; rdCallRender();
+  }catch(e){}
+}
+window.addEventListener('DOMContentLoaded', function(){ setTimeout(function(){ rdCallTick(); setInterval(rdCallTick, 30000); }, 6000); });
 
 // ── The confirm page's data feed and the answers coming back ────────────────
 // The /r/<apptId> page the reminder's button opens lives on the worker and
