@@ -70,7 +70,8 @@ console.log('1. one alert per customer, off her FIRST appointment');
     { id: 12, clientId: 2, status: 'confirmed', service: 'M', datetime: '2026-09-02T09:05' },
   ], cls, {}, NOW);
   is(due.length, 2, 'two customers due — never three alerts for three bookings');
-  is(due.map(d => d.key), ['1|2026-09-02', '2|2026-09-02'], 'keyed per customer-day, earliest arrival first');
+  is(due.map(d => d.key), ['p905338669933|2026-09-02', 'p905421112233|2026-09-02'],
+     'keyed per PHONE and day — the same identity the reminders group on — earliest arrival first');
   is(due[0].carrier.id, 10, 'Pınar\'s alert rides her 09:00, not her 10:00');
   is(due[0].group.length, 2, 'and carries the whole visit for the card');
 }
@@ -104,10 +105,11 @@ console.log('4. a completed booking means she is standing in the salon');
 console.log('5. desk answers and snoozes');
 {
   const appts = [{ id: 10, clientId: 1, status: 'confirmed', datetime: '2026-09-02T09:00' }];
-  is(scan(appts, cls, { '1|2026-09-02': { s: 'ok', at: 1 } }, NOW).length, 0, 'Geliyor at the desk → done for the day');
-  is(scan(appts, cls, { '1|2026-09-02': { s: 'no', at: 1 } }, NOW).length, 0, 'Gelemiyor → done (the amber flow owns it now)');
-  is(scan(appts, cls, { '1|2026-09-02': { s: 'zzz', until: NOW + 60000 } }, NOW).length, 0, 'snoozed → quiet');
-  is(scan(appts, cls, { '1|2026-09-02': { s: 'zzz', until: NOW - 1 } }, NOW).length, 1, 'snooze expired → it comes back');
+  const K = 'p905338669933|2026-09-02';
+  is(scan(appts, cls, { [K]: { s: 'ok', at: 1 } }, NOW).length, 0, 'Geliyor at the desk → done for the day');
+  is(scan(appts, cls, { [K]: { s: 'no', at: 1 } }, NOW).length, 0, 'Gelemiyor → done (the amber flow owns it now)');
+  is(scan(appts, cls, { [K]: { s: 'zzz', until: NOW + 60000 } }, NOW).length, 0, 'snoozed → quiet');
+  is(scan(appts, cls, { [K]: { s: 'zzz', until: NOW - 1 } }, NOW).length, 1, 'snooze expired → it comes back');
 }
 
 console.log('6. who never gets rung');

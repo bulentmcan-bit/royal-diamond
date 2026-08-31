@@ -11656,16 +11656,32 @@ function rdWaDayOf(a){
   const dt=String((a&&a.datetime)||'');
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt) ? dt.slice(0,10) : null;
 }
-function rdWaGroup(clientId, dayISO, book){
+// WHO a booking belongs to, for grouping: the PHONE that would receive the
+// messages, not the client record. The same woman lives in this book more
+// than once (Hamide Kucuk / HAMİDE KÜÇÜKOĞLU, one phone, two records), and
+// grouping by clientId hands her two carriers and four messages again. One
+// phone gets one reminder set per day, whichever records the bookings sit
+// on; only a booking with no usable phone falls back to its clientId.
+function rdWaGroupKey(a, cls){
+  const list=cls||clients||[];
+  const c=list.find(function(x){ return x && String(x.id)===String(a.clientId); });
+  const raw=String((c&&c.phone)||'');
+  const ph=(typeof normalizeWaPhone==='function')?normalizeWaPhone(raw):raw.replace(/\D/g,'');
+  return (ph && ph.length>=10) ? ('p'+ph) : ('c'+String(a.clientId));
+}
+// The visit `of` belongs to: every same-day booking that answers to the same
+// phone (or, phoneless, the same client), earliest first.
+function rdWaGroup(of, dayISO, book, cls){
+  const key=rdWaGroupKey(of, cls);
   return ((book||appointments)||[]).filter(function(a){
-    return a && a.status!=='cancelled' && String(a.clientId)===String(clientId) && rdWaDayOf(a)===dayISO;
+    return a && a.status!=='cancelled' && rdWaDayOf(a)===dayISO && rdWaGroupKey(a, cls)===key;
   }).sort(function(x,y){
     const c=String(x.datetime).localeCompare(String(y.datetime));
     return c || (String(x.id)<String(y.id)?-1:1);
   });
 }
-function rdWaCarrier(clientId, dayISO, book){
-  const g=rdWaGroup(clientId, dayISO, book);
+function rdWaCarrier(of, dayISO, book, cls){
+  const g=rdWaGroup(of, dayISO, book, cls);
   return g.length ? g[0] : null;
 }
 function rdWaHasUids(a){ return !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length); }
@@ -11678,10 +11694,10 @@ function rdWaHasUids(a){ return !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.
 // skips any send whose moment is past, and Piyzi counts cancelling a sent
 // message as already done. `excludeId` is the booking that is dying right
 // now — its caller may not have taken it out of the array yet.
-function rdWaGroupSync(clientId, dayISO, excludeId){
+function rdWaGroupSync(of, dayISO, excludeId){
   try{
-    if(!rdWaOn() || clientId==null || !dayISO) return;
-    const g=rdWaGroup(clientId, dayISO).filter(function(a){
+    if(!rdWaOn() || !of || !dayISO) return;
+    const g=rdWaGroup(of, dayISO).filter(function(a){
       return excludeId==null || String(a.id)!==String(excludeId);
     });
     if(!g.length) return;
@@ -11697,7 +11713,7 @@ function rdWaGroupSync(clientId, dayISO, excludeId){
 function rdWaSchedule(a){
   try{
     if(!rdWaOn() || !a) return;
-    rdWaGroupSync(a.clientId, rdWaDayOf(a));
+    rdWaGroupSync(a, rdWaDayOf(a));
   }catch(e){ console.warn('[wa] schedule error:', e); }
 }
 
@@ -11765,7 +11781,7 @@ function rdWaCancel(a){
     const carried = rdWaHasUids(a);
     const day = (a.wa && a.wa.d) || rdWaDayOf(a);
     rdWaCancelUids(a);
-    if(carried) rdWaGroupSync(a.clientId, day, a.id);
+    if(carried) rdWaGroupSync(a, day, a.id);
   }catch(e){ console.warn('[wa] cancel error:', e); }
 }
 
@@ -11782,8 +11798,8 @@ function rdWaReschedule(a, oldDay){
     const from = oldDay || (a.wa && a.wa.d) || null;
     rdWaCancelUids(a);
     const day = rdWaDayOf(a);
-    rdWaGroupSync(a.clientId, day);
-    if(from && from!==day) rdWaGroupSync(a.clientId, from, a.id);
+    rdWaGroupSync(a, day);
+    if(from && from!==day) rdWaGroupSync(a, from, a.id);
   }catch(e){ console.warn('[wa] reschedule error:', e); }
 }
 
@@ -11806,7 +11822,7 @@ function rdWaBackfillScan(appts, cls, now){
     if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return;
     const t=new Date(dt).getTime();               // device local = salon clock
     if(!(t>now)) return;                          // future bookings only
-    const carrier=rdWaCarrier(a.clientId, dt.slice(0,10), appts);
+    const carrier=rdWaCarrier(a, dt.slice(0,10), appts, cls);
     if(carrier && String(carrier.id)!==String(a.id)){
       if(a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length) out.dupes.push({ id:a.id });
       else out.grouped++;
@@ -11953,9 +11969,9 @@ function rdCallScan(appts, cls, store, now){
   (appts||[]).forEach(function(a){
     if(!a||a.status!=='confirmed') return;
     const day=rdWaDayOf(a); if(!day) return;
-    const key=String(a.clientId)+'|'+day;
+    const key=rdWaGroupKey(a, cls)+'|'+day;             // per PHONE, like the reminders
     if(seen[key]) return; seen[key]=1;
-    const g=rdWaGroup(a.clientId, day, appts);          // her whole visit, cancelled excluded
+    const g=rdWaGroup(a, day, appts, cls);              // her whole visit, cancelled excluded
     if(!g.length) return;
     if(g.some(function(x){ return x.status==='completed'; })) return;   // she is already here
     if(g.some(function(x){ return x.waAns; })) return;                  // she already answered

@@ -267,6 +267,22 @@ function makeDevice() {
     is(d.ctx.appointments[0].wa.x, ['A24', 'A1'], 'the 09:00 keeps only the killed trace');
   }
   {
+    // The same woman under TWO client records (one phone): still one visit.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push(
+      { id: 71, name: 'Hamide Kucuk', phone: '0533 812 93 48' },
+      { id: 72, name: 'HAMİDE KÜÇÜKOĞLU', phone: '05338129348' });
+    d.ctx.appointments.push(
+      { id: 1, clientId: 71, status: 'confirmed', service: 'Dolgu', datetime: '2026-09-01T13:00', wa: { u: ['A24', 'A1'], d: '2026-09-01', t: 1 } },
+      { id: 2, clientId: 72, status: 'confirmed', service: 'Jel Pedikür', datetime: '2026-09-01T14:00' });
+    vm.runInContext('rdWaSchedule(appointments[1])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 0, 'a duplicate client record does not earn her a second reminder set — the PHONE is the customer');
+    const scan = vm.runInContext('rdWaBackfillScan(appointments, clients, ' + new Date('2026-08-29T12:00').getTime() + ')', d.ctx);
+    is([scan.already, scan.grouped], [1, 1], 'and the scan reads the pair as one covered visit');
+  }
+  {
     // The carrier is CANCELLED → the reminders move to what is now first.
     const d = makeDevice();
     d.store.rdns_wa_key_v1 = 'testkey';
