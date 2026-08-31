@@ -36,7 +36,7 @@ const ctx = {
 };
 vm.createContext(ctx);
 vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
-  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waSpec, waFill, rRender, rDateStr };',
+  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill, rRender, rDateStr };',
   ctx, { filename: 'worker-index-slice.js' });
 const api = ctx.__api;
 
@@ -116,6 +116,26 @@ console.log('4. which reminders are still ahead');
   const now = Date.UTC(2026, 7, 29, 9, 0);
   const r = api.waReminders(now + 2 * 3600e3 + 60e3, now); // r1 would be 1 min out
   is(r.due, [], 'a send under Piyzi\'s 2-minute floor is skipped, not raced');
+}
+{
+  // The 1 SAAT KALA call covers the working day, so the 2-hour message goes
+  // only where the call cannot be made: the one-hour mark before reception
+  // is at the desk (opening minus ten minutes). Derived from WA_OPEN, never
+  // a hard-coded 08:00.
+  is(api.waNeedsR1('08:00', '08:00'), true, '08:00 start: its 07:00 call moment has nobody at the desk → message');
+  is(api.waNeedsR1('08:30', '08:00'), true, '08:30 start: 07:30 call moment → message');
+  is(api.waNeedsR1('08:50', '08:00'), false, '08:50 start: 07:50 call moment IS the desk moment → call, no message');
+  is(api.waNeedsR1('09:00', '08:00'), false, '09:00 start → the call covers it');
+  is(api.waNeedsR1('14:00', '08:00'), false, 'an afternoon start → the call covers it');
+  is(api.waNeedsR1('08:00', '07:00'), false, 'salon opening at 07:00: the 08:00 gets its call instead — the line MOVED');
+  is(api.waNeedsR1('07:00', '07:00'), true, 'and the 07:00 start becomes the one that needs the message');
+  is(api.waNeedsR1('09:00', 'garbage'), false, 'an unreadable opening falls back to 08:00, not to silence');
+  const now = Date.UTC(2026, 7, 29, 9, 0);
+  const r = api.waReminders(now + 26 * 3600e3, now, false);
+  is(r.due.map(d => d.kind), ['r24'], 'needR1=false: only the 24-hour goes');
+  is(r.skipped, [{ kind: 'r1', why: 'call-covers' }], 'and the log says WHY the 2-hour did not');
+  const r2 = api.waReminders(now + 26 * 3600e3, now, true);
+  is(r2.due.map(d => d.kind), ['r24', 'r1'], 'needR1=true: the early start keeps both');
 }
 
 console.log('5. template spec: null until genuinely configured');

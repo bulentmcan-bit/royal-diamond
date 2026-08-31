@@ -210,11 +210,34 @@ function makeDevice() {
     // the day's first booking, and 12 being too close to send is the day's
     // answer, not a reason to fall through to the later hour.
     is(scan.eligible.map(e => e.id), [10], 'only the un-reminded future CARRIER is eligible');
-    is(scan.eligible.map(e => e.both), [true], '50h out gets both reminders');
+    is(scan.eligible.map(e => e.kinds), ['r24'], 'a 14:00 start gets the 24-hour only — the 1 SAAT KALA call covers its day');
     is([scan.already, scan.tooSoon, scan.blocked, scan.noPhone, scan.grouped], [1, 1, 1, 1, 1],
        'uids-already / too-soon / KAPALI / no-phone / covered-by-group each counted, none scheduled');
     is(scan.dupes, [], 'no later booking is still holding its own uids');
     is(scan.eligible[0].payload.timeHHMM, '14:00', 'the payload is the same one a fresh booking would send');
+  }
+
+  console.log('7a. the 2-hour message survives only where the call cannot be made');
+  {
+    const d = makeDevice();
+    const now = new Date('2026-08-29T12:00').getTime();
+    const cls = [{ id: 1, name: 'Ayşe Yılmaz', phone: '05338669933' }];
+    const scan = vm.runInContext(
+      'rdWaBackfillScan(' + JSON.stringify([
+        { id: 30, clientId: 1, status: 'confirmed', datetime: '2026-08-31T08:00', service: 'M' },
+        { id: 31, clientId: 1, status: 'confirmed', datetime: '2026-09-01T08:30', service: 'M' },
+      ]) + ',' + JSON.stringify(cls) + ',' + now + ')', d.ctx);
+    is(scan.eligible.map(e => e.kinds), ['both', 'both'],
+       '08:00 and 08:30 starts keep both — their 07:00/07:30 call moments have nobody at the desk');
+    is(vm.runInContext('rdWaNeedsR1("08:50")', d.ctx), false, '08:50 is the first start the desk call covers');
+    is(vm.runInContext('rdWaNeedsR1("09:00")', d.ctx), false, 'a 09:00 start needs no message');
+    // a same-day 10:00 booked at 07:00: r24 past, r1 not wanted → nothing at all
+    const scan2 = vm.runInContext(
+      'rdWaBackfillScan(' + JSON.stringify([
+        { id: 32, clientId: 1, status: 'confirmed', datetime: '2026-08-29T17:00', service: 'M' },
+      ]) + ',' + JSON.stringify(cls) + ',' + now + ')', d.ctx);
+    is([scan2.eligible.length, scan2.tooSoon], [0, 1],
+       'a same-day afternoon booking has nothing left to send — the call is its reminder');
   }
 
   console.log('7b. the scan finds pre-rule duplicates to cancel');

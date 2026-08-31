@@ -33,6 +33,14 @@ id = "087711ff20264efe9e6aadfacaf945e1"
 [vars]
 SMS_REMINDERS = "off"
 
+# When the salon opens, HH:MM on the salon's own clock. The 2-hour WhatsApp
+# goes ONLY to appointments whose one-hour call moment falls before reception
+# is at the desk (this time minus ten minutes) — with 08:00 that means the
+# 08:00 and 08:30 starts and nobody else, because everyone else gets the
+# 1 SAAT KALA phone call instead. Change the opening here and the line moves
+# with it. Keep in step with CROWN.openTime in crown-config.js.
+WA_OPEN = "08:00"
+
 # The two WhatsApp reminder templates, sent through Piyzi (routes under /wa/).
 # Empty means "not configured yet": /wa/schedule refuses with
 # TEMPLATES_NOT_CONFIGURED instead of sending under a guessed name that would

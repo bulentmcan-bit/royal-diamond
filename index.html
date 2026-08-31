@@ -11616,6 +11616,19 @@ function rdWaPhoneReason(p){
   return 'numara biçimi geçersiz';
 }
 
+// Does this appointment still need the 2-hour WhatsApp? Since the 1 SAAT
+// KALA call alert, reception rings every customer an hour before — so the
+// message is only for starts whose one-hour mark falls before she is at the
+// desk (opening minus ten minutes): with an 08:00 opening, the 08:00 and
+// 08:30 starts and nobody else. Derived from CROWN.openTime — the worker
+// applies the same rule from WA_OPEN, so a stale page and the worker agree.
+function rdWaNeedsR1(hhmm){
+  var open='08:00';
+  try{ if(window.CROWN&&/^\d{1,2}:\d{2}$/.test(String(CROWN.openTime||''))) open=CROWN.openTime; }catch(e){}
+  var m=function(t){ var p=String(t||'').split(':'); return (+p[0])*60+(+p[1]||0); };
+  return m(hhmm)-60 < m(open)-10;
+}
+
 // What /wa/schedule is asked, or null when this appointment must not produce
 // messages at all: no client, no phone that survives normalization (Turkish
 // or international), the KAPALI hour-blocker, a malformed datetime. The
@@ -11829,15 +11842,19 @@ function rdWaBackfillScan(appts, cls, now){
       return;
     }
     if(a.wa&&Array.isArray(a.wa.u)&&a.wa.u.length){ out.already++; return; }   // makes a re-run idempotent
-    // Nearer than the 2-hour reminder (plus the worker's 3-minute floor):
-    // both send times are already past — normal, not an error, but calling
-    // the worker for it would only spend the rate limit saying so.
-    if(t-now < 2*3600e3+3*60e3){ out.tooSoon++; return; }
+    // What could still be sent for this booking: the 24-hour if its moment
+    // is ahead, and the 2-hour only if the booking QUALIFIES for one at all
+    // (rdWaNeedsR1 — the early starts the call cannot cover) and its moment
+    // is ahead. Neither → nothing to ask the worker for; calling it would
+    // only spend the rate limit hearing "skipped".
+    const r24Ok = t-now > 24*3600e3+3*60e3;
+    const r1Ok  = rdWaNeedsR1(dt.slice(11,16)) && t-now > 2*3600e3+3*60e3;
+    if(!r24Ok && !r1Ok){ out.tooSoon++; return; }
     const c=(cls||[]).find(x=>x&&String(x.id)===String(a.clientId));
     if(/kapal[ıi]/i.test(String((c&&c.name)||''))){ out.blocked++; return; }
     const p=rdWaPayload(a,c);
     if(!p){ out.noPhone++; return; }
-    out.eligible.push({ id:a.id, payload:p, both:(t-now > 24*3600e3+3*60e3) });
+    out.eligible.push({ id:a.id, payload:p, kinds:(r24Ok&&r1Ok)?'both':(r24Ok?'r24':'r1') });
   });
   return out;
 }
@@ -11854,8 +11871,9 @@ async function rdWaBackfill(apply){
   const scan=rdWaBackfillScan(appointments, clients, Date.now());
   const report={
     toSchedule: scan.eligible.length,
-    both24hAnd2h: scan.eligible.filter(e=>e.both).length,
-    only2h: scan.eligible.filter(e=>!e.both).length,
+    both24hAnd2h: scan.eligible.filter(e=>e.kinds==='both').length,
+    only24h: scan.eligible.filter(e=>e.kinds==='r24').length,
+    only2h: scan.eligible.filter(e=>e.kinds==='r1').length,
     alreadyHaveUids: scan.already,
     tooSoonBothPast: scan.tooSoon,
     kapaliBlocked: scan.blocked,

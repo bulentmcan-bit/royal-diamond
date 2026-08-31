@@ -91,6 +91,14 @@ window.CROWN = {
   closedWeekdays: [0],
   closedDates: [],
 
+  /* When the salon OPENS, HH:MM. Today this drives one rule: the 2-hour
+     WhatsApp reminder goes only to appointments whose one-hour phone-call
+     moment falls before reception is at the desk (this time minus ten
+     minutes) — everyone later gets the 1 SAAT KALA call instead. Keep in
+     step with WA_OPEN in worker/wrangler.toml, which applies the same rule
+     at the worker's end. */
+  openTime: '08:00',
+
   /* Is the salon shut on this day? Takes a Date or anything that starts
      'YYYY-MM-DD' (a date key, a datetime string). Unreadable INPUT counts
      as open — a parse failure must never grey the whole calendar out. But a

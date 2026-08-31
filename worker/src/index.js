@@ -454,14 +454,30 @@ function waWhen(utcMs) {
   }).format(new Date(utcMs)).replace(',', '');
 }
 
-// The two reminders an appointment earns: 24 hours before and 2 hours before.
-// (The short one is called r1 because that is the contract the app was
-// promised; it fires 2 hours out.) One already in the past is normal for a
-// same-day booking, not an error — Piyzi refuses anything nearer than 2
-// minutes, so the line is drawn at 3 to not race it.
-function waReminders(apptUtc, now) {
+// Does this appointment still need the 2-hour WhatsApp? Since the 1 SAAT
+// KALA call alert, reception RINGS every customer an hour before — so the
+// message is only for the appointments whose one-hour mark falls before she
+// is at the desk (opening minus ten minutes) to make that call. With the
+// salon opening at 08:00 that is the 08:00 and 08:30 starts, whose call
+// moments (07:00, 07:30) land in an empty salon — but the line is DERIVED
+// from the opening time (WA_OPEN in wrangler.toml), never hard-coded, so an
+// earlier opening moves it by itself. An unreadable opening falls back to
+// 08:00 rather than silencing everybody.
+function waNeedsR1(hhmm, openHHMM) {
+  const m = t => { const p = String(t || '').split(':'); return (+p[0]) * 60 + (+p[1] || 0); };
+  const open = /^\d{1,2}:\d{2}$/.test(String(openHHMM || '')) ? m(openHHMM) : 8 * 60;
+  return m(hhmm) - 60 < open - 10;
+}
+
+// The reminders an appointment earns: 24 hours before for everyone, and 2
+// hours before ONLY when the call cannot cover it (needR1 — see waNeedsR1;
+// left undefined it sends, the old contract). One already in the past is
+// normal for a same-day booking, not an error — Piyzi refuses anything
+// nearer than 2 minutes, so the line is drawn at 3 to not race it.
+function waReminders(apptUtc, now, needR1) {
   const due = [], skipped = [];
   for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', apptUtc - 2 * 3600e3]]) {
+    if (kind === 'r1' && needR1 === false) { skipped.push({ kind, why: 'call-covers' }); continue; }
     if (at < now + 3 * 60e3) skipped.push({ kind, why: 'past' });
     else due.push({ kind, at });
   }
@@ -664,7 +680,7 @@ async function handleWa(req, env, ctx, url) {
     const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
     if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
     const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
-    const plan = waReminders(apptUtc, Date.now());
+    const plan = waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
 
     const scheduled = [], failed = [];
     for (const { kind, at } of plan.due) {
@@ -725,7 +741,7 @@ async function handleWa(req, env, ctx, url) {
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
-         waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waSpec, waFill };
+         waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill };
 
 export default {
   async scheduled(event, env, ctx) {
