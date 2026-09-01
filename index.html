@@ -9979,10 +9979,17 @@ function buildWAQueue(){
   clients.forEach(c=>{
     const appt=appointments.find(a=>a.clientId===c.id&&a.status==="confirmed"&&hrs(a.datetime)>0);
     const h=appt?hrs(appt.datetime):999;
-    // 24h reminder
-    if(h<=25&&h>1){const id=c.id+"_r24";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"reminder",subtype:"24h",text:"",status:"pending",appt});existing.add(id);}}
-    // 1h reminder
-    if(h<=1.5&&h>0){const id=c.id+"_r1";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"reminder",subtype:"1h",text:"",status:"pending",appt});existing.add(id);}}
+    // 24h manual reminder — only the gap Piyzi cannot cover: a true ~24h window,
+    // no automatic reminder scheduled on this booking, this booking IS the day's
+    // carrier for the customer (and the carrier holds no uids), and no answer yet.
+    if(h>=20&&h<=25&&appt&&!rdWaHasUids(appt)&&!appt.waAns){
+      const carrier=rdWaCarrier(appt, appt.datetime.slice(0,10), appointments, clients);
+      if(carrier&&String(carrier.id)===String(appt.id)&&!rdWaHasUids(carrier)){
+        const id=c.id+"_r24";
+        if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"reminder",subtype:"24h",text:"",status:"pending",appt});existing.add(id);}
+      }
+    }
+    // 1h manual reminder retired — the 1 SAAT KALA call alert replaced it.
     // Birthday
     if(isBday(c.birthday)){const id=c.id+"_bday";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"today",text:"",status:"pending",appt:null});existing.add(id);}}
     else if(isBdaySoon(c.birthday,7)){const id=c.id+"_bdaySoon";if(!existing.has(id)&&!waSentIds.has(id)){msgQueue.push({id,clientId:c.id,type:"birthday",subtype:"soon",text:"",status:"pending",appt:null});existing.add(id);}}
@@ -10022,7 +10029,6 @@ Sign off exactly as:
 Royal Diamond Nail Studio 👑
 Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`,
-    reminder_1h:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a short bubbly WhatsApp message telling the client their ${a?.service||"appointment"} is in about 1 hour at ${a?fDT(a.datetime):"soon"}. Brief, warm, excited. 1 paragraph. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
     birthday_today:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a heartfelt birthday WhatsApp message for a nail salon customer. ${uiOn('loyalty')?`They are ${c.tier} tier with ${c.points} loyalty points. `:''}Offer a special 20% birthday discount valid this week. 2 paragraphs. Birthday and nail emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". No hashtags. Write in Turkish.`,
     birthday_soon:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a warm WhatsApp message telling the client their birthday is coming soon! Invite them to book a birthday treatment, offer 15% off.${uiOn('loyalty')?` ${c.tier} member.`:''} 2 short paragraphs. Fun tone. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
     loyalty_:`IMPORTANT: Do NOT address the client by name and do NOT include any personal name anywhere in the message. Open with a neutral Turkish greeting such as "Değerli müşterimiz," instead. Write a celebratory WhatsApp loyalty message for a client. They are now ${c.tier} tier at Royal Diamond Nail Studio. Tier benefits: Diamond (40+ visits)=exclusive monthly gift+25% off+top priority, Platinum (30+ visits)=20% off+free nail art+VIP treatment, Gold (20+ visits)=15% off+complimentary nail art, Silver (10+ visits in 10 months)=10% off+priority booking, Bronze=welcome member pricing. Celebrate their achievement warmly. 2 paragraphs. Use fitting emojis. Sign off as "Royal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönyeli K.K.T.C.\n0548 893 3333". Write in Turkish.`,
