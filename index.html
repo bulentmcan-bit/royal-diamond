@@ -4756,6 +4756,10 @@ p, span, div, label, h1, h2, h3, h4 {
     <!-- 💱 The till-side FX strip: the bill already converted, at the moment
          a customer asks to pay in £/€/$. One or two lines, never more. -->
     <div id="ck-fx" style="margin:-6px 0 12px;"></div>
+    <!-- 💵 Change calculator (PARA ÜSTÜ): tap-only, display aid — never touches
+         what is written to the till. Empty (zero height) unless a price is set
+         AND today's rates are in; renders itself via rdCkChgRender(). -->
+    <div id="ck-change"></div>
     <input type="hidden" id="rb-price">
     <div class="fg" style="margin-bottom:6px;">
       <label class="flabel" id="flabel-rb-next">Sonraki randevu *</label>
@@ -8868,6 +8872,7 @@ let _ckState=null;
 function showRebookModal(a, c){
   rebookPending={appt:a,client:c};
   _ckState={sel:null,targetDate:null,source:null,declineReason:null};
+  _ckChg={cur:'',notes:[],add:false};   // 💵 fresh change-calculator per checkout
   document.getElementById("rb-info").innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.84rem;">
       <div><span style="color:var(--muted)">Müşteri:</span> <strong>${c?.name}</strong></div>
@@ -12402,6 +12407,7 @@ function rdFxRates(){
   }catch(e){ return null; }
 }
 function rdCkFxRender(){
+  try{ rdCkChgRender(); }catch(e){}
   const el=document.getElementById('ck-fx'); if(!el) return;
   const amt=parseFloat((document.getElementById('rb-price')||{}).value)||0;
   const r=rdFxRates();
@@ -12427,6 +12433,78 @@ function rdCkFxRender(){
 function rdCkFxCopy(txt){
   try{ navigator.clipboard.writeText(txt); }catch(e){}
   toast('💱','Kopyalandı',txt+' panoya alındı — söyleyin ya da fişe yazın.','g');
+}
+
+// ── 💵 Change calculator (PARA ÜSTÜ) ────────────────────────────────────────
+// Display aid ONLY: the sale is still recorded in TL at the service price and
+// the payment-method question is untouched — nothing here writes anywhere.
+// Tap a currency, tap a note; ➕ arms adding a SECOND note of the same
+// currency (so 50 then ➕ then 50 = 2 × 50). No typing.
+// Rendered only when a price is set and rdFxRates() has fresh rates; when the
+// kur strip is showing its red warning this stays empty and calculates nothing.
+const RD_CHG_ROUND=5;   // the big figure rounds to the nearest ₺5 (change to 10 here)
+const RD_CHG_NOTES=[20,50,100,200];
+let _ckChg=null;
+function rdCkChgRender(){
+  const el=document.getElementById('ck-change'); if(!el) return;
+  const amt=parseFloat((document.getElementById('rb-price')||{}).value)||0;
+  const r=rdFxRates();
+  if(amt<=0||!r||r.stale||!(r.g||r.e||r.u)){ el.innerHTML=''; return; }
+  if(!_ckChg) _ckChg={cur:'',notes:[],add:false};
+  const s=_ckChg;
+  const RATES={g:{sym:'£',v:r.g},e:{sym:'€',v:r.e},u:{sym:'$',v:r.u}};
+  if(s.cur&&!(RATES[s.cur]&&RATES[s.cur].v>0)){ s.cur=''; s.notes=[]; s.add=false; }
+  const bs=on=>'padding:8px 13px;border-radius:9px;font-family:inherit;font-weight:800;'
+    +'font-size:.86rem;cursor:pointer;color:var(--text);border:1.5px solid '
+    +(on?'#d9a441;background:rgba(217,164,65,.16)':'var(--border);background:rgba(255,255,255,.03)')+';';
+  let html='<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">';
+  ['g','e','u'].forEach(k=>{ if(RATES[k].v>0)
+    html+='<button type="button" style="'+bs(s.cur===k)+'" onclick="rdCkChgCur(\''+k+'\')">'+RATES[k].sym+'</button>'; });
+  html+='</div>';
+  if(s.cur){
+    html+='<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:7px;">';
+    RD_CHG_NOTES.forEach(v=>{
+      html+='<button type="button" style="'+bs(!s.add&&s.notes.length===1&&s.notes[0]===v)
+        +'" onclick="rdCkChgNote('+v+')">'+v+'</button>'; });
+    if(s.notes.length)
+      html+='<button type="button" title="İkinci banknot ekle" style="'+bs(s.add)+'" onclick="rdCkChgPlus()">＋</button>';
+    html+='</div>';
+    if(s.notes.length===2)
+      html+='<div style="margin-top:5px;font-size:.76rem;color:var(--muted);">'
+        +s.notes.join(' + ')+' '+RATES[s.cur].sym+' alındı — banknota dokunmak baştan başlatır.</div>';
+  }
+  if(s.cur&&s.notes.length){
+    const R=RATES[s.cur];
+    const N=s.notes.reduce((a,b)=>a+b,0);
+    const gross=N*R.v, chg=gross-amt;
+    const tl=n=>'₺'+Math.round(n).toLocaleString('tr-TR');
+    const rate=R.v.toFixed(2).replace('.',',');
+    const big=Math.round(Math.abs(chg)/RD_CHG_ROUND)*RD_CHG_ROUND;
+    html+='<div style="margin-top:8px;font-size:.78rem;color:var(--muted);">'
+      +s.notes.join(' + ')+' '+R.sym+' × '+rate+' = '+tl(gross)+'</div>'
+      +'<div style="font-size:.78rem;color:var(--muted);">Hizmet '+tl(amt)+'</div>'
+      +'<div style="font-size:1.5rem;font-weight:900;color:'+(chg>=0?'#0f7b3f':'#c94040')+';">'
+      +(chg>=0?'PARA ÜSTÜ: ':'EKSİK: ')+tl(big)+'</div>'
+      +'<div style="font-size:.76rem;color:var(--muted);">tam: '+tl(Math.abs(chg))+'</div>';
+  }
+  el.innerHTML='<div style="margin:2px 0 12px;">'+html+'</div>';
+}
+function rdCkChgCur(k){
+  if(!_ckChg) _ckChg={cur:'',notes:[],add:false};
+  _ckChg.cur=(_ckChg.cur===k?'':k);
+  if(!_ckChg.cur){ _ckChg.notes=[]; _ckChg.add=false; }
+  rdCkChgRender();
+}
+function rdCkChgNote(v){
+  const s=_ckChg; if(!s||!s.cur) return;
+  if(s.add&&s.notes.length===1) s.notes.push(v); else s.notes=[v];
+  s.add=false;
+  rdCkChgRender();
+}
+function rdCkChgPlus(){
+  const s=_ckChg; if(!s||s.notes.length!==1) return;
+  s.add=!s.add;
+  rdCkChgRender();
 }
 
 function rdWaAnsInfo(id){
