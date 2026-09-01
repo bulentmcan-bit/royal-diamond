@@ -11972,12 +11972,14 @@ setTimeout(function(){ try{ rdWaBadge(); }catch(e){} }, 800);
 
    ONE alert per customer per day, the same rule as her WhatsApp reminders and
    through the same rdWaGroup: her group's first booking sets the moment,
-   however many bookings the visit holds. No alert at all when any booking of
-   the group already carries a waAns — she has answered the WhatsApp reminder
-   (or an earlier call), and ringing her again is pestering — or when one is
-   already completed, because she is standing in the salon. KAPALI is a door,
-   not a customer. Answers are per-salon (they land on the booking and ride
-   the sync); a snooze is per-device. */
+   however many bookings the visit holds. Only a CONFIRMED waAns silences the
+   alert — she said she is coming, ringing her again is pestering. A 'change'
+   answer does the opposite: the alert fires immediately on receipt (mode
+   'change', red "DEĞİŞİKLİK İSTEDİ" card) however far out the appointment is,
+   because a slot she wants to move can still be refilled today. Silent too
+   when a booking is already completed, because she is standing in the salon.
+   KAPALI is a door, not a customer. Answers are per-salon (they land on the
+   booking and ride the sync); a snooze is per-device. */
 const RD_CALL_LEAD_MS   = 60*60000;   // ring inside the last hour before arrival
 const RD_CALL_SNOOZE_MS = 5*60000;    // "cevap vermedi" and the snooze link both wait this long
 // WHOSE screen this is. The alert is RECEPTION's job — she is the one at the
@@ -12015,17 +12017,27 @@ function rdCallScan(appts, cls, store, now){
     const g=rdWaGroup(a, day, appts, cls);              // her whole visit, cancelled excluded
     if(!g.length) return;
     if(g.some(function(x){ return x.status==='completed'; })) return;   // she is already here
-    if(g.some(function(x){ return x.waAns; })) return;                  // she already answered
+    // Only a CONFIRMATION silences the call. A 'change' answer is the
+    // opposite of settled — she wants a different time, and the slot may be
+    // freeable — so it raises the alert IMMEDIATELY on receipt, however far
+    // out the appointment is, headed differently on the card.
+    if(g.some(function(x){ return x.waAns && x.waAns.v==='confirm'; })) return;
     const T=new Date(g[0].datetime).getTime();
-    if(!(T-now>0 && T-now<=RD_CALL_LEAD_MS)) return;
+    if(T-now<=0) return;                                                // her hour came — too late
+    const wantsChange=g.some(function(x){ return x.waAns && x.waAns.v==='change'; });
+    if(!wantsChange && !(T-now<=RD_CALL_LEAD_MS)) return;               // no change ask → wait for the hour
     const c=(cls||[]).find(function(x){ return x&&String(x.id)===String(a.clientId); });
     if(/kapal[ıi]/i.test(String((c&&c.name)||''))) return;
     const st=(store||{})[key];
     if(st && (st.s==='ok'||st.s==='no')) return;                        // answered at the desk
     if(st && st.s==='zzz' && now<st.until) return;                      // snoozed, not yet
-    due.push({ key:key, carrier:g[0], group:g, client:c||null });
+    due.push({ key:key, carrier:g[0], group:g, client:c||null, mode:(wantsChange?'change':'hour') });
   });
-  due.sort(function(x,y){ return String(x.carrier.datetime).localeCompare(String(y.carrier.datetime)); });
+  // Change requests outrank the hour alerts — they are already overdue.
+  due.sort(function(x,y){
+    if(x.mode!==y.mode) return x.mode==='change'?-1:1;
+    return String(x.carrier.datetime).localeCompare(String(y.carrier.datetime));
+  });
   return due;
 }
 // CALLALERT-SLICE-END
@@ -12042,6 +12054,8 @@ function rdCallEnsureDom(){
   const css='#rdca-ov{position:fixed;inset:0;z-index:99997;background:#0d0f0c;color:#f6f2e8;display:none;align-items:center;justify-content:center;padding:24px;font-family:inherit;}'
     +'#rdca-ov .rdca-wrap{width:100%;max-width:860px;text-align:center;}'
     +'#rdca-ov .rdca-kicker{display:inline-flex;align-items:center;gap:10px;background:#d9a441;color:#22190a;font-weight:800;font-size:15px;letter-spacing:2.5px;padding:9px 22px;border-radius:40px;margin-bottom:26px;}'
+    +'#rdca-ov .rdca-kicker.chg{background:#b3261e;color:#fff;}'
+    +'#rdca-ov .rdca-kicker.chg .rdca-pulse{background:#fff;}'
     +'#rdca-ov .rdca-pulse{width:11px;height:11px;border-radius:50%;background:#22190a;animation:rdcaP 1.4s infinite;}'
     +'@keyframes rdcaP{0%,100%{opacity:1}50%{opacity:.25}}'
     +'#rdca-ov .rdca-lead{font-size:15px;letter-spacing:1.5px;text-transform:uppercase;color:#9a9384;margin-bottom:8px;}'
@@ -12076,11 +12090,17 @@ function rdCallRender(){
   const rest=d.group.slice(1).map(function(x){ return String(x.datetime).slice(11,16)+(x.service?' '+x.service:''); }).join(' · ');
   const ph=String(c.phone||'').trim();
   const tel=ph?('tel:'+ph.replace(/[^\d+]/g,'')):null;
+  const chg=d.mode==='change';
+  // A change ask can point at tomorrow — say the day, not "Bugün", when it isn't today.
+  const _p=function(n){ return String(n).padStart(2,'0'); };
+  const _n=new Date(), today=_n.getFullYear()+'-'+_p(_n.getMonth()+1)+'-'+_p(_n.getDate());
+  const dayWord=(String(a.datetime).slice(0,10)===today)?'Bugün':String(a.datetime).slice(0,10).split('-').reverse().join('.');
   w.innerHTML=
-    '<div class="rdca-kicker"><span class="rdca-pulse"></span> 1 SAAT KALDI</div>'
-    +'<div class="rdca-lead">Bu müşteriyi şimdi arayın</div>'
+    (chg?'<div class="rdca-kicker chg"><span class="rdca-pulse"></span> DEĞİŞİKLİK İSTEDİ — ARAYIN</div>'
+        :'<div class="rdca-kicker"><span class="rdca-pulse"></span> 1 SAAT KALDI</div>')
+    +'<div class="rdca-lead">'+(chg?'Randevusunu değiştirmek istiyor — şimdi arayın':'Bu müşteriyi şimdi arayın')+'</div>'
     +'<div class="rdca-name">'+rdCallEsc(c.name||('Müşteri #'+a.clientId))+'</div>'
-    +'<div class="rdca-meta">Bugün <b>'+rdCallEsc(hh)+'</b>'
+    +'<div class="rdca-meta">'+rdCallEsc(dayWord)+' <b>'+rdCallEsc(hh)+'</b>'
       +(a.service?' &nbsp;·&nbsp; '+rdCallEsc(a.service):'')
       +(a.staff?' &nbsp;·&nbsp; <b>'+rdCallEsc(a.staff)+'</b>':'')
       +(rest?'<br><span style="font-size:14px;color:#9a9384;">Aynı gün devamı: '+rdCallEsc(rest)+' — tek hatırlatma, saat '+rdCallEsc(hh)+'</span>':'')+'</div>'
@@ -12189,6 +12209,9 @@ function rdWaPollAnswers(){
       try{ if(typeof renderCalendar==='function') renderCalendar(); }catch(e){}
       try{ if(typeof renderDash24h==='function') renderDash24h(); }catch(e){}
       try{ const pg=document.querySelector('.page.active'); if(pg&&pg.id==='page-gapreport') renderGapReport(); }catch(e){}
+      // A fresh 'change' answer must raise the red call card NOW, not at the
+      // next half-minute tick — the tick itself still gates on the role.
+      try{ rdCallTick(); }catch(e){}
     }
     if(ack.length) rdWaFetch('/wa/answers',{ack:ack}).catch(function(){});
   }).catch(function(e){ _waPollBusy=false; console.warn('[wa] answers poll:',e); });
@@ -14116,6 +14139,53 @@ function rdKasaRepair(apply){
     try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
   }
   console.log('[kasa-repair]', changes.length, 'day(s) repaired');
+  return changes;
+}
+
+// ── Visit-count repair — UPWARD ONLY ────────────────────────────────────────
+// The checkout path's strict-equality client lookup (fixed 2026-09-01) was
+// silently skipping the visits bump for synced bookings, so stored counts can
+// sit BELOW the completed appointments on record. The other direction is not
+// an error: appointment history begins 2026-04-29 and ~96 clients carry
+// visits from before it — a stored count HIGHER than the recorded completions
+// is her real history and must never be lowered. So: count completed
+// bookings per client, and only ever raise visits to meet the count.
+// rdVisitRepair() previews and touches nothing; rdVisitRepair(true) applies —
+// clientStampSync() inside saveAll() stamps each raised record so the repair
+// wins the merge on every device.
+function rdVisitRepairScan(){
+  const done={};
+  (appointments||[]).forEach(function(a){
+    if(!a||a.clientId==null||a.status!=='completed') return;
+    const k=String(a.clientId);
+    done[k]=(done[k]||0)+1;
+  });
+  const out=[];
+  (clients||[]).forEach(function(c){
+    if(!c||c.id==null) return;
+    const counted=done[String(c.id)]||0;
+    const stored=Number(c.visits)||0;
+    if(counted>stored) out.push({id:c.id, name:c.name||'?', before:stored, after:counted});
+  });
+  out.sort(function(x,y){ return (y.after-y.before)-(x.after-x.before); });
+  return out;
+}
+function rdVisitRepair(apply){
+  const changes=rdVisitRepairScan();
+  if(!apply){
+    console.log('[visit-repair] PREVIEW — '+changes.length+' client(s) would be raised; rdVisitRepair(true) applies');
+    changes.forEach(function(ch){ console.log('  '+ch.name+': '+ch.before+' → '+ch.after); });
+    return changes;
+  }
+  changes.forEach(function(ch){
+    const c=(clients||[]).find(function(x){ return x&&String(x.id)===String(ch.id); });
+    if(c&&(Number(c.visits)||0)<ch.after) c.visits=ch.after;
+  });
+  if(changes.length){
+    try{ saveAll(); }catch(e){}
+    try{ renderClients(); renderDash(); }catch(e){}
+  }
+  console.log('[visit-repair]', changes.length, 'client(s) raised');
   return changes;
 }
 function dtGrandTotal(){ return (((dtState||{}).operators)||[]).filter(o=>o&&o.active).reduce((s,o)=>s+dtOpTotal(o),0); }

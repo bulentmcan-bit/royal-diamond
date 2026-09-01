@@ -6,7 +6,8 @@
 //   1. one alert per CUSTOMER per day, timed off her FIRST appointment —
 //      never one per booking
 //   2. outside the last hour → silent; inside it → due
-//   3. a waAns anywhere in the group (WhatsApp button, earlier call) → silent
+//   3. a CONFIRMED waAns anywhere in the group → silent; a 'change' waAns →
+//      due IMMEDIATELY (mode 'change', red card), however far out the booking
 //   4. a completed booking in the group → she is in the salon → silent
 //   5. desk answers and snoozes gate re-alerts; an expired snooze re-fires
 //   6. KAPALI — Personel and cancelled bookings never ring anyone
@@ -84,13 +85,35 @@ console.log('2. the hour window');
   is(scan(appts, cls, {}, new Date('2026-09-02T09:00').getTime()).length, 0, 'her hour arrived → too late to fill, no alert');
 }
 
-console.log('3. an answer anywhere in the group silences the call');
+console.log('3. only a CONFIRMATION silences the call');
 {
   const appts = [
     { id: 10, clientId: 1, status: 'confirmed', datetime: '2026-09-02T09:00' },
     { id: 11, clientId: 1, status: 'confirmed', datetime: '2026-09-02T10:00', waAns: { v: 'confirm', at: 1 } },
   ];
   is(scan(appts, cls, {}, NOW).length, 0, 'she tapped Onaylıyorum on WhatsApp — ringing her again is pestering');
+}
+
+console.log('3b. a CHANGE request raises the alert immediately, not at the hour');
+{
+  // Tomorrow 15:00, answered 'change' off the 24h reminder — a full day out.
+  const far = [{ id: 10, clientId: 1, status: 'confirmed', datetime: '2026-09-03T15:00', waAns: { v: 'change', at: 1 } }];
+  const due = scan(far, cls, {}, NOW);
+  is(due.length, 1, 'change answer a day ahead → due NOW, the hour window does not apply');
+  is(due[0].mode, 'change', 'flagged mode "change" so the card goes red');
+  const hourOnly = [{ id: 20, clientId: 2, status: 'confirmed', datetime: '2026-09-03T15:00' }];
+  is(scan(hourOnly, cls, {}, NOW).length, 0, 'the same booking with no answer still waits for its hour');
+  const K = 'p905338669933|2026-09-03';
+  is(scan(far, cls, { [K]: { s: 'ok', at: 1 } }, NOW).length, 0, 'called and settled at the desk → done');
+  is(scan(far, cls, { [K]: { s: 'zzz', until: NOW + 60000 } }, NOW).length, 0, 'snoozed → quiet');
+  is(scan([{ id: 10, clientId: 1, status: 'confirmed', datetime: '2026-09-01T15:00', waAns: { v: 'change', at: 1 } }],
+     cls, {}, NOW).length, 0, 'a change on a booking whose hour already passed rings nobody');
+  // A change request outranks an ordinary hour alert in the queue.
+  const both = scan([
+    { id: 10, clientId: 2, status: 'confirmed', datetime: '2026-09-02T09:00' },
+    { id: 11, clientId: 1, status: 'confirmed', datetime: '2026-09-03T15:00', waAns: { v: 'change', at: 1 } },
+  ], cls, {}, NOW);
+  is(both.map(d => d.mode), ['change', 'hour'], 'the red card comes first, then the hour alerts');
 }
 
 console.log('4. a completed booking means she is standing in the salon');
