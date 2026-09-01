@@ -5059,7 +5059,7 @@ function getTier(clientId){
   const tenMonthsAgo=new Date();
   tenMonthsAgo.setMonth(tenMonthsAgo.getMonth()-10);
   const visits10m=appointments.filter(a=>
-    a.clientId===clientId &&
+    String(a.clientId)===String(clientId) &&
     a.status==="completed" &&
     new Date(a.datetime)>=tenMonthsAgo
   ).length;
@@ -6350,7 +6350,7 @@ function undoComplete(id){
   const a=appointments.find(x=>x.id===id);
   if(!a || a.status!=="completed") return;
   if(!confirm("Bu randevuyu geri al? (Tamamlandı işareti kaldırılacak, puan ve kazanç geri alınacak)")) return;
-  const ci=clients.findIndex(x=>x.id===a.clientId);
+  const ci=clients.findIndex(x=>String(x.id)===String(a.clientId));
   if(ci>=0){
     // Points a completion actually added (stamped in _ptsAdded) come back off
     // even while the loyalty side is switched off — a flag must not strand
@@ -8306,7 +8306,7 @@ function deleteClient(id){
   const c = clients.find(x=>x.id===id);
   if(!c) return;
   if(!ownerPin()) return;
-  const apptCount = appointments.filter(a=>a.clientId===id).length;
+  const apptCount = appointments.filter(a=>String(a.clientId)===String(id)).length;
   const typed = prompt('⚠️ KALICI SİLME — geri alınamaz!\n\n"'+c.name+'" adlı müşteri' + (apptCount? ' ve '+apptCount+' randevu kaydı' : '') + ' tamamen silinecek.\n\nOnaylamak için müşterinin adını AYNEN yazın:');
   if(typed===null) return;
   if(String(typed).trim().toLocaleLowerCase('tr')!==String(c.name).trim().toLocaleLowerCase('tr')){
@@ -8315,8 +8315,8 @@ function deleteClient(id){
   }
   clientTombAdd(id,'deleted by hand (deleteClient)',c);
   clients = clients.filter(x=>x.id!==id);
-  apptTombAddMany(appointments.filter(a=>a.clientId===id).map(a=>a.id),'client deleted (deleteClient)');
-  appointments = appointments.filter(a=>a.clientId!==id);
+  apptTombAddMany(appointments.filter(a=>String(a.clientId)===String(id)).map(a=>a.id),'client deleted (deleteClient)');
+  appointments = appointments.filter(a=>String(a.clientId)!==String(id));
   saveAll();
   renderClients(); renderDash(); renderAppts(); updateApptBadge();
   try{ buildWAQueue(); renderWA(); }catch(e){}
@@ -8989,7 +8989,7 @@ function rdFinalizeCompletion(a){
   a.status="completed";
   try{ a._ckBy=localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){}
   apptTouch(a);   // stamp the status itself, so the Done survives every merge
-  const ci=clients.findIndex(x=>x.id===a.clientId);
+  const ci=clients.findIndex(x=>String(x.id)===String(a.clientId));
   if(ci>=0){
     // Visits and last-visit always count — reminders and win-back depend on
     // them. Points and tier are the loyalty side: behind the flag, neither is
@@ -9023,7 +9023,7 @@ function rdFinalizeCompletion(a){
   toast("✅","Treatment Done!",uiOn('loyalty')?`+${Math.floor((a.price||200)/10)} points for ${c?.name}`:`${c?.name||''}`,"g");
 
   // 3rd visit milestone message
-  const updatedVisits = clients.find(x=>x.id===a.clientId)?.visits||0;
+  const updatedVisits = clients.find(x=>String(x.id)===String(a.clientId))?.visits||0;
   if(updatedVisits === 3){
     const visit3Entry={
       id:a.clientId+"_visit3_"+Date.now(),
@@ -9045,7 +9045,7 @@ function rdFinalizeCompletion(a){
 
   // 🤝 Referral reward — first completed visit of a referred client
   // (a campaign — sleeps while ui.campaigns is off, referredBy data kept)
-  const cliNow = clients.find(x=>x.id===a.clientId);
+  const cliNow = clients.find(x=>String(x.id)===String(a.clientId));
   if(uiOn('campaigns') && (cliNow?.visits===1) && cliNow?.referredBy){
     const ref=cObj(cliNow.referredBy);
     if(ref&&ref.phone){
@@ -9744,10 +9744,10 @@ function renderTreatments(){
 }
 
 function renderTx(){
-  const id=parseInt(document.getElementById("tx-sel").value);
+  const id=document.getElementById("tx-sel").value; // raw string — parseInt truncated old decimal ids
   if(!id)return;
   const c=cObj(id);
-  const appts=appointments.filter(a=>a.clientId===id).sort((a,b)=>new Date(b.datetime)-new Date(a.datetime));
+  const appts=appointments.filter(a=>String(a.clientId)===String(id)).sort((a,b)=>new Date(b.datetime)-new Date(a.datetime));
   const done=appts.filter(a=>a.status==="completed");
   document.getElementById("tx-history").innerHTML=`<div class="card" style="padding:0;overflow:hidden;"><table class="tbl"><thead><tr><th>Date</th><th>Service</th><th>Dur.</th><th>Staff</th><th>Price</th><th>Type</th><th>Status</th></tr></thead>
     <tbody>${appts.length===0?`<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:18px">No records</td></tr>`:appts.map(a=>`<tr>
@@ -9826,20 +9826,20 @@ function renderInvoicePage(){
 }
 
 function populateInvAppts(){
-  const id=parseInt(document.getElementById("inv-client").value);
+  const id=document.getElementById("inv-client").value; // raw string — parseInt truncated old decimal ids
   const s=document.getElementById("inv-appt");
   s.innerHTML='<option value="">— Select appointment —</option>';
-  if(id)appointments.filter(a=>a.clientId===id).forEach(a=>{const o=document.createElement("option");o.value=a.id;o.textContent=`${a.service} — ${fDT(a.datetime)} — ₺${a.price}`;s.appendChild(o);});
+  if(id)appointments.filter(a=>String(a.clientId)===String(id)).forEach(a=>{const o=document.createElement("option");o.value=a.id;o.textContent=`${a.service} — ${fDT(a.datetime)} — ₺${a.price}`;s.appendChild(o);});
 }
 
 function genInvoice(){
-  const cid=parseInt(document.getElementById("inv-client").value);
-  const aid=parseInt(document.getElementById("inv-appt").value);
+  const cid=document.getElementById("inv-client").value; // raw string — parseInt truncated old decimal ids
+  const aid=document.getElementById("inv-appt").value;
   const disc=parseInt(document.getElementById("inv-disc").value)||0;
   const method=document.getElementById("inv-method").value;
   const notes=document.getElementById("inv-notes").value;
   if(!cid){toast("⚠️","Select a client","","r");return;}
-  const c=cObj(cid);const a=aid?appointments.find(x=>x.id===aid):null;
+  const c=cObj(cid);const a=aid?appointments.find(x=>String(x.id)===String(aid)):null;
   const price=a?a.price:0;const dAmt=Math.round(price*disc/100);const total=price-dAmt;
   const invNo="INV-"+Date.now().toString().slice(-6);
   document.getElementById("inv-preview").innerHTML=`
@@ -9897,7 +9897,7 @@ let waSentIds = new Set(JSON.parse(localStorage.getItem(SENT_KEY)||"[]"));
 function markSentPersist(id){waSentIds.add(id);try{localStorage.setItem(SENT_KEY,JSON.stringify(Array.from(waSentIds)));}catch(e){}}
 function setWinbackWeeks(v){if(!uiOn('campaigns')){toast("ℹ️","Kampanyalar kapalı","ui.campaigns bayrağı ile açılabilir.","");return;}winbackWeeks=parseInt(v)||6;localStorage.setItem(WB_KEY,winbackWeeks);buildWAQueue();renderWA();updateWACounts();toast("💔","Geri Kazanım",`Süre güncellendi: son ${winbackWeeks} haftada gelmeyen müşteriler taranıyor.`,"g");}
 function lastVisitDate(c){if(!c.lastVisit||c.lastVisit==="—")return null;const d=new Date(String(c.lastVisit).slice(0,10)+"T00:00");return isNaN(d)?null:d;}
-function hasUpcomingAppt(cid){return appointments.some(a=>a.clientId===cid&&a.status==="confirmed"&&hrs(a.datetime)>0);}
+function hasUpcomingAppt(cid){return appointments.some(a=>String(a.clientId)===String(cid)&&a.status==="confirmed"&&hrs(a.datetime)>0);}
 setTimeout(()=>{const s=document.getElementById("wb-weeks");if(s)s.value=String(winbackWeeks);},80);
 
 // ── Occasion calendar ──
@@ -9977,7 +9977,7 @@ function buildWAQueue(){
     }
   });
   clients.forEach(c=>{
-    const appt=appointments.find(a=>a.clientId===c.id&&a.status==="confirmed"&&hrs(a.datetime)>0);
+    const appt=appointments.find(a=>String(a.clientId)===String(c.id)&&a.status==="confirmed"&&hrs(a.datetime)>0);
     const h=appt?hrs(appt.datetime):999;
     // 24h manual reminder — only the gap Piyzi cannot cover: a true ~24h window,
     // no automatic reminder scheduled on this booking, this booking IS the day's
@@ -10207,7 +10207,7 @@ async function broadcastToTier(){
   if(!targets.length){toast("ℹ️","No clients","No clients in this tier.","");return;}
   toast("📢","Broadcasting…",`Creating promo messages for ${targets.length} ${tier==="all"?"":tier} client${targets.length>1?"s":""}…`,"g");
   for(const c of targets){
-    const existing=msgQueue.find(m=>m.clientId===c.id&&m.type==="promo"&&m.status!=="sent");
+    const existing=msgQueue.find(m=>String(m.clientId)===String(c.id)&&m.type==="promo"&&m.status!=="sent");
     if(existing){existing.status="pending";existing.text="";}
     else{msgQueue.push({id:c.id+"_bc_"+Date.now(),clientId:c.id,type:"promo",subtype:"",text:"",status:"pending",appt:null});}
   }
