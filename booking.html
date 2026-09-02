@@ -137,6 +137,13 @@ function bkClosed(d){
   const av=avail&&avail[dKey(d)];
   if(av&&av._closed)return true;
   try{
+    // One-off dates before the weekly rule: closedDates shuts any day,
+    // openDates opens ONE weekly closing day as an exception (and closed
+    // beats open if a date somehow sits in both). A cached page without the
+    // fresh config keeps that Sunday grey — the safe direction.
+    const key=dKey(d);
+    if(window.CROWN&&Array.isArray(CROWN.closedDates)&&CROWN.closedDates.indexOf(key)!==-1)return true;
+    if(window.CROWN&&Array.isArray(CROWN.openDates)&&CROWN.openDates.indexOf(key)!==-1)return false;
     const w=window.CROWN&&CROWN.closedWeekdays;
     if(Array.isArray(w)&&w.length){
       if(w.indexOf(d.getDay())!==-1)return true;
@@ -152,7 +159,18 @@ function closedNoteText(){
   try{if(window.CROWN&&Array.isArray(CROWN.closedWeekdays))wds=CROWN.closedWeekdays;}catch(e){}
   if(!wds.length)return '';
   const tr=wds.map(i=>gunler[i]).join(' ve '), en=wds.map(i=>gunlerEn[i]+'s').join(' and ');
-  return '🚫 '+tr+' günleri kapalıyız / Closed on '+en+'.';
+  let note='🚫 '+tr+' günleri kapalıyız / Closed on '+en+'.';
+  // An exceptional opening inside the shown fortnight is SAID, or the
+  // bookable Sunday chip above reads as a mistake next to this line.
+  try{
+    (window.CROWN&&Array.isArray(CROWN.openDates)?CROWN.openDates:[]).forEach(k=>{
+      const d=new Date(String(k)+'T12:00:00');
+      if(isNaN(d)||!dayList.some(x=>dKey(x)===k))return;
+      note+=' ✨ '+d.getDate()+' '+aylar[d.getMonth()]+' '+gunler[d.getDay()]
+        +' istisna olarak AÇIĞIZ / Exceptionally OPEN on '+gunlerEn[d.getDay()]+' '+d.getDate()+'.';
+    });
+  }catch(e){}
+  return note;
 }
 
 // ── Build day chips ──

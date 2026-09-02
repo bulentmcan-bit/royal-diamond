@@ -87,9 +87,18 @@ window.CROWN = {
      as a Sunday; remove it when the day is past (stale ones are harmless —
      a date already gone blocks nothing). Bookings ALREADY in the diary on a
      date you close are never touched: the dashboard raises a 🚫 line
-     listing them so reception can ring each customer. */
+     listing them so reception can ring each customer.
+
+     openDates — one-off OPENINGS: a date that falls on a weekly closing day
+     but the salon opens anyway (a busy bayram week, a Sunday worked as an
+     exception). Same 'YYYY-MM-DD' strings. A date here overrides the
+     closedWeekdays rule for that one day and NOTHING else: every other
+     Sunday stays closed, and a date that somehow sits in BOTH lists counts
+     as closed — when the two disagree, the salon stays shut. Stale past
+     dates are as harmless here as in closedDates. */
   closedWeekdays: [0],
-  closedDates: [],
+  closedDates: ['2026-09-04'],   // 4 Eylül Cuma — head technician away
+  openDates: ['2026-09-06'],     // 6 Eylül Pazar — open as a one-off
 
   /* When the salon OPENS, HH:MM. Today this drives one rule: the 2-hour
      WhatsApp reminder goes only to appointments whose one-hour phone-call
@@ -109,12 +118,15 @@ window.CROWN = {
   isClosedDay: function(d){
     var dt = (d instanceof Date) ? d : new Date(String(d).slice(0,10) + 'T12:00:00');
     if (isNaN(dt)) return false;
-    var wds = (Array.isArray(this.closedWeekdays) && this.closedWeekdays.length)
-      ? this.closedWeekdays : [0];
-    if (wds.indexOf(dt.getDay()) !== -1) return true;
     var p = function(n){ return String(n).padStart(2,'0'); };
     var key = dt.getFullYear() + '-' + p(dt.getMonth()+1) + '-' + p(dt.getDate());
-    return (this.closedDates || []).indexOf(key) !== -1;
+    // Date lists first, and closed beats open: a one-off closure stands
+    // whatever else is written, a one-off opening lifts ONLY the weekday rule.
+    if ((this.closedDates || []).indexOf(key) !== -1) return true;
+    if ((this.openDates || []).indexOf(key) !== -1) return false;
+    var wds = (Array.isArray(this.closedWeekdays) && this.closedWeekdays.length)
+      ? this.closedWeekdays : [0];
+    return wds.indexOf(dt.getDay()) !== -1;
   },
 
   /* The kinds of job. Manicure and pedicure each have a wall screen of their

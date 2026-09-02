@@ -2035,11 +2035,19 @@
   // FAIL CLOSED: before crown-config.js has loaded (it comes further down the
   // file), and equally if the config is stale, emptied or throwing, Sunday —
   // the long-standing closing day — answers closed on its own. Only a config
-  // that affirmatively lists the closed weekdays gets to open a Sunday.
+  // that affirmatively lists the closed weekdays gets to open a Sunday — and
+  // only a config that affirmatively lists a date in openDates gets to open
+  // ONE closing day as an exception (closed beats open when a date is
+  // somehow in both lists; a device without the fresh config simply keeps
+  // that Sunday shut, which is the safe direction).
   function rdIsClosedDay(d){
     const dt=(d instanceof Date)?d:new Date(String(d).slice(0,10)+'T12:00:00');
     if(isNaN(dt))return false;
     try{
+      const p=n=>String(n).padStart(2,'0');
+      const key=dt.getFullYear()+'-'+p(dt.getMonth()+1)+'-'+p(dt.getDate());
+      if(window.CROWN&&Array.isArray(CROWN.closedDates)&&CROWN.closedDates.indexOf(key)!==-1)return true;
+      if(window.CROWN&&Array.isArray(CROWN.openDates)&&CROWN.openDates.indexOf(key)!==-1)return false;
       const w=window.CROWN&&CROWN.closedWeekdays;
       if(Array.isArray(w)&&w.length){
         if(w.indexOf(dt.getDay())!==-1)return true;
