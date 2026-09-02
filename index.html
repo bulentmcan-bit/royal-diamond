@@ -12208,6 +12208,21 @@ function rdWaPollAnswers(){
   _waPollBusy=true;
   rdWaFetch('/wa/answers',{}).then(function(j){
     _waPollBusy=false;
+    // A refused store must be LOUD: the worker now answers 503 KV_UNAVAILABLE
+    // when KV blocks it (daily limit, outage) instead of an empty array — an
+    // empty panel with answers waiting behind it is the failure that hides
+    // for a whole day. One red toast an hour, not sixty.
+    if(j&&j.ok===false){
+      console.warn('[wa] answers poll refused:', j.error&&j.error.code, j.error&&j.error.message);
+      if(j.error&&j.error.code==='KV_UNAVAILABLE'){
+        var now=Date.now();
+        if(!window._waKvToastAt||now-window._waKvToastAt>3600e3){
+          window._waKvToastAt=now;
+          try{ toast('⚠️','WhatsApp yanıtları OKUNAMIYOR','Cevap deposu yanıt vermiyor (KV limiti/arıza). Panel boş görünse de müşteri yanıtları bekliyor olabilir.','r'); }catch(e){}
+        }
+      }
+      return;
+    }
     if(!(j&&j.ok&&Array.isArray(j.answers))||!j.answers.length) return;
     const ack=[]; let changed=false;
     j.answers.forEach(function(ans){

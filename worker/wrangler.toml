@@ -19,8 +19,11 @@ crons = ["0 3 * * *", "0 4 * * *"]
 # The confirm-page store. Each key holds ONE appointment's public face — date,
 # time, service, and the customer's answer — and nothing else: no name, no
 # phone, no price. The armed app pushes records here behind the shared key;
-# the /r/ page reads them; answers travel back to the app by polling. No
-# Firebase credential ever sits on this worker.
+# the /r/ page reads them; answers travel back to the app by polling ONE
+# index document (idx:answers) — never a KV list, which the free tier caps
+# at 1,000/day and every open tab's once-a-minute poll would burn through
+# before lunch. The nightly cron rebuilds the index from the per-answer keys
+# (the worker's single daily list). No Firebase credential ever sits here.
 [[kv_namespaces]]
 binding = "RD_WA"
 id = "087711ff20264efe9e6aadfacaf945e1"

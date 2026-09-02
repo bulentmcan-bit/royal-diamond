@@ -227,6 +227,18 @@ KAPALI — Personel is refused by name. Every schedule and cancel is logged
 (apptId, kind, uid, outcome) — `wrangler tail` shows it live, and a best-effort
 copy goes to `rdns_wa_log_v1` in Firebase.
 
+**The answers outbox never lists.** `POST /wa/answers` used to
+`KV.list({prefix:'a:'})` on every poll — once a minute from every open tab —
+and the free tier allows 1,000 list operations a day: three tabs burn that
+before lunch (2 Sep 2026, it happened). The pending answers now also live as
+one JSON document under `idx:answers`, updated by every write (`/r/a` adds,
+ack and `/wa/confirm-del` remove) and read with a single get (100,000/day
+allowance). The per-answer `a:` keys stay as the durable truth; the nightly
+cron rebuilds the index from them — the worker's only remaining `list()`, one
+a day. And a KV refusal now answers **503 `KV_UNAVAILABLE`** instead of an
+empty array, because a blocked store must never look like a quiet day; the
+app shows a red toast for it, at most once an hour.
+
 ## The Piyzi key
 
 `pyz_live_…` from app.piyzi.com → My Business → Developer Tools. It has **no IP

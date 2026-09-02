@@ -296,6 +296,55 @@ const PIYZI = 'https://api.piyzi.com/api/v1';
 import { R_PAGE } from './rpage.js';
 
 const R_ID = /^\d{6,20}$/;
+
+/* The answers OUTBOX INDEX. The app used to learn what customers answered by
+   KV list({prefix:'a:'}) on every poll — once a minute from EVERY open tab —
+   and the free tier allows 1,000 list operations a day: three tabs burn that
+   before lunch, and every poll after it fails. So the pending answers also
+   live as ONE JSON document under this key — {id:{st,at},…} — kept current
+   by every write (/r/a adds, ack and /wa/confirm-del remove) and read with a
+   single get, which has a 100,000/day allowance. The per-answer 'a:' keys
+   stay as the durable source of truth: KV has no transactions, so two
+   answers landing in the same minute can race the read-modify-write and drop
+   one from the index — the nightly reindex (waAnswersReindex, ONE list a
+   day) rebuilds the document from the 'a:' keys and heals exactly that. */
+const A_IDX = 'idx:answers';
+
+// The document → the wire shape the app polls for, oldest answer first.
+// Pure, so the contract the app depends on can be pinned by the tests.
+function waAnswersFromIndex(idx) {
+  return Object.keys(idx || {})
+    .map(id => ({ id, st: idx[id] && idx[id].st, at: idx[id] && idx[id].at }))
+    .sort((x, y) => ((x.at || 0) - (y.at || 0)) || String(x.id).localeCompare(String(y.id)));
+}
+
+// A KV refusal (the free tier's daily cap answers 429, or an outage) must be
+// LOUD: the old route would have shown it as an empty answers array, and a
+// blocked store looks exactly like a quiet day — for a whole day.
+function waKvDown(where, e) {
+  console.log('[wa] KV refused at', where, '— NOT an empty outbox:', String(e));
+  return waJson({ ok: false, error: { code: 'KV_UNAVAILABLE', message: 'The answer store refused (daily limit or outage); answers are unreadable, not empty' } }, 503);
+}
+
+// The nightly self-heal: rebuild the index document from the per-answer keys.
+// The only list() left in this worker — one a day against the 1,000 allowance.
+async function waAnswersReindex(env) {
+  if (!env.RD_WA) return;
+  try {
+    const idx = {};
+    let cursor;
+    do {
+      const page = await env.RD_WA.list({ prefix: 'a:', cursor });
+      for (const k of page.keys) {
+        const v = await env.RD_WA.get(k.name, { type: 'json' });
+        if (v) idx[k.name.slice(2)] = { st: v.st, at: v.at };
+      }
+      cursor = page.list_complete ? null : page.cursor;
+    } while (cursor);
+    await env.RD_WA.put(A_IDX, JSON.stringify(idx));
+    console.log('[wa] answers index rebuilt:', Object.keys(idx).length, 'pending');
+  } catch (e) { console.log('[wa] answers index rebuild failed:', String(e)); }
+}
 const rEsc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // "2 Eylül Çarşamba" from the salon-local "YYYY-MM-DDTHH:MM" — same shape the
@@ -352,6 +401,14 @@ async function handleRPage(req, env, ctx, url) {
     rec.st = a; rec.at = Date.now();
     await env.RD_WA.put('c:' + id, JSON.stringify(rec));
     await env.RD_WA.put('a:' + id, JSON.stringify({ st: a, at: rec.at }));
+    // The index document the app polls. Best-effort on purpose: the 'a:' key
+    // above is the durable record, and the nightly reindex heals a miss — a
+    // customer's answer must never bounce because the index put raced.
+    try {
+      const idx = (await env.RD_WA.get(A_IDX, { type: 'json' })) || {};
+      idx[id] = { st: a, at: rec.at };
+      await env.RD_WA.put(A_IDX, JSON.stringify(idx));
+    } catch (e) { console.log('[wa] answer index update failed (reindex will heal):', String(e)); }
     waLog(env, ctx, { op: 'r-answer', apptId: id, outcome: a });
     return waJson({ ok: true, st: a });
   }
@@ -636,25 +693,41 @@ async function handleWa(req, env, ctx, url) {
     const ids = Array.isArray(b && b.ids) ? b.ids.filter(x => R_ID.test(String(x))).slice(0, 200) : null;
     if (!ids || !ids.length) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need ids: [ … ]' } }, 400);
     for (const id of ids) { await env.RD_WA.delete('c:' + id); await env.RD_WA.delete('a:' + id); }
+    // Best-effort index trim: a ghost entry left by a race points at a dead
+    // booking, which the app acks away on its next poll anyway.
+    try {
+      const idx = (await env.RD_WA.get(A_IDX, { type: 'json' })) || {};
+      let changed = false;
+      for (const id of ids) if (String(id) in idx) { delete idx[String(id)]; changed = true; }
+      if (changed) await env.RD_WA.put(A_IDX, JSON.stringify(idx));
+    } catch (e) { console.log('[wa] confirm-del index trim failed (reindex will heal):', String(e)); }
     return waJson({ ok: true, deleted: ids.length });
   }
 
   // ── POST /wa/answers — the outbox the app polls, and its acknowledgment ───
   // {} reads what customers have answered; {ack:[ids]} clears what the app
   // has safely written onto the appointments, so the outbox stays small.
+  // The read is ONE get of the index document — never a list; every open tab
+  // polls this once a minute and the free tier allows 1,000 lists a day
+  // against 100,000 gets. And a KV refusal answers 503 KV_UNAVAILABLE, never
+  // ok:true with an empty array: unreadable is not the same as quiet.
   if (route === '/wa/answers') {
     if (!env.RD_WA) return waJson({ ok: false, error: { code: 'NO_KV', message: 'store not bound' } }, 503);
     if (Array.isArray(b && b.ack) && b.ack.length) {
-      for (const id of b.ack.filter(x => R_ID.test(String(x))).slice(0, 200)) await env.RD_WA.delete('a:' + id);
+      const ids = b.ack.filter(x => R_ID.test(String(x))).slice(0, 200).map(String);
+      try {
+        for (const id of ids) await env.RD_WA.delete('a:' + id);
+        const idx = (await env.RD_WA.get(A_IDX, { type: 'json' })) || {};
+        let changed = false;
+        for (const id of ids) if (id in idx) { delete idx[id]; changed = true; }
+        if (changed) await env.RD_WA.put(A_IDX, JSON.stringify(idx));
+      } catch (e) { return waKvDown('answers-ack', e); }
       return waJson({ ok: true });
     }
-    const list = await env.RD_WA.list({ prefix: 'a:' });
-    const answers = [];
-    for (const k of list.keys.slice(0, 100)) {
-      const v = await env.RD_WA.get(k.name, { type: 'json' });
-      if (v) answers.push({ id: k.name.slice(2), st: v.st, at: v.at });
-    }
-    return waJson({ ok: true, answers });
+    let idx;
+    try { idx = (await env.RD_WA.get(A_IDX, { type: 'json' })) || {}; }
+    catch (e) { return waKvDown('answers-read', e); }
+    return waJson({ ok: true, answers: waAnswersFromIndex(idx) });
   }
 
   // ── POST /wa/schedule — the two reminders for one appointment ─────────────
@@ -778,7 +851,8 @@ async function handleWa(req, env, ctx, url) {
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
-         waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill };
+         waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
+         waAnswersFromIndex };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -786,6 +860,9 @@ export default {
     // the morning at the salon does the work, the other leaves quietly.
     if (nicosiaHour(new Date(event.scheduledTime)) !== 6) return;
     await sendMorningReminders(env);
+    // The answers index self-heal — the one list() of the day. After the
+    // reminders, so a slow KV can never delay a text.
+    await waAnswersReindex(env);
   },
 
   async fetch(req, env, ctx) {

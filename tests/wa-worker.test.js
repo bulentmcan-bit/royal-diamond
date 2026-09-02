@@ -36,7 +36,7 @@ const ctx = {
 };
 vm.createContext(ctx);
 vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
-  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill, rRender, rDateStr };',
+  '\n;__api = { waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill, rRender, rDateStr, waAnswersFromIndex };',
   ctx, { filename: 'worker-index-slice.js' });
 const api = ctx.__api;
 
@@ -197,6 +197,18 @@ is(api.rDateStr('2026-09-02T16:00'), '2 Eylül Çarşamba', 'the date reads as t
 {
   const out = api.rRender('na', null);
   is(out.startsWith('na|Sizi bekliyoruz||||'), true, 'unknown id: na class, no data leaked into the slots');
+}
+
+console.log('8. the answers index document → the wire shape the app polls');
+is(api.waAnswersFromIndex(null), [], 'no document yet → empty, not a crash');
+is(api.waAnswersFromIndex({}), [], 'an empty document → empty');
+{
+  const idx = { '1756000000002': { st: 'confirm', at: 200 }, '1756000000001': { st: 'change', at: 100 } };
+  is(api.waAnswersFromIndex(idx),
+     [{ id: '1756000000001', st: 'change', at: 100 }, { id: '1756000000002', st: 'confirm', at: 200 }],
+     'oldest answer first, whatever order the keys sit in');
+  is(api.waAnswersFromIndex({ '123456': {} }), [{ id: '123456' }],
+     'a malformed entry still carries its id — the app acks it away');
 }
 
 console.log('');
