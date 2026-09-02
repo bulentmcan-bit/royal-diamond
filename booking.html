@@ -134,16 +134,25 @@ const dKey=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 // weekdays gets to say otherwise. A wrongly grey Sunday costs nothing; a
 // wrongly open one sends a customer to a locked door.
 function bkClosed(d){
-  const av=avail&&avail[dKey(d)];
-  if(av&&av._closed)return true;
+  // The one-off date lists come FIRST, even before the published `_closed`
+  // flag: this page's config is at most ten minutes stale (the Pages cache),
+  // while the publisher can be a salon device that has not reloaded all day —
+  // the music laptop refuses its update until closing time, and its stale
+  // publish would otherwise keep an openDates exception grey for the whole
+  // working day. closedDates shuts any day; openDates opens ONE weekly
+  // closing day; closed beats open if a date somehow sits in both. The
+  // mis-cache the old order guarded against — a stale page opening a day the
+  // salon has since closed — ends at the desk anyway: the request handler
+  // re-checks rdIsClosedDay and reception rings, a phone call, never a
+  // locked door. A page without the fresh config keeps that Sunday grey.
   try{
-    // One-off dates before the weekly rule: closedDates shuts any day,
-    // openDates opens ONE weekly closing day as an exception (and closed
-    // beats open if a date somehow sits in both). A cached page without the
-    // fresh config keeps that Sunday grey — the safe direction.
     const key=dKey(d);
     if(window.CROWN&&Array.isArray(CROWN.closedDates)&&CROWN.closedDates.indexOf(key)!==-1)return true;
     if(window.CROWN&&Array.isArray(CROWN.openDates)&&CROWN.openDates.indexOf(key)!==-1)return false;
+  }catch(e){}
+  const av=avail&&avail[dKey(d)];
+  if(av&&av._closed)return true;
+  try{
     const w=window.CROWN&&CROWN.closedWeekdays;
     if(Array.isArray(w)&&w.length){
       if(w.indexOf(d.getDay())!==-1)return true;
@@ -212,6 +221,11 @@ function slotState(day,slot){
   if(!avail)return 'unknown';
   const dayAv=avail[dKey(day)];
   if(!dayAv)return 'unknown';
+  // The day passed bkClosed above yet its published data says closed: a
+  // stale device's blanket (every slot stamped full), not real capacity.
+  // Unknown, not full — the chip stays selectable and the desk re-checks
+  // the request against the live diary, same as any day with no data.
+  if(dayAv._closed)return 'unknown';
   const s=dayAv[slot];
   if(!s)return 'unknown';
   // `a` is the salon's answer for each technician: is she free for her whole
