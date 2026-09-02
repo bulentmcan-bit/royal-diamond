@@ -500,7 +500,7 @@ function waSpec(raw) {
 // leaves out are not sent at all — Piyzi rejects a parameters block whose
 // counts differ from the template's (TEMPLATE_PARAMS_MISMATCH).
 function waFill(spec, vals) {
-  const sub = s => String(s).replace(/\{(name|service|date|time|when|apptId)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
+  const sub = s => String(s).replace(/\{(name|service|dateLong|date|time|when|apptId)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
   const parameters = {};
   if (Array.isArray(spec.header) && spec.header.length) parameters.header = spec.header.map(sub);
   if (Array.isArray(spec.body) && spec.body.length) parameters.body = spec.body.map(sub);
@@ -696,6 +696,43 @@ async function handleWa(req, env, ctx, url) {
 
     if (failed.length) return waJson({ ok: false, error: failed[0].error, scheduled, skipped: plan.skipped, failed }, 502);
     return waJson({ ok: true, scheduled, skipped: plan.skipped });
+  }
+
+  // ── POST /wa/confirm-booking — "randevunuz oluşturuldu", sent NOW ─────────
+  // The receipt for the hour just agreed at the desk (or online): no
+  // scheduledAt, the message goes the moment the booking exists. The app
+  // enforces one-per-customer-per-day through its carrier grouping and keeps
+  // the returned uid on the appointment (wa.c); this end refuses only what
+  // must never send — the KAPALI blocker, a mangled phone, an unconfigured
+  // template. {dateLong} is the Turkish long date ("2 Eylül Çarşamba"),
+  // computed HERE so every device words it identically.
+  if (route === '/wa/confirm-booking') {
+    const { apptId, phone, name, dateISO, timeHHMM } = b || {};
+    if (!apptId || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO)) || !/^\d{2}:\d{2}$/.test(String(timeHHMM))) {
+      return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need apptId, dateISO (YYYY-MM-DD), timeHHMM (HH:MM)' } }, 400);
+    }
+    if (waBlockedName(name)) {
+      waLog(env, ctx, { op: 'confirm', apptId, outcome: 'refused-blocker-client' });
+      return waJson({ ok: false, error: { code: 'BLOCKED_CLIENT', message: 'KAPALI — Personel is not a customer; nothing sent' } }, 400);
+    }
+    const to = waPhone(phone);
+    if (!to) return waJson({ ok: false, error: { code: 'INVALID_PHONE', message: 'Not a usable number after cleanup; nothing sent' } }, 400);
+    const spec = waSpec(env.WA_CONF);
+    if (!spec) {
+      return waJson({ ok: false, error: { code: 'TEMPLATES_NOT_CONFIGURED', message: 'Fill WA_CONF in wrangler.toml and redeploy' } }, 503);
+    }
+    const vals = { name: name || '', date: dateISO, time: timeHHMM, dateLong: rDateStr(dateISO), apptId: String(apptId) };
+    let r;
+    try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: to, ...waFill(spec, vals) }); }
+    catch {
+      waLog(env, ctx, { op: 'confirm', apptId, to, outcome: 'failed:PIYZI_UNREACHABLE' });
+      return waJson({ ok: false, error: { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' } }, 502);
+    }
+    const ok = !!(r.body && r.body.success);
+    const messageUid = ok && r.body.data ? r.body.data.messageUid : null;
+    waLog(env, ctx, { op: 'confirm', apptId, to, uid: messageUid, outcome: ok ? 'sent' : 'failed:' + piyziErr(r).code });
+    if (!ok) return waJson({ ok: false, error: piyziErr(r) }, r.status >= 400 ? r.status : 502);
+    return waJson({ ok: true, messageUid });
   }
 
   // ── POST /wa/cancel — the appointment was cancelled or moved ──────────────

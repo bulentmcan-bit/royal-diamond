@@ -2220,6 +2220,8 @@
       // 🤖 An online booking earns the same WhatsApp reminders as a desk one.
       // Only the device that claimed the request schedules — no doubles.
       try{ rdWaSchedule(a); }catch(e){}
+      // 💬 …and the same immediate booking confirmation.
+      try{ rdWaConfirmBooking(a); }catch(e){}
       console.log('[OB] appointment created:',a);
       _fbDb.ref('rdns_booking_requests/'+id).update({handled:'booked',handledAt:Date.now(),apptId:a.id}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Randevu kaydedildi ama Firebase Rules güncellemesi yayınlanmamış — çift kayıt riskine karşı Rules ekranını güncelleyin.','r');}catch(_){}} );
       try{toast('🌐','ONLINE RANDEVU KAYDEDİLDİ! 🎉',cl.name+' — '+req.date+' '+req.time+(staffPick?' · '+staffPick:'')+(req.service?' · '+req.service:''),'g');}catch(e){}
@@ -8836,6 +8838,9 @@ function saveAppt(){
   // 🤖 The booking books its own WhatsApp reminders at Piyzi (24h + 2h);
   // fire-and-forget, dormant on a device without the key.
   try{ rdWaSchedule(a); }catch(e){}
+  // 💬 The booking confirmation goes through Piyzi the same instant — this
+  // replaced the wa.me tab reception used to wait for and send by hand.
+  try{ rdWaConfirmBooking(a); }catch(e){}
   // Saat ver: this booking resolves a pending rebook — flip it to booked so
   // the queue badge drops; everything downstream (reminders, confirmation)
   // already happened through this normal path.
@@ -8848,18 +8853,6 @@ function saveAppt(){
   }
   renderAppts();renderDash();updateApptBadge();
   buildWAQueue();
-  // 💬 Auto-open WhatsApp with a booking confirmation (first name only)
-  try{
-    const cc=cObj(cid);
-    if(cc&&cc.phone){
-      const txt=buildBookingConfirmText(cc,a);
-      const ph=(typeof normalizeWaPhone==='function')?normalizeWaPhone(cc.phone):String(cc.phone).replace(/\D/g,'');
-      setTimeout(function(){
-        window.open('https://wa.me/'+ph+'?text='+encodeURIComponent(txt),'_blank');
-        toast('💬','Onay Mesajı Hazır!',rdFirstName(cc)+' için WhatsApp açıldı — gönder tuşuna basın.','g');
-      },700);
-    }
-  }catch(e){}
 }
 
 let rebookPending=null;
@@ -9070,18 +9063,9 @@ function rdFirstName(c){
   var n=String(c.name).trim().split(/\s+/)[0];
   return n||"müşterimiz";
 }
-function buildBookingConfirmText(c, a){
-  const d = new Date(a.datetime);
-  const gun = d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const saat = d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  return "ROYAL DIAMOND NAIL STUDIO\n\n"+
-    "Say\u0131n m\u00fc\u015fterimiz, randevunuz onayland\u0131.\n\n"+
-    "Tarih: "+gun+"\n"+
-    "Saat: "+saat+"\n"+
-    "Hizmet: "+(a.service||"")+"\n\n"+
-    "Bu tarih ve saat size uygun de\u011filse, l\u00fctfen bize bildirin \u2014 size uygun farkl\u0131 bir randevuyu memnuniyetle ayarlar\u0131z.\n\n"+
-    "G\u00f6r\u00fc\u015fmek \u00fczere!\nRoyal Diamond Nail Studio \u00b7 G\u00f6nyeli \u00b7 0548 893 3333\nOnline randevu: https://bulentmcan-bit.github.io/royal-diamond/booking.html";
-}
+// (The old buildBookingConfirmText + wa.me auto-open died here 2 Sep 2026:
+// the confirmation is a real template now - rdWaConfirmBooking -> the worker's
+// /wa/confirm-booking -> pyz_appointment_booked_v2, sent without a tab.)
 function buildRebookConfirmText(c, a){
   const d = new Date(a.datetime);
   const gun = d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -9384,6 +9368,9 @@ function rdCkTimeTap(ds, hhmm){
     try{ _rdLogApptCreate(na,'checkout-time'); }catch(e){}
     saveAll();
     try{ rdWaSchedule(na); }catch(e){}
+    // 💬 and the "randevunuz oluşturuldu" WhatsApp goes out right now — no
+    // wa.me tab, reception never waits for anything to load.
+    try{ rdWaConfirmBooking(na); }catch(e){}
   }
   _ckState.sel='booked'; _ckState.source='desk'; _ckState.targetDate=ds;
   _ckState.targetTime=hhmm; _ckState.newApptId=na.id; _ckState.declineReason=null;
@@ -11757,7 +11744,9 @@ function rdWaScheduleNow(a){
       const live = (typeof apptById==='function') ? apptById(a.id) : null;
       if(!live) return;
       if(j && j.ok){
+        const conf = live.wa && live.wa.c;   // the confirmation trace survives the reminder callback
         live.wa = { u:(j.scheduled||[]).map(function(s){ return s.uid; }), d:p.dateISO, t:Date.now() };
+        if(conf) live.wa.c = conf;
         apptTouch(live); saveAll();
         // The confirm page learns this booking's public face (date, time,
         // service — nothing else) the moment its reminders exist.
@@ -11776,6 +11765,44 @@ function rdWaScheduleNow(a){
   }catch(e){ console.warn('[wa] schedule error:', e); }
 }
 
+// ── The booking confirmation — sent the MOMENT a booking is made ────────────
+// The worker sends pyz_appointment_booked_v2 NOW (no scheduledAt): the
+// message is the receipt for the hour just agreed, and it replaced the wa.me
+// tab reception used to wait for. One message per customer per day, riding
+// the same phone grouping as the reminders — two slots at one checkout are
+// one visit, one message: any same-day booking of hers already holding wa.c
+// settles the day, and _waConfBusy covers the seconds while the first send
+// is still in the air. The uid lands on wa.c (stamped, so the merge carries
+// it everywhere) and a re-save can never send twice. A failure only logs:
+// this is a courtesy and must never block or undo the booking itself.
+const _waConfBusy = {};
+function rdWaConfirmBooking(a){
+  try{
+    if(!rdWaOn() || !a) return;
+    const day = rdWaDayOf(a);
+    if(!day) return;
+    if(rdWaGroup(a, day).some(function(x){ return !!(x && x.wa && x.wa.c); })) return;
+    const busyKey = rdWaGroupKey(a) + '|' + day;
+    if(_waConfBusy[busyKey]) return;
+    const c = (clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+    const p = rdWaPayload(a, c);                  // the reminder guards: KAPALI, phone, datetime
+    if(!p) return;
+    _waConfBusy[busyKey] = 1;
+    rdWaFetch('/wa/confirm-booking', { apptId:p.apptId, phone:p.phone, name:p.name, dateISO:p.dateISO, timeHHMM:p.timeHHMM }).then(function(j){
+      if(j && j.ok){
+        const live = (typeof apptById==='function') ? apptById(a.id) : null;
+        if(!live) return;
+        live.wa = Object.assign({}, live.wa, { c: j.messageUid || true });
+        apptTouch(live); saveAll();
+        console.log('[wa] appt', a.id, 'booking confirmation sent:', j.messageUid||'');
+      } else {
+        delete _waConfBusy[busyKey];              // not sent — the day is still open to earn one
+        console.warn('[wa] appt', a.id, 'booking confirmation failed:', j&&j.error&&j.error.code, j&&j.error&&j.error.message);
+      }
+    }).catch(function(e){ delete _waConfBusy[busyKey]; console.warn('[wa] appt', a.id, 'booking confirmation unreachable:', e); });
+  }catch(e){ console.warn('[wa] confirm-booking error:', e); }
+}
+
 // Kills THIS booking's pending sends, and nothing else. "Already sent" and
 // "already gone" count as killed at the worker, so this cannot fail for
 // being late. The uids move from wa.u to wa.x — the record keeps its trace,
@@ -11784,7 +11811,9 @@ function rdWaCancelUids(a){
   try{
     if(!rdWaOn() || !a || !rdWaHasUids(a)) return;
     const uids = a.wa.u.slice();
+    const conf = a.wa.c;                     // ...and the cancel too: sent is sent, the trace stays
     a.wa = { x:uids, t:Date.now() };
+    if(conf) a.wa.c = conf;
     try{ apptTouch(a); }catch(e){}
     try{ if(a.waAns) delete a.waAns; }catch(e){}       // a dead booking's answer no longer applies
     try{ rdWaConfirmDel([String(a.id)]); }catch(e){}   // the confirm page forgets a dead booking

@@ -163,6 +163,16 @@ console.log('6. placeholder filling, in the template\'s own order');
   is(out.parameters.buttons, { 0: 'g-2026-09-01' }, 'button values substituted by index');
 }
 {
+  // The booking confirmation spec (WA_CONF): {{1}} the Turkish long date,
+  // {{2}} the hour — {dateLong} computed by the worker so every device words
+  // it identically, and rDateStr accepts the bare dateISO the route passes.
+  const spec = { templateName: 'pyz_appointment_booked_v2', languageCode: 'tr', body: ['{dateLong}', '{time}'] };
+  const out = api.waFill(spec, { dateLong: api.rDateStr('2026-09-02'), time: '15:00', date: '2026-09-02', apptId: '1' });
+  is(out.parameters.body, ['2 Eylül Çarşamba', '15:00'], 'the confirmation body: long date + hour');
+  is(api.waFill({ templateName: 'x', body: ['{date}'] }, { dateLong: 'L', date: 'D' }).parameters.body, ['D'],
+     '{date} still means the ISO date — {dateLong} did not shadow it');
+}
+{
   // The REAL approved templates (read 29 Aug): one body variable = the hour,
   // one URL-button variable = the apptId, landing on this worker's /r/ page.
   const spec = { templateName: 'pyz_randevu_hatirlatma_24saat', languageCode: 'tr', body: ['{time}'], buttons: { 0: '{apptId}' } };

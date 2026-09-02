@@ -207,7 +207,7 @@ first two buttons; do it before the third.
 
 Meta will not verify a North Cyprus business, so WhatsApp goes out through
 **Piyzi's** verified account: this worker talks to their API
-(`api.piyzi.com/api/v1`, header `X-Api-Key`). Four routes, all behind a shared
+(`api.piyzi.com/api/v1`, header `X-Api-Key`). All routes sit behind a shared
 key — sent as an `x-rd-key` header (or `k=` in the URL), anything without it
 gets a bare 401. The `/wa/` routes have their **own** key, the wrangler secret
 `WA_KEY`, so the buttons' key never leaves the buttons (`BTN_KEY` is accepted
@@ -217,6 +217,7 @@ too, and the two rotate independently):
 |---|---|
 | `GET /wa/templates` | Proxies the approved-template list. Run once for setup, and for diagnosis. |
 | `POST /wa/schedule` | `{apptId, phone, name, dateISO, timeHHMM, service}` → schedules the 24-hour and 2-hour reminders at Piyzi; returns `{ok:true, scheduled:[{kind:"r24",uid},{kind:"r1",uid}]}`. A reminder whose send time is already past is skipped as normal (same-day booking). **Store the uids** — they are the only way to cancel. |
+| `POST /wa/confirm-booking` | `{apptId, phone, dateISO, timeHHMM}` (+ optional `name` for the KAPALI check) → sends `pyz_appointment_booked_v2` **immediately** — no scheduledAt. The worker itself words `{{1}}` as the Turkish long date ("2 Eylül Çarşamba") and passes `{{2}}` as the hour; returns `{ok:true, messageUid}`. The app stores the uid on the appointment (`wa.c`) and enforces one confirmation per customer per day via the carrier grouping. |
 | `POST /wa/cancel` | `{uids:[…]}` → cancels each; "already sent" and "already gone" count as success. |
 | `POST /wa/send` | `{phone, templateName, params}` → immediate send (the Google-review ask after checkout). |
 
@@ -257,17 +258,24 @@ Both approved templates carry exactly **one body variable (the hour)** and
 **one dynamic URL button** whose link is baked at Meta as this worker's own
 `/r/{{1}}` — the spec passes the apptId there, and the `/r/` route serves a
 small branded "your appointment is on record, call 0548 893 3333" page so the
-customer's "Detaylar / Details" tap never lands on a 404. (A third approved
-template, `pyz_randevu_hatirlatma`, is a zero-variable booking confirmation —
-available to `/wa/send`, not wired anywhere yet.)
+customer's "Detaylar / Details" tap never lands on a 404.
+
+A third spec, `WA_CONF` (wired 2 Sep 2026), is the **booking confirmation**:
+`pyz_appointment_booked_v2`, two body variables — `{{1}}` the Turkish long
+date (`{dateLong}`, "2 Eylül Çarşamba") and `{{2}}` the hour. It is sent the
+moment a booking is made through `POST /wa/confirm-booking`, which replaced
+the wa.me tab reception used to open and send by hand.
 
 If a template is ever re-approved under a new name or with different
 variables, re-run the `/wa/templates` curl and update the spec (placeholders:
-`{name}` `{service}` `{date}` `{time}` `{when}` `{apptId}`), then
-`wrangler deploy`. If a spec ever goes missing or breaks, `/wa/schedule`
-refuses with `TEMPLATES_NOT_CONFIGURED` — deliberately loud, instead of
-sending under a wrong name that would fail silently at Piyzi's end.
+`{name}` `{service}` `{date}` `{dateLong}` `{time}` `{when}` `{apptId}`), then
+`wrangler deploy`. If a spec ever goes missing or breaks, `/wa/schedule` and
+`/wa/confirm-booking` refuse with `TEMPLATES_NOT_CONFIGURED` — deliberately
+loud, instead of sending under a wrong name that would fail silently at
+Piyzi's end.
 
 The app side lives in index.html (WA-SLICE markers): every booking schedules
-its own reminders, every cancellation or move kills them, dormant per device
-until the shared key is pasted in via the 🤖 button on the dashboard.
+its own reminders and fires its own immediate confirmation
+(`rdWaConfirmBooking` — one per customer per day, uid kept on `wa.c`), every
+cancellation or move kills the pending reminders, dormant per device until
+the shared key is pasted in via the 🤖 button on the dashboard.

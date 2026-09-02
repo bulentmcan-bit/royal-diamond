@@ -51,7 +51,8 @@ WA_OPEN = "08:00"
 #   WA_R24 = '{"templateName":"<name from /wa/templates>","languageCode":"tr","body":["{name}","{when}"]}'
 #
 # Placeholders the worker substitutes per appointment: {name} {service}
-# {date} (YYYY-MM-DD) {time} (HH:MM) {when} ("1 Eylül 14:00", salon clock).
+# {date} (YYYY-MM-DD) {dateLong} ("2 Eylül Çarşamba") {time} (HH:MM)
+# {when} ("1 Eylül 14:00", salon clock).
 # header/body arrays must match the template's variableCounts exactly —
 # Piyzi rejects a mismatch. The Piyzi key itself is NEVER here: it is the
 # wrangler secret PIYZI_API_KEY, set by the owner.
@@ -61,3 +62,10 @@ WA_OPEN = "08:00"
 # the apptId, so the customer's "Detaylar / Details" tap lands somewhere real.
 WA_R24 = '{"templateName":"pyz_randevu_hatirlatma_24saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}'
 WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}'
+
+# The booking confirmation, sent the MOMENT a booking is made (no scheduledAt)
+# via POST /wa/confirm-booking. pyz_appointment_booked_v2 carries two body
+# variables: {{1}} the Turkish long date and {{2}} the hour. Same contract as
+# above: an empty or broken value makes the route refuse with
+# TEMPLATES_NOT_CONFIGURED instead of sending under a guessed shape.
+WA_CONF = '{"templateName":"pyz_appointment_booked_v2","languageCode":"tr","body":["{dateLong}","{time}"]}'

@@ -434,6 +434,105 @@ function makeDevice() {
     }
   }
 
+  console.log('13. the booking confirmation — sent at once, one per customer-day');
+  {
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Ayşe Yılmaz', phone: '0533 866 9933' });
+    d.ctx.appointments.push({ id: 42, clientId: 7, service: 'Manikür', status: 'confirmed', datetime: '2026-09-05T14:00' });
+    d.ctx.reply = { ok: true, messageUid: 'MU1' };
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 1, 'one fetch');
+    is(d.calls[0].url, 'https://rd-buttons.royaldiamond.workers.dev/wa/confirm-booking', 'to /wa/confirm-booking');
+    is(JSON.parse(d.calls[0].opts.body),
+       { apptId: '42', phone: '905338669933', name: 'Ayşe Yılmaz', dateISO: '2026-09-05', timeHHMM: '14:00' },
+       'the exact body — no scheduledAt anywhere');
+    is(d.ctx.appointments[0].wa.c, 'MU1', 'the returned uid lands on wa.c');
+    is(d.saved() >= 1, true, 'and is persisted');
+    // A second slot the same day: one visit, one message.
+    d.ctx.appointments.push({ id: 43, clientId: 7, service: 'Pedikür', status: 'confirmed', datetime: '2026-09-05T15:00' });
+    vm.runInContext('rdWaConfirmBooking(appointments[1])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 1, 'the second same-day slot sends nothing');
+    is(d.ctx.appointments[1].wa, undefined, 'and stores nothing');
+    // A re-save / re-call of the sent booking: never twice.
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick();
+    is(d.calls.length, 1, 'a re-call for the sent booking sends nothing');
+  }
+  {
+    // Two slots booked back-to-back, the first response still in the air:
+    // the in-flight guard holds the line the wa.c mark cannot yet.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Pınar Mahşeker', phone: '05338669933' });
+    d.ctx.appointments.push(
+      { id: 1, clientId: 7, service: 'M', status: 'confirmed', datetime: '2026-09-05T09:00' },
+      { id: 2, clientId: 7, service: 'P', status: 'confirmed', datetime: '2026-09-05T10:00' });
+    d.ctx.reply = { ok: true, messageUid: 'MU9' };
+    vm.runInContext('rdWaConfirmBooking(appointments[0]); rdWaConfirmBooking(appointments[1]);', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 1, 'one message for the visit, even with both sends racing');
+  }
+  {
+    // Dormant without the key; the KAPALI blocker and a bad phone never fetch.
+    const d = makeDevice();
+    d.ctx.clients.push({ id: 7, name: 'Ayşe', phone: '05338669933' });
+    d.ctx.appointments.push({ id: 1, clientId: 7, status: 'confirmed', datetime: '2026-09-05T14:00' });
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick();
+    is(d.calls.length, 0, 'no key → dormant');
+    const d2 = makeDevice();
+    d2.store.rdns_wa_key_v1 = 'testkey';
+    d2.ctx.clients.push({ id: 9, name: 'KAPALI — Personel', phone: '05338669933' }, { id: 10, name: 'Bozuk Numara', phone: '12345' });
+    d2.ctx.appointments.push(
+      { id: 2, clientId: 9, status: 'confirmed', datetime: '2026-09-05T14:00' },
+      { id: 3, clientId: 10, status: 'confirmed', datetime: '2026-09-05T15:00' });
+    vm.runInContext('rdWaConfirmBooking(appointments[0]); rdWaConfirmBooking(appointments[1]);', d2.ctx);
+    await tick();
+    is(d2.calls.length, 0, 'KAPALI and a mangled phone send nothing');
+  }
+  {
+    // A failed send: logged and carried on — nothing stored, no toast, and
+    // the day stays open so a later booking can still earn its message.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Ayşe', phone: '05338669933' });
+    d.ctx.appointments.push({ id: 1, clientId: 7, status: 'confirmed', datetime: '2026-09-05T14:00' });
+    d.ctx.reply = { ok: false, error: { code: 'TEMPLATES_NOT_CONFIGURED', message: 'fill WA_CONF' } };
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.calls.length, 1, 'the send was attempted');
+    is(d.ctx.appointments[0].wa, undefined, 'a failure stores nothing');
+    is(d.toasts.length, 0, 'and raises no toast — log and carry on');
+    d.ctx.reply = { ok: true, messageUid: 'MU2' };
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.ctx.appointments[0].wa.c, 'MU2', 'a retry after the failure can still send');
+  }
+  {
+    // The reminder callback landing AFTER the confirmation must not wipe
+    // wa.c — and the cancel keeps the trace too: sent is sent.
+    const d = makeDevice();
+    d.store.rdns_wa_key_v1 = 'testkey';
+    d.ctx.clients.push({ id: 7, name: 'Ayşe Yılmaz', phone: '05338669933' });
+    d.ctx.appointments.push({ id: 42, clientId: 7, service: 'M', status: 'confirmed', datetime: '2026-09-05T14:00' });
+    d.ctx.reply = { ok: true, messageUid: 'MUC' };
+    vm.runInContext('rdWaConfirmBooking(appointments[0])', d.ctx);
+    await tick(); await tick();
+    d.ctx.reply = { ok: true, scheduled: [{ kind: 'r24', uid: 'U24' }], skipped: [] };
+    vm.runInContext('rdWaScheduleNow(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.ctx.appointments[0].wa.u, ['U24'], 'the reminder uids land');
+    is(d.ctx.appointments[0].wa.c, 'MUC', 'and wa.c survives the reminder callback');
+    d.ctx.reply = { ok: true, results: [{ uid: 'U24', ok: true }] };
+    vm.runInContext('rdWaCancelUids(appointments[0])', d.ctx);
+    await tick(); await tick();
+    is(d.ctx.appointments[0].wa.x, ['U24'], 'cancel moves the uids to the killed trace');
+    is(d.ctx.appointments[0].wa.c, 'MUC', 'and wa.c survives the cancel too');
+  }
+
   console.log('');
   console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
   process.exit(fail ? 1 : 0);
