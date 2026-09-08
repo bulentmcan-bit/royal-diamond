@@ -34,7 +34,12 @@ if (i0 < 0 || i1 <= i0) {
   console.error('✗ marker not found in index.html — the slice boundaries moved');
   process.exit(1);
 }
-const slice = html.slice(i0, i1);
+// The key hygiene helpers (_rdIdKey, _rdFbKeyOk) moved above the START marker
+// on 24 Aug and the tomb code leans on them — carry them into the slice.
+const k0 = html.indexOf('const _RD_BAD_KEY=');
+const k1 = html.indexOf('  function _rdTsOf(v){', k0);
+if (k0 < 0 || k1 <= k0) { console.error('✗ key-hygiene marker not found in index.html'); process.exit(1); }
+const slice = html.slice(k0, k1) + '\n' + html.slice(i0, i1);
 
 // ── one simulated laptop ────────────────────────────────────────────────────
 function makeDevice(name) {

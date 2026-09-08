@@ -303,9 +303,13 @@
           // either — check the whole path, not just the merge.
           remote.appointments=_apptMergeAudit(remote.appointments,_apptsBefore,'live listener');
           appointments=remote.appointments;
+          try{ apptWatchDiff('bulut birleştirme (canlı dinleyici)', {by:remote._by, why:_apptMergeWhy}); }catch(e){}
           applyPriceOverrides(appointments);
           applyPayMethods(appointments);
           apptStampAdopt(appointments);
+          // A second look: applyPriceOverrides re-asserts a sealed status, so a
+          // flip in that step is attributed to it, not to the next save.
+          try{ apptWatchDiff('bulut birleştirme (canlı dinleyici) — fiyat/ödeme geçersiz kılma sonrası', {by:remote._by}); }catch(e){}
           payments=remote.payments||[];
           deferredPayments=remote.deferredPayments||[];
           ccOverrides=remote.ccOverrides||{};
@@ -1280,7 +1284,13 @@
   // To read it: the 🩺 button at the bottom of the sidebar, or rdApptLog() in
   // the browser console.
   const APPT_DROPLOG_KEY='rdns_appt_droplog_v1';
-  const APPT_DROPLOG_MAX=500;
+  const APPT_DROPLOG_MAX=800;
+  // Which laptop wrote the line. _rdDevId lives in this same script; the
+  // fallback reads the key it is minted under, for the sliced test harness.
+  function _apptDevId(){
+    try{ if(typeof _rdDevId==='string'&&_rdDevId) return _rdDevId; }catch(e){}
+    try{ return localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){ return 'anon'; }
+  }
   function _apptDropName(a){
     try{
       if(!a) return '?';
@@ -1301,7 +1311,9 @@
     try{ const l=JSON.parse(localStorage.getItem(APPT_DROPLOG_KEY)||'[]'); return Array.isArray(l)?l:[]; }
     catch(e){ return []; }
   }
-  function apptDropLog(appt, id, reason, note){
+  // extra (optional): {kind:'status'|'moved'|'removed', old, new} — written by
+  // the watch below, so a change can be read by machine as well as by eye.
+  function apptDropLog(appt, id, reason, note, extra){
     try{
       const rec={
         t:Date.now(),
@@ -1312,13 +1324,25 @@
         staff:(appt&&appt.staff)?String(appt.staff):'',
         price:(appt&&appt.price!=null)?appt.price:'',
         reason:String(reason||'unknown'),
-        note:note?String(note):''
+        note:note?String(note):'',
+        dev:_apptDevId()
       };
+      if(extra&&typeof extra==='object'){
+        if(extra.kind) rec.kind=String(extra.kind);
+        if(extra.old!==undefined) rec.old=String(extra.old);
+        if(extra.new!==undefined) rec.new=String(extra.new);
+      }
       const log=apptDropLogRead();
       log.push(rec);
       localStorage.setItem(APPT_DROPLOG_KEY, JSON.stringify(log.slice(-APPT_DROPLOG_MAX)));
-      console.log('[appt-removed]', rec.id, rec.name, '·', rec.reason, rec.note||'');
+      console.log('[appt-log]', rec.id, rec.name, '·', rec.reason, rec.note||'', '· cihaz='+rec.dev);
     }catch(e){}
+  }
+  // The newest N lines, newest first — what the on-screen viewer shows.
+  function apptDropLogLast(n){
+    const l=apptDropLogRead().slice().reverse();
+    n=Number(n);
+    return (n>0)?l.slice(0,n):l;
   }
   // The one-time fixers in later script blocks (e.g. the 60-minute duration
   // cap) log through this too — the diary's paper trail lives in one place.
@@ -1328,15 +1352,18 @@
     try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
     return d+'  #'+r.id+'  '+(r.name||'?')+
       (r.when?('  ['+r.when+(r.svc?' · '+r.svc:'')+(r.staff?' · '+r.staff:'')+']'):'')+
-      '  →  '+r.reason+(r.note?('  ('+r.note+')'):'');
+      '  →  '+r.reason+(r.note?('  ('+r.note+')'):'')+
+      (r.dev?('  · cihaz='+r.dev):'');
   }
-  window.rdApptLog=function(){
-    const l=apptDropLogRead();
-    try{ console.table(l.slice().reverse().map(function(r){
+  // rdApptLog()    — every line, newest first, as a console table
+  // rdApptLog(50)  — only the newest 50
+  window.rdApptLog=function(n){
+    const l=apptDropLogLast(n);
+    try{ console.table(l.map(function(r){
       let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){}
-      return {Zaman:d, id:r.id, 'Müşteri':r.name, Randevu:r.when, Sebep:r.reason, Not:r.note};
+      return {Zaman:d, id:r.id, 'Müşteri':r.name, Randevu:r.when, Sebep:r.reason, Eski:r.old||'', Yeni:r.new||'', Cihaz:r.dev||'', Not:r.note};
     })); }catch(e){ console.log(l); }
-    console.log(l.length+' kayıt · rdApptLogText() düz metin · rdApptLogSave() dosya olarak indirir');
+    console.log(l.length+' kayıt · rdApptLogText() düz metin · rdApptLogSave() dosya olarak indirir · rdShowApptLog() ekranda');
     return l;
   };
   window.rdApptLogText=function(){
@@ -1354,36 +1381,46 @@
     }catch(e){ console.warn('drop log save error:',e); }
   };
   // On-screen viewer — the salon works on tablets, where there is no console.
-  window.rdShowApptLog=function(){
+  // Shows the newest 50 lines; the "Tümü" button opens the whole log.
+  window.rdShowApptLog=function(limit){
     try{
       const old=document.getElementById('rd-apptlog-ov'); if(old) old.remove();
-      const list=apptDropLogRead().slice().reverse();
+      const all=apptDropLogRead().length;
+      limit=(limit===undefined)?50:Number(limit);
+      const list=apptDropLogLast(limit);
       const esc=function(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+      const kindColor={status:'#b07a1a', moved:'#3a6fb0', removed:'#c9605a'};
       const rows=list.length?list.map(function(r){
         let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
+        const col=kindColor[r.kind]||'#c9605a';
         return '<div style="padding:9px 11px;border-bottom:1px solid #eee;font-size:0.78rem;line-height:1.5;">'+
-          '<div style="color:#888;font-size:0.7rem;">'+esc(d)+' · id '+esc(r.id)+'</div>'+
-          '<div style="font-weight:800;">'+esc(r.name)+(r.when?' <span style="font-weight:400;color:#666;">— '+esc(r.when)+(r.svc?' · '+esc(r.svc):'')+'</span>':'')+'</div>'+
-          '<div style="color:#c9605a;font-weight:700;">'+esc(r.reason)+(r.note?' <span style="color:#888;font-weight:400;">('+esc(r.note)+')</span>':'')+'</div>'+
+          '<div style="color:#888;font-size:0.7rem;">'+esc(d)+' · id '+esc(r.id)+(r.dev?' · cihaz '+esc(r.dev):'')+'</div>'+
+          '<div style="font-weight:800;">'+esc(r.name)+(r.when?' <span style="font-weight:400;color:#666;">— '+esc(r.when)+(r.svc?' · '+esc(r.svc):'')+(r.staff?' · '+esc(r.staff):'')+'</span>':'')+'</div>'+
+          '<div style="color:'+col+';font-weight:700;">'+esc(r.reason)+'</div>'+
+          ((r.old!==undefined||r.new!==undefined)?'<div style="color:#444;font-size:0.74rem;">eski: <b>'+esc(r.old)+'</b> → yeni: <b>'+esc(r.new)+'</b></div>':'')+
+          (r.note?'<div style="color:#888;font-size:0.72rem;">'+esc(r.note)+'</div>':'')+
         '</div>';
-      }).join(''):'<div style="padding:22px;text-align:center;color:#888;font-size:0.85rem;">Hiçbir randevu silinmemiş. 👍</div>';
+      }).join(''):'<div style="padding:22px;text-align:center;color:#888;font-size:0.85rem;">Kayıt yok. 👍</div>';
       const ov=document.createElement('div');
       ov.id='rd-apptlog-ov';
       ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Nunito,sans-serif;';
       ov.innerHTML='<div style="background:#fff;color:#1a1a1a;border-radius:14px;max-width:640px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;">'+
         '<div style="padding:13px 15px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;">'+
-          '<b style="font-size:0.95rem;">🩺 Randevu Silme Günlüğü</b>'+
-          '<span style="color:#888;font-size:0.75rem;">'+list.length+' kayıt</span>'+
+          '<b style="font-size:0.95rem;">🩺 Randevu Günlüğü</b>'+
+          '<span style="color:#888;font-size:0.75rem;">'+((limit>0&&all>limit)?('son '+list.length+' / '+all):all)+' kayıt</span>'+
           '<span style="flex:1;"></span>'+
+          ((limit>0&&all>limit)?'<button id="rd-apptlog-all" style="border:1px solid #ccc;background:none;color:#444;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.74rem;font-weight:800;cursor:pointer;">Tümü ('+all+')</button>':'')+
           '<button id="rd-apptlog-dl" style="border:1px solid #d4a96a;background:rgba(212,169,106,0.14);color:#8a6420;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.74rem;font-weight:800;cursor:pointer;">⬇ İndir</button>'+
           '<button id="rd-apptlog-x" style="border:1px solid #ddd;background:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.8rem;font-weight:800;cursor:pointer;">✕</button>'+
         '</div>'+
         '<div style="overflow-y:auto;">'+rows+'</div>'+
-        '<div style="padding:9px 15px;border-top:1px solid #eee;color:#888;font-size:0.68rem;">Bir randevu kaybolursa burada onu neyin sildiği yazar. Bu cihazda saklanır.</div>'+
+        '<div style="padding:9px 15px;border-top:1px solid #eee;color:#888;font-size:0.68rem;">Onaylı gelecek randevularda her durum değişikliği, taşıma ve silinme — hangi cihaz, hangi yol, eski ve yeni değer. Bu cihazda saklanır.</div>'+
       '</div>';
       document.body.appendChild(ov);
       ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
       ov.querySelector('#rd-apptlog-x').onclick=function(){ ov.remove(); };
+      const allBtn=ov.querySelector('#rd-apptlog-all');
+      if(allBtn) allBtn.onclick=function(){ window.rdShowApptLog(0); };
       ov.querySelector('#rd-apptlog-dl').onclick=function(){ try{ window.rdApptLogSave(); }catch(e){} };
     }catch(e){ console.warn('rdShowApptLog error:',e); }
   };
@@ -1467,6 +1504,7 @@
   }
   let _apptMergeKept=false;   // did this merge have to defend a local record?
   let _apptMergeMeta=null;    // the stamp the merge decided on, per id
+  let _apptMergeWhy={};       // id → why the local status/datetime lost, for the watch
   // Last line of defence. Whatever the merge above worked out, no appointment
   // this device was holding may leave the array without a tombstone saying it
   // was deleted. Anything missing is put straight back and written to the
@@ -1503,6 +1541,7 @@
   function _mergeRemoteAppts(remoteAppts, snapTs){
     _apptMergeKept=false;
     _apptMergeMeta={};
+    _apptMergeWhy={};
     const local=Array.isArray(appointments)?appointments:[];
     try{
       const remote=Array.isArray(remoteAppts)?remoteAppts:[];
@@ -1534,6 +1573,8 @@
         }else{
           out.push(r);                                    // the cloud is at least as new
           _apptMergeMeta[k]={ts:rts,l:0};
+          if(loc&&_apptWatchDiffers(loc,r))
+            _apptMergeWhy[k]='bulut kopyası kazandı (yerel damga '+lts+' ≤ uzak '+rts+')';
         }
         // ═══ THE STATUS RIDES ON ITS OWN STAMP ═══
         // The record stamp above says which COPY is newer, and a reminder flag
@@ -1552,6 +1593,7 @@
           if(ost>wst && o.status && o.status!==w.status){
             w.status=o.status;
             w._sts=ost;
+            _apptMergeWhy[k]='durum kendi damgasıyla geldi (_sts '+ost+' > '+wst+', '+((o===r)?'bulut':'yerel')+' kopyadan)';
             // gelmedi travels with the status it belongs to
             if(o.noShow===undefined){ delete w.noShow; delete w.noShowAt; }
             else { w.noShow=o.noShow; w.noShowAt=o.noShowAt; }
@@ -1661,6 +1703,110 @@
       console.log('[sync] status →', a.status, '#'+k, '_sts='+ts);
     }catch(e){ console.warn('apptTouch error:',e); }
   }
+  // ═══════ THE WATCH — CONFIRMED FUTURE BOOKINGS, CHECKED AT EVERY CHECKPOINT ═══════
+  // The log above went silent on 30 Aug while bookings kept going missing. It
+  // only ever heard from the paths that KNEW they were removing something — a
+  // tombstone, a merge drop, a restore. Whatever is happening now is not one of
+  // those: a status flipped, a datetime moved, an id gone from the array by a
+  // path that never announced itself. So the array itself is watched.
+  // A shadow of every confirmed future booking (id → status, datetime, name,
+  // staff) is kept in localStorage. At every checkpoint — each save, each cloud
+  // merge, a backup restore, startup, and a 30-second scan for in-place edits
+  // that never saved — the live array is diffed against the shadow, and every
+  // difference is written to the log with the old and new value, this device's
+  // id, the device whose snapshot caused it (for merges), the merge's own
+  // reason where it has one, and the call path that reached the checkpoint.
+  // The shadow is then rebuilt, so a change is written exactly once.
+  const APPT_WATCH_KEY='rdns_appt_watch_v1';
+  let _apptWatchShadow=null;     // null = not read from disk yet
+  let _apptWatchLastJson='';
+  function _apptWatchRead(){
+    try{ const w=JSON.parse(localStorage.getItem(APPT_WATCH_KEY)||'null'); return (w&&typeof w==='object'&&!Array.isArray(w))?w:null; }
+    catch(e){ return null; }
+  }
+  function _apptIsFuture(dt, now){
+    try{ if(!dt) return false; const t=new Date(dt).getTime(); return !isNaN(t)&&t>now; }catch(e){ return false; }
+  }
+  function _apptIsConfirmed(a){ return !!a && (a.status==null||a.status===''||a.status==='confirmed'); }
+  function _apptWatchDiffers(a,b){
+    return String((a&&a.status)||'confirmed')!==String((b&&b.status)||'confirmed') ||
+           String((a&&a.datetime)||'')!==String((b&&b.datetime)||'');
+  }
+  function _apptWatchEntry(a){
+    return {s:String(a.status||'confirmed'), d:String(a.datetime||''), n:_apptDropName(a), st:String(a.staff||''), svc:String(a.service||'')};
+  }
+  // The path that reached the checkpoint, read off the call stack: the named
+  // functions between here and the event handler. This file has dozens of
+  // places that assign `appointments`; this says which one without each of
+  // them having to announce itself.
+  function _apptWatchPath(){
+    try{
+      const names=String(new Error().stack||'').split('\n').map(function(l){
+        const m=l.match(/at\s+([^\s(]+)/); return m?m[1]:'';
+      }).filter(function(n){
+        if(!n||n.indexOf('://')>=0||n.charAt(0)==='<') return false;
+        return !/^(_apptWatch|apptWatchDiff|apptDropLog|dbSave|saveAll|Object\.|Array\.|Promise|new\s|eval|Error)/.test(n);
+      });
+      return names.slice(0,4).join(' < ');
+    }catch(e){ return ''; }
+  }
+  // where: which checkpoint. ctx (optional): {by: device that wrote the merged
+  // snapshot, why: _apptMergeWhy}. Returns the number of lines written.
+  function apptWatchDiff(where, ctx){
+    let n=0;
+    try{
+      const list=(typeof appointments!=='undefined'&&Array.isArray(appointments))?appointments:null;
+      if(!list) return 0;
+      const now=Date.now();
+      if(_apptWatchShadow===null) _apptWatchShadow=_apptWatchRead();
+      const prev=_apptWatchShadow;
+      const live={};
+      list.forEach(function(a){ if(a&&a.id!=null) live[String(a.id)]=a; });
+      if(prev){
+        const why=(ctx&&ctx.why)||{};
+        const src=(ctx&&ctx.by)?(' · kaynak cihaz='+ctx.by):'';
+        let path='';
+        Object.keys(prev).forEach(function(k){
+          const o=prev[k]; if(!o) return;
+          const a=live[k];
+          const stub={id:k, clientName:o.n, datetime:o.d, staff:o.st, service:o.svc};
+          if(!path) path=_apptWatchPath();
+          const note=String(where||'?')+(why[k]?(' · '+why[k]):'')+src+(path?(' · yol: '+path):'');
+          if(!a){
+            const tomb=_apptTombHas(k);
+            apptDropLog(stub,k,'DİZİDEN ÇIKTI'+(tomb?' (tombstone var)':' — TOMBSTONE YOK'), note,
+              {kind:'removed', old:o.s+' @ '+o.d, new:'(yok)'});
+            n++; return;
+          }
+          const s=String(a.status||'confirmed'), d=String(a.datetime||'');
+          if(d!==o.d){
+            apptDropLog(stub,k,'TAŞINDI '+o.d+' → '+d, note, {kind:'moved', old:o.d, new:d});
+            n++;
+          }
+          if(s!==o.s){
+            stub.datetime=d;
+            apptDropLog(stub,k,'DURUM '+o.s+' → '+s, note, {kind:'status', old:o.s, new:s});
+            n++;
+          }
+        });
+      }
+      const next={};
+      list.forEach(function(a){
+        if(a&&a.id!=null&&_apptIsConfirmed(a)&&_apptIsFuture(a.datetime,now)) next[String(a.id)]=_apptWatchEntry(a);
+      });
+      _apptWatchShadow=next;
+      const js=JSON.stringify(next);
+      if(js!==_apptWatchLastJson){ _apptWatchLastJson=js; try{ localStorage.setItem(APPT_WATCH_KEY, js); }catch(e){} }
+    }catch(e){ console.warn('apptWatchDiff error:',e); }
+    return n;
+  }
+  window.apptWatchDiff=apptWatchDiff;
+  // In-place edits that never reach a save (a.status=… with no saveAll) would
+  // otherwise wait for the next checkpoint and be blamed on it.
+  try{
+    if(typeof setInterval==='function'&&typeof document!=='undefined'&&document&&document.body!==undefined)
+      setInterval(function(){ try{ apptWatchDiff('30 sn tarama (kaydedilmemiş yerinde değişiklik)'); }catch(e){} }, 30000);
+  }catch(e){}
   // One line per new booking: which id, which device, which path made it. Read
   // next to '[sync] ↑ push OK: rdns_main_v1 (…) · N randevu' it answers the
   // question "did that booking actually leave this machine?" in the console.
@@ -2283,9 +2429,11 @@
       val.appointments=_preserveLocalApptPrices(incoming);
       val.appointments=_apptMergeAudit(val.appointments,_apptsBefore,'syncForceLoad');
       appointments=val.appointments;
+      try{ apptWatchDiff('bulut birleştirme (syncForceLoad)', {by:val._by, why:_apptMergeWhy}); }catch(e){}
       applyPriceOverrides(appointments);
       applyPayMethods(appointments);
       apptStampAdopt(appointments);
+      try{ apptWatchDiff('bulut birleştirme (syncForceLoad) — fiyat/ödeme geçersiz kılma sonrası', {by:val._by}); }catch(e){}
       payments=val.payments||[];
       deferredPayments=val.deferredPayments||[];
       ccOverrides=val.ccOverrides||{};
@@ -3516,9 +3664,9 @@ p, span, div, label, h1, h2, h3, h4 {
           border-radius:8px;color:var(--gold);font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
           🔑 Resepsiyon Şifresi (İptal Yetkisi)
         </button>
-        <button onclick="rdShowApptLog()" title="Silinen randevular — ne, ne zaman, neden" style="width:100%;padding:7px 10px;background:rgba(122,170,232,0.08);border:1px solid rgba(122,170,232,0.3);margin-top:6px;
+        <button onclick="rdShowApptLog()" title="Silinen, taşınan, durumu değişen randevular — son 50 kayıt: ne, ne zaman, hangi cihaz, neden" style="width:100%;padding:7px 10px;background:rgba(122,170,232,0.08);border:1px solid rgba(122,170,232,0.3);margin-top:6px;
           border-radius:8px;color:#4a7bb0;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'Nunito',sans-serif;text-align:left;">
-          🩺 Randevu Silme Günlüğü
+          🩺 Randevu Günlüğü
         </button>
       </div>
     </div>
@@ -5165,12 +5313,18 @@ function dbLoad(){
 
 function dbSave(){
   try{
+    // Every local path that changes a booking ends here — the watch diffs the
+    // array against its shadow BEFORE anything leaves the device.
+    try{ apptWatchDiff('kayıt (saveAll)'); }catch(e){}
     // Re-assert the saved prices on the way out too, so a snapshot that landed
     // between the last merge and this save can't push a 0 back to the cloud.
     try{ applyPriceOverrides(appointments); }catch(e){}
     // Same for the payment methods: a snapshot that landed since the last merge
     // must not push a record with the ÖDEME answer missing back to the cloud.
     try{ applyPayMethods(appointments); }catch(e){}
+    // Second look, same reason as in the listener: a status the override map
+    // re-asserted just now is written as ITS doing.
+    try{ apptWatchDiff('kayıt (saveAll) — fiyat/ödeme geçersiz kılma sonrası'); }catch(e){}
     // Stamp whatever changed here before it leaves the device, so a snapshot
     // written elsewhere can never quietly drop a booking made on this one.
     try{ apptStampSync(); }catch(e){}
@@ -5205,6 +5359,9 @@ try{ mergeRemotePayMethods(_dbLoaded?.payMethods); applyPayMethods(appointments)
 // that were already thrown away.
 try{ mergeRemoteApptTomb(_dbLoaded?.apptTomb); }catch(e){}
 try{ mergeRemoteClientTomb(_dbLoaded?.clientTomb); }catch(e){}
+// What changed while this page was closed — the shadow from the last session
+// against what localStorage just handed back.
+try{ apptWatchDiff('açılış (localStorage yüklendi)'); }catch(e){}
 // The %10 reactivation offer is no longer run — clear it off anything loaded
 // from disk, including an old backup that still carries it.
 try{ stripReactOffer(clients); }catch(e){}
@@ -15402,6 +15559,7 @@ function rdnsImportData(input){
           });
         }catch(e){}
         appointments = _db.appointments || [];
+        try{ apptWatchDiff('yedek geri yükleme', {by:'yedek dosyası '+(backup.exportedAt||'?')}); }catch(e){}
         payments     = _db.payments     || [];
       }
       dtState = dtLoadState();
