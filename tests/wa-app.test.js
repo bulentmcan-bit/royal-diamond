@@ -28,6 +28,10 @@ if (i0 < 0 || i1 <= i0) { console.error('✗ WA-SLICE markers not found in index
 const slice = html.slice(i0, i1);
 const npMatch = html.match(/function normalizeWaPhone\(phone\)\{[\s\S]*?\n\}/);
 if (!npMatch) { console.error('✗ normalizeWaPhone not found in index.html'); process.exit(1); }
+// The covered-row label lives outside the slice (it is render code) but
+// reads rdWaNeedsR1 from inside it — pulled in the same way.
+const r24Match = html.match(/function r24AutoHtml\(g\)\{[\s\S]*?\n\}/);
+if (!r24Match) { console.error('✗ r24AutoHtml not found in index.html'); process.exit(1); }
 
 let pass = 0, fail = 0;
 function is(actual, expected, what) {
@@ -64,7 +68,7 @@ function makeDevice() {
     },
   };
   vm.createContext(ctx);
-  vm.runInContext(npMatch[0] + '\n' + slice, ctx, { filename: 'wa-slice.js' });
+  vm.runInContext(npMatch[0] + '\n' + slice + '\n' + r24Match[0], ctx, { filename: 'wa-slice.js' });
   return { ctx, store, calls, toasts, touched: () => touched, saved: () => saved };
 }
 
@@ -531,6 +535,28 @@ function makeDevice() {
     await tick(); await tick();
     is(d.ctx.appointments[0].wa.x, ['U24'], 'cancel moves the uids to the killed trace');
     is(d.ctx.appointments[0].wa.c, 'MUC', 'and wa.c survives the cancel too');
+  }
+
+  console.log('9. the covered row labels a lone uid by the rule that chose it');
+  {
+    const d = makeDevice();
+    d.ctx.cObj = () => ({ id: 7, name: 'Ayşe Yılmaz', phone: '05338669933' });
+    const label = a => {
+      const html = vm.runInContext('r24AutoHtml(' + JSON.stringify([a]) + ')', d.ctx);
+      return (html.match(/Otomatik · ([^<]*)</) || [])[1];
+    };
+    is(label({ id: 1, clientId: 7, datetime: '2026-09-15T14:00', wa: { u: ['U24'] } }),
+       '24 saat kala planlandı (gönderim 14:00)',
+       'a 14:00 start with one uid: the call covers the 2-hour, so this is the 24-hour reminder');
+    is(label({ id: 2, clientId: 7, datetime: '2026-09-15T08:50', wa: { u: ['U24'] } }),
+       '24 saat kala planlandı (gönderim 08:50)',
+       '08:50 is the first start the call covers — still the 24-hour one');
+    is(label({ id: 3, clientId: 7, datetime: '2026-09-15T08:00', wa: { u: ['U1'] } }),
+       '2 saat kala planlandı (gönderim 06:00)',
+       'an 08:00 start with one uid is the same-day case: only the 2-hour went');
+    is(label({ id: 4, clientId: 7, datetime: '2026-09-15T14:00', wa: { u: ['U24', 'U1'] } }),
+       '24s ve 2s planlandı (gönderim 14:00 ve 12:00)',
+       'two uids keep the combined label untouched');
   }
 
   console.log('');

@@ -11508,6 +11508,12 @@ function r24AutoCovered(g){
 }
 // The covered row: state instead of a button. The 24-hour send fires at the
 // appointment's own clock time a day earlier; the 2-hour one two hours before.
+// A single uid is NOT "the 2-hour one" by default any more: since the desk
+// call covers every start from 08:50 on, the worker skips r1 for those and
+// the lone uid is the 24-hour reminder. rdWaNeedsR1 is the same rule the
+// worker applied when it chose, so the label reads what really stands. Only
+// an early start (08:00, 08:30) with one uid is the same-day case where the
+// 24-hour moment had already passed and the 2-hour one went alone.
 function r24AutoHtml(g){
   const c = cObj(g[0].clientId);
   const times = g.map(a=>{
@@ -11516,9 +11522,12 @@ function r24AutoHtml(g){
     const t2 = new Date(t.getTime()-2*3600e3);
     const hhmm2 = String(t2.getHours()).padStart(2,'0')+':'+String(t2.getMinutes()).padStart(2,'0');
     const both = a.wa.u.length>1;
+    const r1Only = !both && (typeof rdWaNeedsR1==='function' ? rdWaNeedsR1(hhmm) : true);
     return (g.length>1?hhmm+' — ':'') + (both
       ? '24s ve 2s planlandı (gönderim '+hhmm+' ve '+hhmm2+')'
-      : '2 saat kala planlandı (gönderim '+hhmm2+')');
+      : r1Only
+        ? '2 saat kala planlandı (gönderim '+hhmm2+')'
+        : '24 saat kala planlandı (gönderim '+hhmm+')');
   }).join(' · ');
   const timeStr = new Date(g[0].datetime).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
   return `<div class="r24-item" style="opacity:0.8;">
