@@ -51,10 +51,12 @@
   .icon-btn.start{border-color:var(--gold); color:var(--gold); font-weight:600;}
   .icon-btn:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
 
+  /* The columns follow the roster: two on the board and each takes half the
+     screen, three take a third, one takes all of it — buildBoard() writes the
+     count into --cols, never more than three across. A phone keeps one column. */
   main{flex:1; display:grid; gap:clamp(10px,1.6vmin,22px); min-height:0;
        grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);}
-  @media(min-width:640px){ main{grid-template-columns:repeat(2,1fr);} }
-  @media(min-width:1100px){ main{grid-template-columns:repeat(3,1fr);} }
+  @media(min-width:640px){ main{grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));} }
 
   .tile{
     position:relative; display:flex; flex-direction:column; justify-content:space-between;
@@ -68,33 +70,34 @@
   .t-name{font-family:'Cormorant Garamond',serif; font-size:clamp(22px,3.4vmin,42px); line-height:1;}
   .t-job{font-size:clamp(12px,1.7vmin,20px); color:var(--gold); letter-spacing:.06em;
     text-transform:uppercase;}
-  /* Her picture, under her name — across a busy room a face lands before a word
-     does, so on the wall boards it is a portrait rather than a thumbnail: big
-     enough to know who a tile belongs to from the doorway. The three photographs
-     arrived in three different shapes, so a fixed upright frame is what they are
-     cropped into, biased to the top so the crop takes the hem and never the chin.
-
-     It is centred under the name, which puts the face, the countdown and the
-     footer in one column down the middle of the tile.
-
-     The photograph is the part that gives way. On a short screen there may not be
-     room for all of it, and between a face and the number she is working to, the
-     number wins: `.t-mid` below holds back enough height for the countdown at its
-     full size, and the picture shrinks into whatever is left (cropping, never
-     squashing, because it is a cover fit). That is the reverse of how this
-     started, when the picture was small enough that the middle could yield
-     instead. */
-  .t-photo{flex:0 1 auto; min-height:0; display:block; align-self:center;
-    margin-top:clamp(6px,1.2vmin,14px);
-    width:clamp(112px,27vmin,312px); height:clamp(150px,36vmin,416px);
-    object-fit:cover; object-position:50% 8%;
-    border-radius:16px; border:3px solid var(--gold-deep); background:#241B2F;}
-  /* min-height is the countdown's reserved seat: 10vmin is the size .t-time is
+  /* Her picture IS the tile. Across a busy room a face lands before a word does,
+     so the photograph fills the whole tile edge to edge — a cover fit, cropped
+     and never squashed, biased to the top so the crop takes the hem and never
+     the chin — and everything else is written on top of it. */
+  .t-photo{position:absolute; inset:0; z-index:0; width:100%; height:100%;
+    object-fit:cover; object-position:50% 8%; background:#241B2F;}
+  /* The scrim under the writing: a dark band beneath the name at the top and a
+     deeper one beneath the countdown and the footer at the bottom, so the words
+     read from the other side of the salon whatever the photograph is behind
+     them — a white blouse, a pale wall — while the face in the middle is left
+     alone. The state washes still paint the tile itself; with a photograph
+     over them they are simply behind it, and a tile whose picture is missing
+     shows them as before. */
+  .tile::after{content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
+    background:linear-gradient(to bottom,
+      rgba(10,7,14,.80) 0%, rgba(10,7,14,.34) 15%, rgba(10,7,14,0) 30%,
+      rgba(10,7,14,0) 46%, rgba(10,7,14,.66) 64%, rgba(10,7,14,.94) 100%);}
+  .t-head, .t-mid, .t-foot{position:relative; z-index:2;}
+  .t-flag, .bar{z-index:2;}
+  .t-name, .t-job, .t-free, .t-foot, .t-flag{text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 14px rgba(0,0,0,.7);}
+  /* The countdown sits at the foot of the picture, on the darkest part of the
+     scrim, and min-height is its reserved seat: 10vmin is the size .t-time is
      clamped to, so the number is never the thing that has to give. */
   .t-mid{display:flex; align-items:center; justify-content:center; gap:clamp(6px,1.4vmin,18px);
-    flex:1 1 auto; min-height:clamp(40px,10vmin,120px);}
+    flex:0 0 auto; margin-top:auto; min-height:clamp(40px,10vmin,120px);}
   .t-time{font-family:'Cormorant Garamond',serif; font-variant-numeric:tabular-nums;
-    font-size:clamp(40px,10vmin,120px); line-height:.95;}
+    font-size:clamp(40px,10vmin,120px); line-height:.95;
+    text-shadow:0 3px 12px rgba(0,0,0,.95);}
   .t-mark{font-size:clamp(34px,8vmin,96px); line-height:1;}
   .t-free{color:var(--dim); font-size:clamp(15px,2.2vmin,26px);}
   .t-foot{font-size:clamp(10px,1.35vmin,15px); color:var(--dim); letter-spacing:.1em;
@@ -107,7 +110,7 @@
     box-shadow:0 0 34px rgba(var(--green-rgb),.42), 0 0 96px rgba(var(--green-rgb),.20);
   }
   .tile.run .t-time{color:var(--green-lit);
-    text-shadow:0 0 12px rgba(var(--green-rgb),.95), 0 0 40px rgba(var(--green-rgb),.55);}
+    text-shadow:0 0 12px rgba(var(--green-rgb),.95), 0 0 40px rgba(var(--green-rgb),.55), 0 3px 12px rgba(0,0,0,.95);}
 
   .tile.warn{
     background:linear-gradient(158deg, rgba(var(--amber-rgb),.28), rgba(var(--amber-rgb),.22) 58%,
@@ -116,7 +119,7 @@
     box-shadow:0 0 34px rgba(var(--amber-rgb),.45), 0 0 96px rgba(var(--amber-rgb),.22);
   }
   .tile.warn .t-time{color:var(--amber-lit);
-    text-shadow:0 0 12px rgba(var(--amber-rgb),.95), 0 0 40px rgba(var(--amber-rgb),.58);}
+    text-shadow:0 0 12px rgba(var(--amber-rgb),.95), 0 0 40px rgba(var(--amber-rgb),.58), 0 3px 12px rgba(0,0,0,.95);}
 
   .tile.over{
     background:linear-gradient(158deg, rgba(var(--red-rgb),.30), rgba(var(--red-rgb),.22) 58%,
@@ -125,7 +128,7 @@
     animation:pulse 2.2s ease-in-out infinite;
   }
   .tile.over .t-time{color:var(--red-lit);
-    text-shadow:0 0 14px rgba(var(--red-rgb),1), 0 0 44px rgba(var(--red-rgb),.62);}
+    text-shadow:0 0 14px rgba(var(--red-rgb),1), 0 0 44px rgba(var(--red-rgb),.62), 0 3px 12px rgba(0,0,0,.95);}
 
   .tile.crown{
     background:linear-gradient(158deg, rgba(var(--crown-rgb),.26), rgba(var(--crown-rgb),.22) 58%,
@@ -134,7 +137,7 @@
     box-shadow:0 0 34px rgba(var(--crown-rgb),.44), 0 0 100px rgba(var(--crown-rgb),.22);
   }
   .tile.crown .t-time{color:var(--crown-lit); font-size:clamp(20px,3.2vmin,38px);
-    text-shadow:0 0 12px rgba(var(--crown-rgb),.9), 0 0 36px rgba(var(--crown-rgb),.5);}
+    text-shadow:0 0 12px rgba(var(--crown-rgb),.9), 0 0 36px rgba(var(--crown-rgb),.5), 0 3px 12px rgba(0,0,0,.95);}
   .tile.crown .t-mark{filter:drop-shadow(0 0 16px rgba(var(--crown-rgb),.85));}
 
   .tile.sad{
@@ -144,11 +147,12 @@
     box-shadow:0 0 30px rgba(var(--red-rgb),.34), 0 0 84px rgba(var(--red-rgb),.15);
   }
   .tile.sad .t-time{color:var(--red-lit); font-size:clamp(20px,3.2vmin,38px);
-    text-shadow:0 0 12px rgba(var(--red-rgb),.9), 0 0 36px rgba(var(--red-rgb),.5);}
+    text-shadow:0 0 12px rgba(var(--red-rgb),.9), 0 0 36px rgba(var(--red-rgb),.5), 0 3px 12px rgba(0,0,0,.95);}
   /* she is on the floor, but on the other kind of job — shown so nobody starts
      a second one for her by mistake */
   .tile.elsewhere{opacity:.62; border-style:dashed;}
-  .tile.elsewhere .t-time{color:var(--dim); font-size:clamp(26px,4.4vmin,52px);}
+  .tile.elsewhere .t-time{color:var(--dim); font-size:clamp(26px,4.4vmin,52px);
+    text-shadow:0 3px 12px rgba(0,0,0,.95);}
   /* The over-limit pulse carries the outer glow as well, because the animation
      owns box-shadow on this tile — it breathes between lit and brighter still,
      never down to nothing. */
@@ -365,6 +369,9 @@ if (!AREA) {
 function buildBoard(){
   const host = $('board');
   host.innerHTML = '';
+  // Two on the board and each takes half the screen; three take a third; one
+  // takes all of it. Never more than three across, never fewer than one.
+  host.style.setProperty('--cols', String(Math.max(1, Math.min(BOARD_OPS.length, 3))));
   BOARD_OPS.forEach(o => {
     const el = document.createElement('div');
     el.className = 'tile free';
