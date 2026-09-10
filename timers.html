@@ -293,6 +293,11 @@ const firebaseConfig = {
    ========================================================================== */
 
 const C = window.CROWN;
+// The board's own roster: everyone on the books except a technician marked
+// hiddenOnBoard — she has left, stays in the system for her pay and history,
+// and simply gets no tile here. Derived once; nothing on this page reads
+// C.operators directly.
+const BOARD_OPS = C.operators.filter(o => !o.hiddenOnBoard);
 // Last known slot setting, so a board that opens before Firebase answers — or
 // on a morning the wifi is slow — still counts down on the right limit rather
 // than falling back to the default and taking a crown off somebody unfairly.
@@ -360,7 +365,7 @@ if (!AREA) {
 function buildBoard(){
   const host = $('board');
   host.innerHTML = '';
-  C.operators.forEach(o => {
+  BOARD_OPS.forEach(o => {
     const el = document.createElement('div');
     el.className = 'tile free';
     el.tabIndex = 0;
@@ -399,7 +404,7 @@ function paint(){
   const t = now();
   let running = 0, late = 0, crowns = 0;
 
-  C.operators.forEach(o => {
+  BOARD_OPS.forEach(o => {
     const rec = ops[o.key] || {}, ui = tiles[o.key];
     const cur = rec.current, last = (rec.last || {})[AREA];
     ui.el.className = 'tile' + (ui.el.classList.contains('dpad') ? ' dpad' : '');
@@ -505,8 +510,8 @@ function tapTile(key){
 // The header's ＋ Start: pick the woman first, then the kind of job.
 function startSheet(){
   unlockAudio();
-  const free = C.operators.filter(o => !(ops[o.key] || {}).current);
-  const busy = C.operators.filter(o =>  (ops[o.key] || {}).current);
+  const free = BOARD_OPS.filter(o => !(ops[o.key] || {}).current);
+  const busy = BOARD_OPS.filter(o =>  (ops[o.key] || {}).current);
   openSheet(`
     <h2>Start a job</h2>
     <p class="sub">Who is starting?</p>
@@ -923,7 +928,7 @@ function tapFinished(key, type){
    Arrows walk the tiles (or the buttons in an open sheet), Back closes. ----- */
 function dpadTargets(){
   if (!$('veil').classList.contains('hidden')) return [...$('sheet').querySelectorAll('input, button')];
-  return AREA ? C.operators.map(o => tiles[o.key].el) : [];
+  return AREA ? BOARD_OPS.map(o => tiles[o.key].el) : [];
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack') {
@@ -1354,7 +1359,7 @@ if ($('soundBtn')) $('soundBtn').classList.add('on');
    can be configured with 'Helen' or 'helen'.
    ------------------------------------------------------------------------- */
 window.CrownBoard = {
-  operators: () => C.operators.map(o => o.name),
+  operators: () => BOARD_OPS.map(o => o.name),
   start: startJob,
   finish: finishJob,
   cancel: cancelJob,

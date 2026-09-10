@@ -24,6 +24,13 @@
 
    A technician who has left: take her line out and her tiles stop appearing.
    The sessions she already earned stay in Firebase for the commission.
+
+   A technician who has left but must STAY on the books — her salary page,
+   the takings history, her final pay all still read her line — keeps her
+   line and gets `hiddenOnBoard: true` on it instead. That flag means one
+   thing: keep her in the system, keep her off the wall board. The TV boards
+   (timers.html) skip her tile; the main app, the booking page and every
+   salary screen still see her exactly as before.
    ========================================================================== */
 window.CROWN = {
 
@@ -40,7 +47,7 @@ window.CROWN = {
        that month from the date onward earn again; if the paused stretch must
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
-    { key:'hannah', name:'Hannah', photo:'op-hannah.png',
+    { key:'hannah', name:'Hannah', photo:'op-hannah.png', hiddenOnBoard: true,
       commissionPaused: true, commissionPausedSince: '2026-08-01' },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
   ],
