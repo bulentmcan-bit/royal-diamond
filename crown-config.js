@@ -125,6 +125,46 @@ window.CROWN = {
      at the worker's end. */
   openTime: '08:00',
 
+  /* THE LADDER OF START TIMES — the one place it is written.
+     Every job is 60 minutes (slotDefault above), so a start on the half hour
+     strands the hour after it: a 10:30 start blocks 11:00 and leaves
+     11:30–12:00 too short for anybody. So a NEW start is offered on the whole
+     hour only, from `first` to `last` — with one exception: from
+     `lateHalfFrom` on, a :30 start is offered as well, because at the end of
+     the day it strands nothing.
+     This is what may be OFFERED, never what exists: the diary's columns, the
+     free-time finder, the customer's booking page, the availability the
+     salon publishes and the Gap Report all read it, and a booking already
+     sitting on a :30 stays exactly where it is and shows exactly as before.
+     If the job length ever stops being 60 minutes, change `step` here and
+     nothing else. */
+  starts: { first:'08:00', last:'18:00', step:60, lateHalfFrom:'17:30' },
+  hmToMin: function(hm){ var p = String(hm || '').split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); },
+  minToHm: function(m){ var p = function(n){ return (n < 10 ? '0' : '') + n; }; return p(Math.floor(m / 60)) + ':' + p(m % 60); },
+  // May a NEW booking be offered starting at this minute of the day?
+  canStartAt: function(mins){
+    var s = this.starts, m = Number(mins);
+    var first = this.hmToMin(s.first), last = this.hmToMin(s.last);
+    if (isNaN(m) || m < first || m > last) return false;
+    if ((m - first) % s.step === 0) return true;
+    return m % 30 === 0 && m >= this.hmToMin(s.lateHalfFrom);
+  },
+  // Every start that may be offered, as minutes of the day, first to last.
+  startLadder: function(){
+    var out = [], s = this.starts, a = this.hmToMin(s.first), b = this.hmToMin(s.last);
+    for (var m = a; m <= b; m += 30) if (this.canStartAt(m)) out.push(m);
+    return out;
+  },
+  // The same ladder as 'HH:MM' — what the pages print and publish.
+  startLadderHM: function(){ var self = this; return this.startLadder().map(function(m){ return self.minToHm(m); }); },
+  // The first offered start at or after this minute; null when the day has none left.
+  nextStartFrom: function(mins){
+    var l = this.startLadder(), m = Number(mins) || 0;
+    for (var i = 0; i < l.length; i++) if (l[i] >= m) return l[i];
+    return null;
+  },
+
+
   /* Is the salon shut on this day? Takes a Date or anything that starts
      'YYYY-MM-DD' (a date key, a datetime string). Unreadable INPUT counts
      as open — a parse failure must never grey the whole calendar out. But a

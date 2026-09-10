@@ -2201,16 +2201,13 @@
       return !!(window.CROWN&&CROWN.isClosedDay&&CROWN.isClosedDay(dt));
     }catch(e){return dt.getDay()===0;}
   }
-  const _obGrid=(firstMin,lastMin,stepMin)=>{
-    const a=[];
-    for(let m=firstMin;m<=lastMin;m+=stepMin) a.push(String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'));
-    return a;
-  };
-  // 08:00 … 18:00 every half hour. The last start stays 18:00, exactly where it
-  // was before: a 90-minute booking taken then still runs past closing, which is
-  // the salon's long-standing habit and not something this change touches.
-  const RD_OB_STEP=30;
-  const RD_OB_UNION=_obGrid(8*60, 18*60, RD_OB_STEP);
+  // The starts a customer may be offered: the ladder in crown-config.js
+  // (`starts` — whole hours 08:00 … 18:00, plus the half hours from 17:30),
+  // read when called because the config loads further down this file. A
+  // 60-minute job is what every start is measured against: a time is busy
+  // for her when a job starting there would run into one she already has.
+  function _obUnion(){ return rdStartLadderHM(); }
+  const RD_OB_JOB=60;
   // The roster comes from crown-config.js, which loads further down this file —
   // so it is read when called, never at parse time — and it is asked FOR A DAY:
   // rosterOn(dateKey) leaves a technician out from the day she left, so she is
@@ -2255,7 +2252,7 @@
   function _obNearest(grid,mins,tol){let nearest=null,minDiff=Infinity;grid.forEach(s=>{const[h,m]=s.split(':').map(Number);const d=Math.abs(mins-(h*60+m));if(d<minDiff){minDiff=d;nearest=s;}});return minDiff<=tol?nearest:null;}
   function _obDurOf(a){var d=parseInt(a.duration);if(d)return d;try{var s2=staffSvcDur(a.staff,a.service);if(s2)return s2;}catch(e){}return 60;}
   function _obDayMaps(dateKey){
-    const total={},byTech={},spans={};RD_OB_UNION.forEach(s=>total[s]=0);
+    const total={},byTech={},spans={},U=_obUnion();U.forEach(s=>total[s]=0);
     _obTechs(dateKey).forEach(t=>{byTech[t]={};spans[t]=[];});
     (appointments||[]).forEach(a=>{
       if(!a||a.status==='cancelled')return;
@@ -2267,11 +2264,11 @@
       // says how long a NEW booking takes, and never rewrites an old one.
       const st=dt.getHours()*60+dt.getMinutes(), en=st+_obDurOf(a);
       spans[tech].push([st,en]);
-      RD_OB_UNION.forEach(slot=>{
+      U.forEach(slot=>{
         const sm=_obMins(slot);
-        // Busy is tracked at every half hour she overlaps, which is what the
-        // customer page reads to grey a time out.
-        if(sm<en && sm+RD_OB_STEP>st && !byTech[tech][slot]){
+        // Busy is tracked at every start a job of hers would collide with,
+        // which is what an older customer page reads to grey a time out.
+        if(sm<en && sm+RD_OB_JOB>st && !byTech[tech][slot]){
           byTech[tech][slot]=true;
           total[slot]=(total[slot]||0)+1;
         }
@@ -2296,13 +2293,13 @@
           // rather than bookable.
           if(rdIsClosedDay(d)){
             const slots={_closed:1};
-            RD_OB_UNION.forEach(s=>{slots[s]={b:_obCap(s,key),c:_obCap(s,key)};});
+            _obUnion().forEach(s=>{slots[s]={b:_obCap(s,key),c:_obCap(s,key)};});
             days[key]=slots;
             continue;
           }
           const maps=_obDayMaps(key);
           const slots={};
-          RD_OB_UNION.forEach(s=>{
+          _obUnion().forEach(s=>{
             const t={}, a={};
             _obTechs(key).forEach(k=>{
               t[k]=(maps.byTech[k]&&maps.byTech[k][s])?1:0;  // busy at this half hour
@@ -2354,7 +2351,7 @@
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
       const _reqDur=staffPick?_obSpacing(staffPick):60;
-      if(!RD_OB_UNION.includes(req.time)||booked>=cap||!staffPick){
+      if(!_obUnion().includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
         try{toast('🌐','ONLINE TALEP — SAAT DOLU ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama saat dolu. Tel: '+(req.phone||'—')+' — alternatif için arayın.','r');}catch(e){}
@@ -5840,6 +5837,22 @@ function rdStaffOn(date){
   }catch(e){}
   return ['Helen','Lissa'];
 }
+// The ladder of start times that may be OFFERED — crown-config.js `starts`,
+// the one place the rule is written: whole hours from opening to the last
+// start, plus the half hours from 17:30, because a 60-minute job started on
+// a half hour strands the hour after it. Minutes of the day, first to last;
+// read at call time (the config loads further down the file), and before it
+// is there the same rule inline, so nothing offers a stranding start
+// meanwhile. This says what may be offered, never what exists — a booking
+// already sitting on a :30 is read exactly as it stands everywhere.
+function rdStartLadder(){
+  try{ const C=window.CROWN; if(C&&C.startLadder) return C.startLadder(); }catch(e){}
+  const out=[]; for(let m=8*60;m<=18*60;m+=30){ if(m%60===0||m>=17*60+30) out.push(m); } return out;
+}
+function rdStartLadderHM(){ const p=n=>String(n).padStart(2,'0'); return rdStartLadder().map(m=>p(Math.floor(m/60))+':'+p(m%60)); }
+function rdCanStartAt(m){ return rdStartLadder().indexOf(m)!==-1; }
+// The first offered start at or after this minute — null when none is left.
+function rdNextStart(m){ const l=rdStartLadder(); for(let i=0;i<l.length;i++){ if(l[i]>=m) return l[i]; } return null; }
 const STAFF_COLORS = {
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
   Zara:'var(--lavender)', Saeideh:'var(--orange)'
@@ -5869,7 +5882,9 @@ function renderDashGrid(){
 
   const staffList = rdStaffOn(dashGridDate);   // who works on the day shown
   const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a'};
-  const BOXES = 25;
+  // How many starts the day holds for her — the ladder's rungs — so "free" is
+  // starts she could still be given, not boxes on a half-hour grid.
+  const BOXES = rdStartLadder().length;
 
   const now = new Date();
   const isToday = dashGridDate.toDateString() === now.toDateString();
@@ -8756,16 +8771,17 @@ function renderGapReport(){
   const selDate = dateInput.value;
 
   const TECHS = ['Helen','Hannah','Lissa'];
-  // Duration-aware grids: Helen hourly; Hannah & Lissa in 30-min steps so real
-  // service times (Lissa pedicure 30dk, manikür 75dk; Hannah manikür 90dk…) show truthfully
-  const _mk=(startH,endH,step)=>{const out=[];for(let m=startH*60;m<=endH*60;m+=step){out.push(pad(Math.floor(m/60))+':'+pad(m%60));}return out;};
-  const GRID = {
-    'Helen': _mk(8,18,60),
-    'Hannah': _mk(8,18.5,30),
-    'Lissa': _mk(8,18.5,30)
-  };
-  const SLOTLEN = {'Helen':60,'Hannah':30,'Lissa':30};
-  const SLOTS = [...new Set(Object.values(GRID).flat())].sort();
+  // One grid for everybody: the ladder of starts that may be offered
+  // (crown-config `starts` — whole hours, and the half hours from 17:30), so
+  // no row exists that a 60-minute job could not be given. A row is booked
+  // for her when a job could not START there — which is how a booking already
+  // sitting on a :30 shows across both hours it touches, without ever being
+  // moved. The half-hour rows that used to sit between the hours, and the
+  // "1 GAP" every :30 start left in them, are gone with them.
+  const JOB = (window.CROWN && CROWN.slotDefault) || 60;
+  const SLOTS = rdStartLadderHM();
+  const GRID = {}, SLOTLEN = {};
+  TECHS.forEach(t => { GRID[t] = SLOTS; SLOTLEN[t] = JOB; });
   const AVG_REV = 1700; // ₺ per hour of chair time
 
   // Build booked map: slot -> tech -> client name.
@@ -9434,18 +9450,18 @@ function rdCkCalOpen(a){
   grid.innerHTML=html;
   document.getElementById('rbkCalOv').style.display='flex';
 }
-// A technician's free start times on a day — the same working grids the Gap
-// Report draws (Helen hourly 8–18, Hannah & Lissa half-hourly 8–18:30; keep
-// in step if those ever change), minus every hour her existing bookings
-// cover. Pure local arithmetic: the times appear the instant a day is tapped.
+// A technician's free start times on a day — the ladder every screen offers
+// (crown-config `starts`: whole hours 08:00–18:00 and the half hours from
+// 17:30, the same rungs the Gap Report draws), minus every start her existing
+// bookings would collide with. Pure local arithmetic: the times appear the
+// instant a day is tapped.
 function rbFreeTimes(staff, ds, dur){
   try{
     dur=Math.min(60,parseInt(dur)||60);
     const s=String(staff||'').toLowerCase();
     const tech=['Helen','Hannah','Lissa'].find(t=>s.includes(t.toLowerCase()));
     if(!tech) return null;   // unknown column: no grid to offer
-    const mk=(a,b,st)=>{const o=[];for(let m=a*60;m<=b*60;m+=st)o.push(m);return o;};
-    const grid=(tech==='Helen')?mk(8,18,60):mk(8,18.5,30);
+    const grid=rdStartLadder();
     const busy=(appointments||[]).filter(a=>{
       if(!a||a.status==='cancelled') return false;
       if(String(a.datetime||'').slice(0,10)!==ds) return false;
@@ -12528,16 +12544,15 @@ function rdDashTiles(){
 function rdGapEmptyToday(){
   try{
     const TECHS=['Helen','Hannah','Lissa'];
-    const LEN={Helen:60,Hannah:30,Lissa:30};
-    const mk=(s,e,st)=>{const o=[];for(let m=s*60;m<=e*60;m+=st)o.push(m);return o;};
-    const G={Helen:mk(8,18,60),Hannah:mk(8,18.5,30),Lissa:mk(8,18.5,30)};
+    const JOB=(window.CROWN&&CROWN.slotDefault)||60;
+    const L=rdStartLadder();   // the same rungs the Gap Report draws
     const t=todayStr(); const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
     let empty=0;
     TECHS.forEach(tech=>{
       const appts=(appointments||[]).filter(a=>a&&a.status!=='cancelled'&&apptDayStr(a)===t&&String(a.staff||'').toLowerCase().includes(tech.toLowerCase()));
-      G[tech].forEach(m=>{
+      L.forEach(m=>{
         if(m<=nowMin) return;
-        const busy=appts.some(a=>{const d=new Date(a.datetime);const s=d.getHours()*60+d.getMinutes();const dur=parseInt(a.duration)||60;return m<s+dur&&m+LEN[tech]>s;});
+        const busy=appts.some(a=>{const d=new Date(a.datetime);const s=d.getHours()*60+d.getMinutes();const dur=parseInt(a.duration)||60;return m<s+dur&&m+JOB>s;});
         if(!busy) empty++;
       });
     });
@@ -17859,9 +17874,18 @@ window.addEventListener('load',function(){
     return out;
   }
 
+  // The start offered inside a window is the first rung of the ladder in it
+  // (crown-config `starts`): a window opening at 10:30 offers 11:00, and only
+  // when the job still fits from there — never a half hour that would strand
+  // the hour after it.
   function fits(win, t, dur){
-    var w = (win[t]||[]).find(function(w){ return w[1]-w[0] >= dur; });
-    return w ? fmt(w[0]) : null;
+    var hit = null;
+    (win[t]||[]).some(function(w){
+      var s = rdNextStart(w[0]);
+      if(s !== null && w[1] - s >= dur){ hit = s; return true; }
+      return false;
+    });
+    return hit === null ? null : fmt(hit);
   }
 
   function dayLabel(d){
@@ -18609,14 +18633,19 @@ window.addEventListener('load',function(){
       }).sort(function(x,y){ return x[0]-y[0]; });
 
       // gap = randevular arası boşluk, close = kapanış, min = en az pencere
+      // A window's start is snapped UP to the ladder (crown-config `starts`):
+      // a booking ending at 10:30 opens a window whose first offered start is
+      // 11:00, not 10:30 — a start that would strand the hour after it is
+      // never shown, here or in the column below.
       function firstWindow(gap, close, min){
-        let cur = from;
+        let cur = rdNextStart(from);
         for(let i=0;i<busy.length;i++){
+          if(cur === null) return null;
           const b = busy[i];
           if(b[0] - gap - cur >= min) return {slot:cur, span:b[0]-gap-cur};
-          cur = Math.max(cur, b[1] + gap);
+          cur = rdNextStart(Math.max(cur, b[1] + gap));
         }
-        if(close - cur >= min) return {slot:cur, span:close-cur};
+        if(cur !== null && close - cur >= min) return {slot:cur, span:close-cur};
         return null;
       }
 
@@ -18725,14 +18754,17 @@ window.addEventListener('load',function(){
       });
       if(CLOSE - cur >= MINSLOT) wins.push([cur, CLOSE]);
 
-      // her pencerenin başlangıcını göster (uzun pencerede ara başlangıçlar da)
+      // Every rung of the ladder that falls inside a window — whole hours, and
+      // the late half hours, from crown-config's `starts`. A window that opens
+      // at 10:30 (a booking that ends there) offers 11:00, never 10:30: a start
+      // on the half hour would strand the hour after it.
       const step = _stepFor(tech);
       let out = [];
       wins.forEach(function(w){
-        for(let t = w[0]; t + MINSLOT <= w[1]; t += step){
-          if(t >= from) out.push({ mins:t, hm:_hm(t), span:(w[1]-t) });
-          if(out.length > 40) break;
-        }
+        rdStartLadder().forEach(function(t){
+          if(t < w[0] || t + MINSLOT > w[1] || t < from || out.length > 40) return;
+          out.push({ mins:t, hm:_hm(t), span:(w[1]-t) });
+        });
       });
 
       // The late pair, settled on what she is already starting.
@@ -18861,16 +18893,18 @@ window.addEventListener('load',function(){
     const list=only?[only]:rdStaffOn(dayStr);
     const busy={}; list.forEach(function(t){ busy[t]=busyOf(t,dayStr); });
 
-    // tam istenen saatte uygun olanlar
-    const exact=list.filter(function(t){ return fitsAt(busy[t], want, dur); });
+    // tam istenen saatte uygun olanlar — a time that is not on the ladder
+    // (crown-config `starts`: whole hours, half hours from 17:30) is never an
+    // exact match, because it could not be offered; the nearest rungs follow.
+    const exact=rdCanStartAt(want) ? list.filter(function(t){ return fitsAt(busy[t], want, dur); }) : [];
 
-    // en yakın alternatifler
+    // en yakın alternatifler — every rung of the ladder that fits
     const alts=[];
     list.forEach(function(t){
-      for(let s=OPEN; s+dur<=CLOSE; s+=STEP){
-        if(s===want) continue;
+      rdStartLadder().forEach(function(s){
+        if(s===want || s+dur>CLOSE) return;
         if(fitsAt(busy[t], s, dur)) alts.push({t:t, s:s, diff:Math.abs(s-want)});
-      }
+      });
     });
     alts.sort(function(a,b){ return a.diff-b.diff || a.s-b.s; });
 

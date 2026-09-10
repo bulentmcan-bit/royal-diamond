@@ -407,14 +407,18 @@ function makeDevice() {
   console.log('11. checkout guards and the desk-side free times');
   {
     const mFree = html.match(/function rbFreeTimes\(staff, ds, dur\)\{[\s\S]*?\n\}/);
+    // The ladder of starts it offers (crown-config `starts`, Sep 2026) — pulled
+    // in with CROWN absent, so its inline copy of the rule answers, same as a
+    // page where crown-config failed to load.
+    const mLad = html.match(/function rdStartLadder\(\)\{[\s\S]*?\n\}/);
     const mBlk = html.match(/function rdIsBlocker\(clientId\)\{[\s\S]*?\n\}/);
     const mPrc = html.match(/function rdPriceConfirm\(p\)\{[\s\S]*?\n\}/);
-    if (!mFree || !mBlk || !mPrc) { fail++; console.log('  ✗ guard/flow functions not found'); }
+    if (!mFree || !mLad || !mBlk || !mPrc) { fail++; console.log('  ✗ guard/flow functions not found'); }
     else {
       const d = makeDevice();
       let confirms = [];
       d.ctx.confirm = q => { confirms.push(q); return false; };   // reception taps İptal
-      vm.runInContext(mFree[0] + '\n' + mBlk[0] + '\n' + mPrc[0]
+      vm.runInContext(mLad[0] + '\n' + mFree[0] + '\n' + mBlk[0] + '\n' + mPrc[0]
         + ';__free=rbFreeTimes;__blk=rdIsBlocker;__prc=rdPriceConfirm;', d.ctx);
       d.ctx.clients.push({ id: 90, name: 'KAPALI — Personel', phone: '' }, { id: 91, name: 'Ayşe', phone: '05338669933' });
       d.ctx.appointments.push(
@@ -424,10 +428,14 @@ function makeDevice() {
       const h = vm.runInContext('__free("Hannah","2026-09-03",60)', d.ctx);
       is(h.includes('10:00') || h.includes('10:30'), false, 'a booked hour blocks every start it overlaps');
       is(h.includes('09:00') && h.includes('14:00'), true, 'free starts offered — a CANCELLED booking blocks nothing');
-      is(h[0], '08:00', 'half-hourly grid starts at 08:00 for Hannah');
+      is(h[0], '08:00', 'the ladder starts at opening, 08:00');
+      is(h.includes('09:30') || h.includes('11:30'), false, 'no half-hour start before 17:30 — a 60-minute job there would strand the hour after it');
+      is(h.includes('17:30') && h.includes('18:00'), true, 'from 17:30 the half hour is offered again — at the end of the day it strands nothing');
+      is(h.includes('18:30'), false, 'the last start is 18:00');
+      is(h.length, 11, '12 rungs on the ladder, one taken by her 10:00');
       const he = vm.runInContext('__free("Helen","2026-09-03",60)', d.ctx);
       is(he.includes('09:00'), false, 'Helen loses her booked 09:00');
-      is(he.includes('09:30'), false, 'Helen is hourly — no half-hour starts exist');
+      is(he.includes('09:30'), false, 'Helen is on the same ladder — no half-hour starts before 17:30');
       is(vm.runInContext('__free("Nihal","2026-09-03",60)', d.ctx), null, 'no grid for an unknown column → null, not a guess');
       is(vm.runInContext('__blk(90)', d.ctx), true, 'KAPALI — Personel is the blocker');
       is(vm.runInContext('__blk(91)', d.ctx), false, 'a customer is not');
