@@ -2212,13 +2212,16 @@
   const RD_OB_STEP=30;
   const RD_OB_UNION=_obGrid(8*60, 18*60, RD_OB_STEP);
   // The roster comes from crown-config.js, which loads further down this file —
-  // so it is read when called, never at parse time. The fallback is the three
-  // names the booking page has always known, for the moment before it is there.
-  const RD_OB_FALLBACK_TECHS=['Helen','Hannah','Lissa'];
-  function _obTechs(){
+  // so it is read when called, never at parse time — and it is asked FOR A DAY:
+  // rosterOn(dateKey) leaves a technician out from the day she left, so she is
+  // never published as bookable again, while every earlier day still has her.
+  // The fallback is the pair still working, for the moment before it is there.
+  const RD_OB_FALLBACK_TECHS=['Helen','Lissa'];
+  function _obTechs(dateKey){
     try{
-      const ops=window.CROWN&&window.CROWN.operators;
-      if(ops&&ops.length) return ops.map(o=>o.name);
+      const C=window.CROWN;
+      if(C&&C.rosterOn) return C.rosterOn(dateKey).map(o=>o.name);
+      if(C&&C.operators&&C.operators.length) return C.operators.map(o=>o.name);
     }catch(e){}
     return RD_OB_FALLBACK_TECHS;
   }
@@ -2247,18 +2250,18 @@
   function _obDateKey(d){return d.getFullYear()+'-'+_obPad(d.getMonth()+1)+'-'+_obPad(d.getDate());}
   // Every technician can be offered every half hour now, so capacity is simply
   // how many of them there are — the same at 08:00 as at 18:00.
-  function _obCap(slot){return _obTechs().length;}
-  function _obTechOf(staff){if(!staff)return null;const s=String(staff).toLowerCase().trim();return _obTechs().find(t=>t.toLowerCase()===s)||null;}
+  function _obCap(slot,dateKey){return _obTechs(dateKey).length;}
+  function _obTechOf(staff,dateKey){if(!staff)return null;const s=String(staff).toLowerCase().trim();return _obTechs(dateKey).find(t=>t.toLowerCase()===s)||null;}
   function _obNearest(grid,mins,tol){let nearest=null,minDiff=Infinity;grid.forEach(s=>{const[h,m]=s.split(':').map(Number);const d=Math.abs(mins-(h*60+m));if(d<minDiff){minDiff=d;nearest=s;}});return minDiff<=tol?nearest:null;}
   function _obDurOf(a){var d=parseInt(a.duration);if(d)return d;try{var s2=staffSvcDur(a.staff,a.service);if(s2)return s2;}catch(e){}return 60;}
   function _obDayMaps(dateKey){
     const total={},byTech={},spans={};RD_OB_UNION.forEach(s=>total[s]=0);
-    _obTechs().forEach(t=>{byTech[t]={};spans[t]=[];});
+    _obTechs(dateKey).forEach(t=>{byTech[t]={};spans[t]=[];});
     (appointments||[]).forEach(a=>{
       if(!a||a.status==='cancelled')return;
       const dt=new Date(a.datetime);if(isNaN(dt))return;
       if(_obDateKey(dt)!==dateKey)return;
-      const tech=_obTechOf(a.staff);if(!tech||!spans[tech])return;
+      const tech=_obTechOf(a.staff,dateKey);if(!tech||!spans[tech])return;
       // Her real booked run, on the length the appointment was written with.
       // Existing bookings are read exactly as they stand — the 60/90 setting
       // says how long a NEW booking takes, and never rewrites an old one.
@@ -2293,7 +2296,7 @@
           // rather than bookable.
           if(rdIsClosedDay(d)){
             const slots={_closed:1};
-            RD_OB_UNION.forEach(s=>{slots[s]={b:_obCap(s),c:_obCap(s)};});
+            RD_OB_UNION.forEach(s=>{slots[s]={b:_obCap(s,key),c:_obCap(s,key)};});
             days[key]=slots;
             continue;
           }
@@ -2301,11 +2304,11 @@
           const slots={};
           RD_OB_UNION.forEach(s=>{
             const t={}, a={};
-            _obTechs().forEach(k=>{
+            _obTechs(key).forEach(k=>{
               t[k]=(maps.byTech[k]&&maps.byTech[k][s])?1:0;  // busy at this half hour
               a[k]=_obTechCanStart(k,s,maps)?1:0;            // free for her WHOLE length from here
             });
-            slots[s]={b:maps.total[s]||0,c:_obCap(s),t:t,a:a};
+            slots[s]={b:maps.total[s]||0,c:_obCap(s,key),t:t,a:a};
           });
           days[key]=slots;
         }
@@ -2342,12 +2345,12 @@
         return;
       }
       const maps=_obDayMaps(req.date);
-      const cap=_obCap(req.time);
+      const cap=_obCap(req.time,req.date);
       const booked=maps.total[req.time]||0;
       // The first technician who is free for her own whole length from this
       // start — the same 60 minutes for everyone now, but still read through
       // slotFor() so it is asked, not assumed.
-      const staffPick=_obTechs().find(t=>_obTechCanStart(t, req.time, maps))||'';
+      const staffPick=_obTechs(req.date).find(t=>_obTechCanStart(t, req.time, maps))||'';
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
       const _reqDur=staffPick?_obSpacing(staffPick):60;
@@ -5823,7 +5826,20 @@ function popStaffSel(){
 // ══════════════════════════════════════════════════════════════
 let dashGridDate = new Date();
 
-const STAFF_LIST = ['Helen','Hannah','Lissa'];
+// Who is WORKING on a day — asked of crown-config.js (rosterOn), so a
+// technician who has left drops out of the diary's columns from her leftOn
+// date and stays in every earlier day. Read at call time, the config loads
+// further down the file; before it is there, the pair still working. The
+// money screens (salary, Aylık, kesinti, avans, komisyon, kasa) keep their
+// own full lists and never ask this.
+function rdStaffOn(date){
+  try{
+    const C=window.CROWN;
+    if(C&&C.rosterOn) return C.rosterOn(date).map(function(o){ return o.name; });
+    if(C&&C.operators&&C.operators.length) return C.operators.map(function(o){ return o.name; });
+  }catch(e){}
+  return ['Helen','Lissa'];
+}
 const STAFF_COLORS = {
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
   Zara:'var(--lavender)', Saeideh:'var(--orange)'
@@ -5851,7 +5867,7 @@ function renderDashGrid(){
   const el = document.getElementById('dash-daily-grid');
   if(!el) return;
 
-  const staffList = ['Helen','Hannah','Lissa'];
+  const staffList = rdStaffOn(dashGridDate);   // who works on the day shown
   const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a'};
   const BOXES = 25;
 
@@ -5882,7 +5898,7 @@ function renderDashGrid(){
   // Sort appointments by time
   function sortByTime(a, b){ return new Date(a.datetime) - new Date(b.datetime); }
 
-  let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">';
+  let html = '<div style="display:grid;grid-template-columns:repeat('+staffList.length+',1fr);gap:10px;">';
 
   staffList.forEach(function(name){
     const col = staffColors[name] || '#7ecec4';
@@ -10971,7 +10987,7 @@ function renderDayGrid(){
   // Get active technicians who have appointments today, capped at MAX_TECHS
   const techSet = new Set(todayAppts.map(a=>a.staff));
   // Always show all staff even if no appointments (up to MAX_TECHS)
-  STAFF_LIST.forEach(s=>techSet.add(s));
+  rdStaffOn(new Date()).forEach(s=>techSet.add(s));
   const techs = [...techSet].slice(0, MAX_TECHS);
 
   const numCols = techs.length;
@@ -18792,7 +18808,8 @@ window.addEventListener('load',function(){
 /* ══ UYGUN SAAT BULUCU ══ */
 (function(){
   const OPEN=8*60, CLOSE=18*60+30, GAP=0, STEP=15;
-  const TECHS=['Helen','Hannah','Lissa'];
+  // No list of names here: who can be offered is rdStaffOn(day) — the roster
+  // for the day being searched, without a technician who had left by then.
 
   function _ap(){ try{ return appointments||[]; }catch(e){ return []; } }
   function _k(d){ const p=n=>String(n).padStart(2,'0');
@@ -18816,12 +18833,14 @@ window.addEventListener('load',function(){
   }
 
   window.rdOpenFinder = function(){
+    const d=(typeof dashGridDate!=='undefined'&&dashGridDate)?new Date(dashGridDate):new Date();
+    // The names offered are who is working on the day the finder opens on,
+    // rebuilt every time it opens.
     const st=document.getElementById('fnd-staff');
-    if(st && st.options.length<=1) TECHS.forEach(function(t){
-      const o=document.createElement('option'); o.value=t; o.textContent=t; st.appendChild(o); });
+    if(st){ st.innerHTML='<option value="">Farketmez</option>'; rdStaffOn(d).forEach(function(t){
+      const o=document.createElement('option'); o.value=t; o.textContent=t; st.appendChild(o); }); }
     const sv=document.getElementById('fnd-svc'), src=document.getElementById('a-service');
     if(sv && src && !sv.options.length) sv.innerHTML = src.innerHTML;
-    const d=(typeof dashGridDate!=='undefined'&&dashGridDate)?new Date(dashGridDate):new Date();
     const p=n=>String(n).padStart(2,'0');
     const dt=document.getElementById('fnd-date'); if(dt&&!dt.value) dt.value=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
     const tm=document.getElementById('fnd-time'); if(tm&&!tm.value){ const n=new Date(); tm.value=p(n.getHours())+':00'; }
@@ -18839,7 +18858,7 @@ window.addEventListener('load',function(){
 
     const dur=(typeof rdSvcDur==='function')?rdSvcDur(svc):60;
     const want=parseInt(timeStr.split(':')[0])*60+parseInt(timeStr.split(':')[1]);
-    const list=only?[only]:TECHS;
+    const list=only?[only]:rdStaffOn(dayStr);
     const busy={}; list.forEach(function(t){ busy[t]=busyOf(t,dayStr); });
 
     // tam istenen saatte uygun olanlar

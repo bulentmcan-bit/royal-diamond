@@ -31,6 +31,15 @@
    thing: keep her in the system, keep her off the wall board. The TV boards
    (timers.html) skip her tile; the main app, the booking page and every
    salary screen still see her exactly as before.
+
+   A technician who has left on a KNOWN DAY also gets `leftOn: 'YYYY-MM-DD'`.
+   From that day on she is no longer somebody who is working: the diary's
+   staff columns, the online booking availability and the free-time finder
+   ask `rosterOn(date)` below and she is not in the answer for that date or
+   any later one. Every earlier date still lists her, so her old bookings and
+   tills keep their column — and every screen that counts money (salary,
+   Aylık, kesinti, avans, komisyon, kasa) never asks rosterOn at all, so she
+   stays on all of those in full.
    ========================================================================== */
 window.CROWN = {
 
@@ -48,6 +57,7 @@ window.CROWN = {
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
     { key:'hannah', name:'Hannah', photo:'op-hannah.png', hiddenOnBoard: true,
+      leftOn: '2026-09-09',
       commissionPaused: true, commissionPausedSince: '2026-08-01' },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
   ],
@@ -327,6 +337,30 @@ window.CROWN = {
     return this.operators.filter(function(o){
       return o.key === k || o.name.toLowerCase() === k;
     })[0] || null;
+  },
+  // Who is WORKING on the day given — the roster minus anyone whose leftOn is
+  // on or before that day. `date` is 'YYYY-MM-DD' (a Date is accepted and read
+  // in local time); asked without one it answers for today. An operator with
+  // no leftOn is always in; one with leftOn is in for every day BEFORE it and
+  // out from that day on, so a past date keeps her column and a future one
+  // does not. This is the ONLY question the diary asks about who works; the
+  // money screens read `operators` whole and never come through here.
+  rosterOn: function(date){
+    var d;
+    if (date instanceof Date && !isNaN(date)) {
+      var p = function(n){ return (n < 10 ? '0' : '') + n; };
+      d = date.getFullYear() + '-' + p(date.getMonth() + 1) + '-' + p(date.getDate());
+    } else {
+      d = String(date || '').slice(0, 10);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      var t = new Date(), q = function(n){ return (n < 10 ? '0' : '') + n; };
+      d = t.getFullYear() + '-' + q(t.getMonth() + 1) + '-' + q(t.getDate());
+    }
+    return this.operators.filter(function(o){
+      var left = String(o.leftOn || '').slice(0, 10);
+      return !left || d < left;
+    });
   },
   // Does `who` earn NO commission on the day given? True only while her
   // commissionPaused flag is up AND the day is on or after the date it was
