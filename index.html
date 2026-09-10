@@ -17797,7 +17797,12 @@ window.addEventListener('load',function(){
    ══════════════════════════════════════════════════════════════ */
 (function(){
 
-  const FCL_TECHS  = ['Helen','Hannah','Lissa'];
+  // Who is working on a day — the same rdStaffOn the Gap Report and the
+  // diary's columns ask (crown-config rosterOn): a technician who has left
+  // has no windows to fill from her leftOn date, and keeps them on every
+  // earlier day. An appointment is matched to its technician by the roster
+  // of ITS OWN day, so one of hers from before she left is still hers.
+  function fclTechs(day){ return rdStaffOn(day); }
   const FCL_OPEN   = 8*60;      // 08:00
   const FCL_CLOSE  = 18*60+30;  // 18:30 — son randevu saati
   const FCL_NOTICE = 45;        // bugün için: müşterinin gelmesi için en az 45 dk
@@ -17822,7 +17827,7 @@ window.addEventListener('load',function(){
   }
   function techOf(a){
     var s = String(a.staff||'').toLowerCase();
-    return FCL_TECHS.find(function(t){ return s.indexOf(t.toLowerCase()) !== -1; }) || null;
+    return fclTechs(String(a.datetime||'').slice(0,10)).find(function(t){ return s.indexOf(t.toLowerCase()) !== -1; }) || null;
   }
   function apptKey(a){
     return (a.id!=null && a.id!=='') ? 'i'+a.id : 'k'+a.datetime+'|'+a.clientId+'|'+a.staff;
@@ -17852,7 +17857,8 @@ window.addEventListener('load',function(){
       ? Math.max(FCL_OPEN, now.getHours()*60 + now.getMinutes() + FCL_NOTICE)
       : FCL_OPEN;
     earliest = Math.ceil(earliest/15)*15;   // çeyrek saate yuvarla
-    var busy = {}; FCL_TECHS.forEach(function(t){ busy[t] = []; });
+    var techs = fclTechs(baseKey);
+    var busy = {}; techs.forEach(function(t){ busy[t] = []; });
 
     _appts().forEach(function(a){
       if(a.status === 'cancelled') return;
@@ -17864,7 +17870,7 @@ window.addEventListener('load',function(){
     });
 
     var out = {};
-    FCL_TECHS.forEach(function(t){
+    techs.forEach(function(t){
       var iv = busy[t].sort(function(x,y){ return x[0]-y[0]; });
       var res = [], cur = earliest;
       iv.forEach(function(w){
@@ -18037,7 +18043,8 @@ window.addEventListener('load',function(){
 
       // ── o günün boşluk özeti (teknisyen bazlı)
       var totalMins = 0;
-      var chips = FCL_TECHS.map(function(t){
+      var dayTechs = fclTechs(key(base));
+      var chips = dayTechs.map(function(t){
         var ws = win[t]||[];
         var mins = ws.reduce(function(s,w){ return s + (w[1]-w[0]); }, 0);
         if(!mins) return '';
@@ -18064,8 +18071,8 @@ window.addEventListener('load',function(){
           var same = t ? fits(win, t, dur) : null;
           var other = null, otherTech = null;
           if(!same){
-            for(var j=0;j<FCL_TECHS.length;j++){
-              var tt = FCL_TECHS[j]; if(tt===t) continue;
+            for(var j=0;j<dayTechs.length;j++){
+              var tt = dayTechs[j]; if(tt===t) continue;
               var s = fits(win, tt, dur);
               if(s){ other = s; otherTech = tt; break; }
             }
