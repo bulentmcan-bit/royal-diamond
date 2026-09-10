@@ -17808,6 +17808,14 @@ window.addEventListener('load',function(){
   const FCL_NOTICE = 45;        // bugün için: müşterinin gelmesi için en az 45 dk
   const FCL_DAYS_SHOWN = 3;     // kaç çalışma günü listelensin (seçili gün dahil)
   const FCL_SOURCE = 4;         // her gün için kaç gün ilerisinden müşteri çekilsin
+  // Never pull a booking from fewer than this many days ahead: moving a
+  // customer up by a day or two adds nothing — it relocates her and opens a
+  // fresh gap where she was, with no time to re-sell it. The number lives in
+  // crown-config.js (fillMinDaysAhead); read at call time, 3 until it is there.
+  function fclMinAhead(){
+    try{ var v = Number(window.CROWN && CROWN.fillMinDaysAhead); if(v >= 1) return Math.floor(v); }catch(e){}
+    return 3;
+  }
   // Kapalı günler crown-config.js'te (closedWeekdays/closedDates) — rdIsClosedDay sorar.
 
   // appointments/clients are declared with `let` so they are NOT on window —
@@ -18058,13 +18066,23 @@ window.addEventListener('load',function(){
 
       // ── o güne çekilebilecek randevular (sonraki günlerden)
       var cands = [];
-      for(var i=1; i<=FCL_SOURCE; i++){
+      var minAhead = fclMinAhead();
+      for(var i=minAhead; i<=Math.max(FCL_SOURCE, minAhead); i++){
         var d = new Date(base); d.setDate(d.getDate()+i);
         var dk = key(d);
+        // A customer with two or more bookings that day is one visit in two
+        // parts (a 09:00 and a 10:00 back to back): moving either half splits
+        // her visit, so neither is ever suggested.
+        var perClient = {};
+        _appts().forEach(function(a){
+          if(a.status !== 'confirmed' || key(new Date(a.datetime)) !== dk) return;
+          var ck = String(a.clientId); perClient[ck] = (perClient[ck]||0) + 1;
+        });
         _appts().forEach(function(a){
           if(a.status !== 'confirmed') return;
           if(used[apptKey(a)]) return;
           if(key(new Date(a.datetime)) !== dk) return;
+          if(perClient[String(a.clientId)] > 1) return;
           var c = _clis().find(function(x){ return String(x.id)===String(a.clientId); });
           if(!c || !c.phone) return;
           var t = techOf(a), dur = durOf(a);

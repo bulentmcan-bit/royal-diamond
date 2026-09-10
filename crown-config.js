@@ -164,6 +164,16 @@ window.CROWN = {
   },
 
 
+  /* FILLING A GAP — how far ahead a customer must be booked before the
+     fill-call list may suggest moving her into it. Moving somebody up by a
+     day or two adds no booking: it relocates one and opens a fresh gap where
+     she was, with no time left to re-sell it. So the list only offers a
+     customer whose EXISTING booking is at least this many days after the gap
+     being filled. Whole days, counted from the gap day: 3 means a gap on the
+     11th is offered bookings from the 14th on. Change it here and nothing
+     else. */
+  fillMinDaysAhead: 3,
+
   /* Is the salon shut on this day? Takes a Date or anything that starts
      'YYYY-MM-DD' (a date key, a datetime string). Unreadable INPUT counts
      as open — a parse failure must never grey the whole calendar out. But a
