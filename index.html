@@ -8770,7 +8770,10 @@ function renderGapReport(){
   if(!dateInput.value) dateInput.value = today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
   const selDate = dateInput.value;
 
-  const TECHS = ['Helen','Hannah','Lissa'];
+  // Who is working on the day shown — rdStaffOn asks crown-config's rosterOn,
+  // so a technician who has left has no column from her leftOn date and keeps
+  // it on every earlier day, with her bookings in it.
+  const TECHS = rdStaffOn(selDate);
   // One grid for everybody: the ladder of starts that may be offered
   // (crown-config `starts` — whole hours, and the half hours from 17:30), so
   // no row exists that a 60-minute job could not be given. A row is booked
