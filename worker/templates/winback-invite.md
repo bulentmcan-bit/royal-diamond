@@ -13,7 +13,7 @@ empty `params` list once it is approved.
 | Header | none |
 | Body variables | none |
 | Footer | the opt-out line below (Meta requires an opt-out on marketing templates) |
-| Buttons | 1 · URL "Online randevu / Book online" → `https://royaldiamondnails.com/booking.html?src=wa` <br> 2 · Phone "Bizi arayın / Call us" → `+90 548 893 3333` |
+| Buttons | 1 · URL "Randevu Al / Book online" → `https://royaldiamondnails.com/booking.html?src=wa` — the PUBLIC booking page. Never the bare domain: `https://royaldiamondnails.com/` serves index.html, the management app, and a customer tapping it meets the login gate <br> 2 · Phone "Bizi arayın / Call us" → `+90 548 893 3333` |
 
 ## Body (paste exactly — blank lines are the paragraph breaks)
 
@@ -44,6 +44,10 @@ Reply STOP if you no longer wish to receive messages.
 ```
 
 ## Notes for submission
+
+- The URL button must be typed into Piyzi exactly as above, with `/booking.html?src=wa`.
+  The bare domain is the management app behind a password prompt, not the
+  booking page — that is the one mistake a customer would notice first.
 
 - Body is 413 characters, well under Meta's 1,024 limit; the footer is under 60.
 - The em dash on its own line is the divider between the Turkish and the English.
