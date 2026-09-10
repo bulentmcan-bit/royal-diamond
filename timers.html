@@ -71,11 +71,12 @@
   .t-job{font-size:clamp(12px,1.7vmin,20px); color:var(--gold); letter-spacing:.06em;
     text-transform:uppercase;}
   /* Her picture IS the tile. Across a busy room a face lands before a word does,
-     so the photograph fills the whole tile edge to edge — a cover fit, cropped
-     and never squashed, biased to the top so the crop takes the hem and never
-     the chin — and everything else is written on top of it. */
+     so the photograph takes the whole tile — shown WHOLE, at its own
+     proportions, never cropped and never squashed: centred in the tile and
+     standing on its bottom edge, with the dark panel showing either side of a
+     narrow portrait — and everything else is written on top of it. */
   .t-photo{position:absolute; inset:0; z-index:0; width:100%; height:100%;
-    object-fit:cover; object-position:50% 8%; background:#241B2F;}
+    object-fit:contain; object-position:50% 100%; background:#241B2F;}
   /* The scrim under the writing: a dark band beneath the name at the top and a
      deeper one beneath the countdown and the footer at the bottom, so the words
      read from the other side of the salon whatever the photograph is behind
