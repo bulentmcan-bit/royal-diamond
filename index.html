@@ -311,8 +311,17 @@
           // flip in that step is attributed to it, not to the next save.
           try{ apptWatchDiff('bulut birleştirme (canlı dinleyici) — fiyat/ödeme geçersiz kılma sonrası', {by:remote._by}); }catch(e){}
           payments=remote.payments||[];
-          deferredPayments=remote.deferredPayments||[];
-          ccOverrides=remote.ccOverrides||{};
+          // Deferred payments and the till corrections merge like everything
+          // else — a record typed here seconds ago is not wiped by a snapshot
+          // written before it; only a tombstone (or a dated clearing) removes.
+          mergeRemoteDpTomb(remote.dpTomb);
+          deferredPayments=_mergeRemoteDp(remote.deferredPayments, remote._ts, remote._by);
+          const dpKept=_dpMergeKept;
+          ccOverrides=_mergeRemoteCcOverrides(remote.ccOverrides, remote._ts);
+          const ccKept=_ccMergeKept;
+          remote.deferredPayments=deferredPayments;
+          remote.ccOverrides=ccOverrides;
+          remote.dpTomb=dpTomb;
           remote.priceOverrides=priceOverrides;
           remote.payMethods=payMethods;
           remote.apptTomb=apptTomb;
@@ -320,7 +329,7 @@
           localStorage.setItem('rdns_main_v1',JSON.stringify(remote));
           setTimeout(()=>{_isSyncing['rdns_main_v1']=false;_mainSnapRecheck();},800);
           // If we corrected the cloud copy, push the cleaned version back (once)
-          if(phonesFixed||moneyKept||apptsKept||clientsKept){
+          if(phonesFixed||moneyKept||apptsKept||clientsKept||dpKept||ccKept){
             setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
           }
           const pg=document.querySelector('.page.active');
@@ -2085,6 +2094,285 @@
       return _clientMergeAudit(safe, local, 'client merge threw: '+(e&&e.message||e));
     }
   }
+  // DP-SLICE-START (fixture-tested — keep this block self-contained)
+  /* ═══════ VADELİ ÖDEME — THE MERGE MAY ADD AND CORRECT, NEVER TAKE AWAY ═══════
+     11 Eylül 2026: two deferred payments entered on the owner's laptop and a
+     third at reception all saved, all showed the toast, all vanished — the
+     badge said Synced throughout. deferredPayments had none of the protection
+     appointments and clients were given in August: both cloud read paths
+     replaced the array wholesale and dbSave pushed whatever this device was
+     holding, so a device whose copy predated a record overwrote the cloud on
+     its next save and the live listener wiped the row off the screen that had
+     typed it. Absence from a snapshot was read as deletion. This is money
+     owed to the salon — only a tombstone may remove a record.
+     Built on the appointment code above, and simpler where that one carries
+     history this does not: ids are 'dp'+Date.now()+rand, so there is no
+     legacy-decimal key and no _rdIdKey; a deferred payment has one status
+     that moves one way, so one stamp — _dts, written by dpTouch on every
+     edit — is enough to say which copy is newer. The same treatment for
+     ccOverrides, the till corrections typed on Kasa Kontrol: merged per day,
+     higher ts wins, and a clearing writes {_del:true} because an outright
+     delete cannot be told from a stale absence. */
+  const DP_TOMB_KEY='rdns_dp_tomb_v1';
+  const DP_TOMB_KEEP_MS=90*24*60*60*1000;
+  const DP_LOG_KEY='rdns_dp_log_v1';
+  const DP_LOG_MAX=200;
+  function _dpReadMap(key){
+    try{ const o=JSON.parse(localStorage.getItem(key)||'{}'); return (o&&typeof o==='object')?o:{}; }
+    catch(e){ return {}; }
+  }
+  let dpTomb=_dpReadMap(DP_TOMB_KEY);   // {id:ts} — deleted on purpose
+  function dpTombPersist(){ try{ localStorage.setItem(DP_TOMB_KEY, JSON.stringify(dpTomb)); }catch(e){} }
+  function dpTombHas(id){ return dpTomb[String(id)]||0; }
+  function dpTombPrune(){
+    try{
+      const cut=Date.now()-DP_TOMB_KEEP_MS;
+      let changed=false;
+      Object.keys(dpTomb).forEach(function(k){ if(!(dpTomb[k]>cut)){ delete dpTomb[k]; changed=true; } });
+      if(changed) dpTombPersist();
+    }catch(e){}
+  }
+  // One stamp per edit: one past any stamp the record already carries, so two
+  // edits in the same millisecond still order.
+  function dpTouch(p){
+    if(!p||typeof p!=='object') return p;
+    p._dts=Math.max(Date.now(), (Number(p._dts)||0)+1);
+    return p;
+  }
+  function _dpDevId(){
+    try{ if(typeof _rdDevId==='string'&&_rdDevId) return _rdDevId; }catch(e){}
+    try{ return localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){ return 'anon'; }
+  }
+  // ═══════ WHY DID THAT DEFERRED PAYMENT DISAPPEAR? ═══════
+  // One line whenever a record leaves the array, or its copy is replaced by
+  // the cloud's: which record, whose money, how much, when it was due, why,
+  // this device, and the device whose snapshot caused it. Newest 200 kept.
+  // To read it: rdDpLog() in the console, or the Vadeli Ödeme Günlüğü link on
+  // Kasa Kontrol.
+  function dpLogRead(){
+    try{ const l=JSON.parse(localStorage.getItem(DP_LOG_KEY)||'[]'); return Array.isArray(l)?l:[]; }
+    catch(e){ return []; }
+  }
+  function dpLog(p, id, reason, note, by){
+    try{
+      const rec={
+        t:Date.now(),
+        id:String((p&&p.id!=null)?p.id:(id!=null?id:'?')),
+        name:String((p&&p.name)||'?'),
+        amount:(p&&p.amount!=null)?p.amount:'',
+        cur:String((p&&p.cur)||'₺'),
+        due:String((p&&p.due)||''),
+        paid:!!(p&&p.paid),
+        reason:String(reason||'unknown'),
+        note:note?String(note):'',
+        dev:_dpDevId(),
+        by:by?String(by):''
+      };
+      const log=dpLogRead();
+      log.push(rec);
+      localStorage.setItem(DP_LOG_KEY, JSON.stringify(log.slice(-DP_LOG_MAX)));
+      console.log('[dp-log]', rec.id, rec.name, rec.cur+rec.amount, '·', rec.reason, rec.note||'', '· cihaz='+rec.dev+(rec.by?' · kaynak='+rec.by:''));
+    }catch(e){}
+  }
+  function dpLogLast(n){
+    const l=dpLogRead().slice().reverse();
+    n=Number(n);
+    return (n>0)?l.slice(0,n):l;
+  }
+  function _dpLogFmt(r){
+    let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
+    return d+'  #'+r.id+'  '+(r.name||'?')+'  '+(r.cur||'₺')+(r.amount!==''?r.amount:'?')+(r.due?'  vade '+r.due:'')+(r.paid?'  (ödendi)':'')+'  →  '+r.reason+(r.note?'  ('+r.note+')':'')+(r.dev?'  · cihaz='+r.dev:'')+(r.by?'  · kaynak='+r.by:'');
+  }
+  window.rdDpLog=function(n){
+    const l=dpLogLast(n);
+    try{ console.table(l.map(function(r){
+      let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){}
+      return {Zaman:d, id:r.id, 'Müşteri':r.name, Tutar:(r.cur||'₺')+r.amount, Vade:r.due, Sebep:r.reason, Cihaz:r.dev||'', Kaynak:r.by||'', Not:r.note};
+    })); }catch(e){ console.log(l); }
+    console.log(l.length+' kayıt · rdShowDpLog() ekranda');
+    return l;
+  };
+  // Called from every path that deletes a deferred payment for good. Written
+  // BEFORE the record is filtered out, so the removal is a fact the other
+  // devices learn, not an absence they might read as a stale snapshot.
+  function dpTombAdd(id, reason, p){
+    if(id==null) return;
+    const k=String(id);
+    try{
+      let rec=p;
+      if(!rec&&typeof deferredPayments!=='undefined'&&Array.isArray(deferredPayments))
+        rec=deferredPayments.find(function(x){ return x&&String(x.id)===k; });
+      dpLog(rec, k, reason||'deleted on this device', 'tombstone written');
+    }catch(e){}
+    let ts=Date.now();
+    if(p&&(Number(p._dts)||0)>=ts) ts=Number(p._dts)+1;
+    if((dpTomb[k]||0)>=ts) ts=dpTomb[k]+1;
+    dpTomb[k]=ts;
+    dpTombPersist();
+  }
+  // Tombstones travel with the shared DB, so a device that never saw the
+  // deletion still knows not to hand the record back. Newest wins.
+  function mergeRemoteDpTomb(remoteTomb){
+    try{
+      if(!remoteTomb||typeof remoteTomb!=='object') return;
+      let changed=false;
+      Object.keys(remoteTomb).forEach(function(k){
+        const ts=Number(remoteTomb[k])||0;
+        if(!ts) return;
+        if((dpTomb[k]||0)>=ts) return;
+        dpTomb[k]=ts; changed=true;
+      });
+      if(changed) dpTombPersist();
+      dpTombPrune();
+    }catch(e){ console.warn('mergeRemoteDpTomb error:',e); }
+  }
+  let _dpMergeKept=false;   // did this merge have to defend a local record?
+  // The union by id. A snapshot is one device's copy, possibly written before
+  // this device's last record — so it may ADD and it may CORRECT (a strictly
+  // newer _dts wins, whichever side holds it), and the only thing that
+  // removes a record is a tombstone. Nothing is dropped for looking old or
+  // for being unstamped: everything in the salon's data today carries no
+  // _dts, and all of it must come through. `by` is the snapshot's writer,
+  // for the log.
+  function _mergeRemoteDp(remoteList, snapTs, by){
+    _dpMergeKept=false;
+    const local=Array.isArray(deferredPayments)?deferredPayments:[];
+    try{
+      const remote=Array.isArray(remoteList)?remoteList:[];
+      const snap=Number(snapTs)||Date.now();
+      const locById={};
+      local.forEach(function(p){ if(p&&p.id!=null) locById[String(p.id)]=p; });
+      const out=[], took={};
+      // 1 — everything the snapshot carries, unless we hold a newer copy of it.
+      remote.forEach(function(r){
+        if(!r||r.id==null){ if(r) out.push(r); return; }
+        const k=String(r.id);
+        if(took[k]) return;                  // same id twice in one snapshot
+        took[k]=1;
+        if(dpTombHas(k)){
+          dpLog(r,k,'tombstone — deleted on a device','arrived in snapshot',by);
+          _dpMergeKept=true;
+          return;
+        }
+        const rts=(Number(r._dts)||0)||snap;
+        const loc=locById[k];
+        const lts=loc?(Number(loc._dts)||0):0;
+        if(loc&&lts>rts){
+          out.push(loc);                                  // our edit is the newer one
+          _dpMergeKept=true;
+        }else{
+          if(loc&&JSON.stringify(loc)!==JSON.stringify(r))
+            dpLog(loc,k,'merge — cloud copy won','yerel _dts '+lts+' ≤ uzak '+rts,by);
+          out.push(r);                                    // the cloud is at least as new
+        }
+      });
+      // 2 — everything we hold that the snapshot has not caught up with.
+      //     Absence from a snapshot is not evidence of deletion.
+      local.forEach(function(p){
+        if(!p||p.id==null) return;
+        const k=String(p.id);
+        if(took[k]) return;
+        took[k]=1;
+        if(dpTombHas(k)){
+          dpLog(p,k,'tombstone — deleted on a device','held locally',by);
+          _dpMergeKept=true;
+          return;
+        }
+        out.push(p);
+        _dpMergeKept=true;
+      });
+      return out;
+    }catch(e){
+      console.warn('dp merge error:',e);
+      // Even a broken merge must not cost a record: the union of both arrays.
+      const seen={}, u=[];
+      [].concat(Array.isArray(remoteList)?remoteList:[], local).forEach(function(p){
+        if(!p) return;
+        const k=(p.id!=null)?String(p.id):null;
+        if(k){ if(seen[k]) return; seen[k]=1; }
+        u.push(p);
+      });
+      _dpMergeKept=true;
+      return u;
+    }
+  }
+  // ── ccOverrides: the till corrections, per day, higher ts wins ──
+  // A cleared day is {_del:true, ts}: reads see "no override", the merge sees
+  // a dated decision that beats an older correction from another laptop.
+  let _ccMergeKept=false;
+  function ccOvrOf(map, day){
+    const o=map&&typeof map==='object'?map[day]:null;
+    return (o&&typeof o==='object'&&!o._del)?o:null;
+  }
+  function _mergeRemoteCcOverrides(remoteMap, snapTs){
+    _ccMergeKept=false;
+    const local=(ccOverrides&&typeof ccOverrides==='object')?ccOverrides:{};
+    try{
+      const remote=(remoteMap&&typeof remoteMap==='object')?remoteMap:{};
+      const snap=Number(snapTs)||Date.now();
+      const cut=Date.now()-DP_TOMB_KEEP_MS;
+      const out={};
+      Object.keys(remote).forEach(function(day){
+        const r=remote[day]; if(!r||typeof r!=='object') return;
+        const l=local[day];
+        const rts=(Number(r.ts)||0)||snap, lts=(l&&typeof l==='object')?(Number(l.ts)||0):0;
+        if(l&&lts>rts){ out[day]=l; _ccMergeKept=true; }
+        else out[day]=r;
+      });
+      Object.keys(local).forEach(function(day){
+        if(out[day]!==undefined) return;
+        const l=local[day]; if(!l||typeof l!=='object') return;
+        out[day]=l; _ccMergeKept=true;
+      });
+      // An old clearing has done its work — let it go after 90 days.
+      Object.keys(out).forEach(function(day){ const o=out[day]; if(o&&o._del&&(Number(o.ts)||0)<cut) delete out[day]; });
+      return out;
+    }catch(e){
+      console.warn('cc merge error:',e);
+      _ccMergeKept=true;
+      return Object.assign({}, (remoteMap&&typeof remoteMap==='object')?remoteMap:{}, local);
+    }
+  }
+  // DP-SLICE-END
+  // On-screen viewer for the deferred-payment log — the salon works on
+  // tablets, where there is no console. Newest 50; "Tümü" opens all.
+  window.rdShowDpLog=function(limit){
+    try{
+      const old=document.getElementById('rd-dplog-ov'); if(old) old.remove();
+      const all=dpLogRead().length;
+      limit=(limit===undefined)?50:Number(limit);
+      const list=dpLogLast(limit);
+      const esc=function(s){ return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); };
+      const rows=list.length?list.map(function(r){
+        let d=''; try{ d=new Date(r.t).toLocaleString('tr-TR'); }catch(e){ d=String(r.t); }
+        return '<div style="padding:9px 11px;border-bottom:1px solid #eee;font-size:0.78rem;line-height:1.5;">'+
+          '<div style="color:#888;font-size:0.7rem;">'+esc(d)+' · id '+esc(r.id)+(r.dev?' · cihaz '+esc(r.dev):'')+(r.by?' · kaynak '+esc(r.by):'')+'</div>'+
+          '<div style="font-weight:800;">'+esc(r.name)+' <span style="font-weight:400;color:#666;">— '+esc(r.cur||'₺')+esc(r.amount)+(r.due?' · vade '+esc(r.due):'')+(r.paid?' · ödendi':'')+'</span></div>'+
+          '<div style="color:#c9605a;font-weight:700;">'+esc(r.reason)+'</div>'+
+          (r.note?'<div style="color:#888;font-size:0.72rem;">'+esc(r.note)+'</div>':'')+
+        '</div>';
+      }).join(''):'<div style="padding:22px;text-align:center;color:#888;font-size:0.85rem;">Kayıt yok. 👍</div>';
+      const ov=document.createElement('div');
+      ov.id='rd-dplog-ov';
+      ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Nunito,sans-serif;';
+      ov.innerHTML='<div style="background:#fff;color:#1a1a1a;border-radius:14px;max-width:640px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;">'+
+        '<div style="padding:13px 15px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;">'+
+          '<b style="font-size:0.95rem;">📒 Vadeli Ödeme Günlüğü</b>'+
+          '<span style="color:#888;font-size:0.75rem;">'+((limit>0&&all>limit)?('son '+list.length+' / '+all):all)+' kayıt</span>'+
+          '<span style="flex:1;"></span>'+
+          ((limit>0&&all>limit)?'<button id="rd-dplog-all" style="border:1px solid #ccc;background:none;color:#444;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.74rem;font-weight:800;cursor:pointer;">Tümü</button>':'')+
+          '<button id="rd-dplog-x" style="border:1px solid #ddd;background:none;border-radius:8px;padding:6px 11px;font-family:inherit;font-size:0.8rem;font-weight:800;cursor:pointer;">✕</button>'+
+        '</div>'+
+        '<div style="overflow-y:auto;">'+rows+'</div>'+
+        '<div style="padding:9px 15px;border-top:1px solid #eee;color:#888;font-size:0.68rem;">Bir vadeli ödeme kaydı diziden çıktığında ya da bulut kopyası yerel kopyanın yerini aldığında bir satır yazılır — hangi kayıt, ne kadar, hangi cihaz, hangi cihazın verisi yüzünden. Konsolda rdDpLog().</div>'+
+      '</div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+      ov.querySelector('#rd-dplog-x').onclick=function(){ ov.remove(); };
+      const allBtn=ov.querySelector('#rd-dplog-all');
+      if(allBtn) allBtn.onclick=function(){ window.rdShowDpLog(0); };
+    }catch(e){ console.warn('rdShowDpLog error:',e); }
+  };
   function clientStampAdopt(list){
     try{
       if(!Array.isArray(list)) return;
@@ -2441,8 +2729,16 @@
       apptStampAdopt(appointments);
       try{ apptWatchDiff('bulut birleştirme (syncForceLoad) — fiyat/ödeme geçersiz kılma sonrası', {by:val._by}); }catch(e){}
       payments=val.payments||[];
-      deferredPayments=val.deferredPayments||[];
-      ccOverrides=val.ccOverrides||{};
+      // Same rule for deferred payments and the till corrections: merge, never
+      // replace; only a tombstone removes.
+      mergeRemoteDpTomb(val.dpTomb);
+      deferredPayments=_mergeRemoteDp(val.deferredPayments, val._ts, val._by);
+      const dpKept=_dpMergeKept;
+      ccOverrides=_mergeRemoteCcOverrides(val.ccOverrides, val._ts);
+      const ccKept=_ccMergeKept;
+      val.deferredPayments=deferredPayments;
+      val.ccOverrides=ccOverrides;
+      val.dpTomb=dpTomb;
       val.priceOverrides=priceOverrides;
       val.payMethods=payMethods;
       val.apptTomb=apptTomb;
@@ -2451,7 +2747,7 @@
       setTimeout(()=>{_isSyncing['rdns_main_v1']=false;_mainSnapRecheck();},800);
       // Anything the cloud copy was still missing goes straight back up, so the
       // other devices stop handing us the stale picture.
-      if(apptsKept||_apptMoneyKept||clientsKept){
+      if(apptsKept||_apptMoneyKept||clientsKept||dpKept||ccKept){
         setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
       }
       try{renderDash();}catch(e){}
@@ -5363,7 +5659,7 @@ function dbSave(){
     // The customer list is stamped on the way out for the same reason — so an
     // edit made here outranks a snapshot written elsewhere before it.
     try{ stripReactOffer(clients); clientStampSync(); }catch(e){}
-    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods, apptTomb, clientTomb};
+    const data = {clients, appointments, payments, waSentToday, deferredPayments, ccOverrides, priceOverrides, payMethods, apptTomb, clientTomb, dpTomb};
     localStorage.setItem(DB_KEY, JSON.stringify(data));
     syncPush('rdns_main_v1', data);
   }catch(e){ console.warn('Save failed:', e); }
@@ -5391,6 +5687,7 @@ try{ mergeRemotePayMethods(_dbLoaded?.payMethods); applyPayMethods(appointments)
 // that were already thrown away.
 try{ mergeRemoteApptTomb(_dbLoaded?.apptTomb); }catch(e){}
 try{ mergeRemoteClientTomb(_dbLoaded?.clientTomb); }catch(e){}
+try{ mergeRemoteDpTomb(_dbLoaded?.dpTomb); }catch(e){}
 // What changed while this page was closed — the shadow from the last session
 // against what localStorage just handed back.
 try{ apptWatchDiff('açılış (localStorage yüklendi)'); }catch(e){}
@@ -13645,7 +13942,7 @@ let _ccCtx=null;
 function ccEditOpen(){
   const day=ccDateVal(); if(!day) return;
   const ctx=_ccCtx||{day:day,dtGrand:null,dtMethods:null,owed:0};
-  const ovr=(ccOverrides&&ccOverrides[day])||null;
+  const ovr=ccOvrOf(ccOverrides,day);
   const dm=ctx.dtMethods||{};
   const setv=(id,v)=>{const el=document.getElementById(id);if(el)el.value=(v||v===0)?v:'';};
   setv('cce-nakit', ovr?ovr.nakit:(Number(dm.nakit)||''));
@@ -13677,7 +13974,9 @@ function ccEditSave(){
   const day=ccDateVal(); if(!day) return;
   const num=id=>parseFloat(document.getElementById(id).value)||0;
   if(!ccOverrides||typeof ccOverrides!=='object') ccOverrides={};
-  ccOverrides[day]={nakit:num('cce-nakit'),kart:num('cce-kart'),iban:num('cce-iban'),alacak:num('cce-alacak'),ts:Date.now()};
+  // The stamp is what wins a merge against another laptop's copy — one past
+  // whatever this day already carries, so it always outranks it.
+  ccOverrides[day]={nakit:num('cce-nakit'),kart:num('cce-kart'),iban:num('cce-iban'),alacak:num('cce-alacak'),ts:Math.max(Date.now(), (Number((ccOverrides[day]||{}).ts)||0)+1)};
   saveAll();
   closeModal('mCcEdit');
   renderCashCheck();
@@ -13685,7 +13984,11 @@ function ccEditSave(){
 }
 function ccEditReset(){
   const day=ccDateVal(); if(!day) return;
-  if(ccOverrides&&ccOverrides[day]) delete ccOverrides[day];
+  // Never `delete`: an outright delete is indistinguishable from a stale
+  // absence, and the next snapshot from another laptop would put the
+  // correction back. A dated clearing is a decision the merge can weigh.
+  if(!ccOverrides||typeof ccOverrides!=='object') ccOverrides={};
+  ccOverrides[day]={_del:true, ts:Math.max(Date.now(), (Number((ccOverrides[day]||{}).ts)||0)+1)};
   saveAll();
   closeModal('mCcEdit');
   renderCashCheck();
@@ -13916,7 +14219,7 @@ function renderCashCheck(){
   });
   // Remember this day's context so the "✏️ Düzelt" editor can prefill.
   _ccCtx={ day:day, dtGrand:dtGrand, dtMethods:dtMethods, owed:(dpDeferredSum+dpUnpaidSum) };
-  const ovr=(typeof ccOverrides!=='undefined'&&ccOverrides)?ccOverrides[day]:null;
+  const ovr=(typeof ccOverrides!=='undefined')?ccOvrOf(ccOverrides,day):null;
 
   html+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding-top:10px;border-top:1px solid var(--border);font-size:0.84rem;">';
   if(ovr){
@@ -13949,6 +14252,7 @@ function renderCashCheck(){
     +'<span style="color:var(--muted)">Randevu toplamı:</span> <strong style="color:var(--goldLight);">₺'+grand.toLocaleString()+'</strong>'
     +(dtGrand!==null?' &nbsp;·&nbsp; <span style="color:var(--muted)">Kasa toplamı:</span> <strong style="color:var(--blue);">₺'+dtGrand.toLocaleString()+'</strong>':'')
     +(dtGrand!==null&&Math.abs(dtGrand-grand)>0.5?' &nbsp;·&nbsp; <strong style="color:#d9534f;">⚠️ Fark: '+(dtGrand-grand>0?"+":"")+'₺'+(dtGrand-grand).toLocaleString()+'</strong>':'')
+    +' &nbsp;·&nbsp; <a href="#" onclick="rdShowDpLog();return false;" title="Vadeli ödeme kayıtlarının silinme / değişme günlüğü — hangi kayıt, hangi cihaz, neden" style="color:#4a7bb0;font-weight:700;text-decoration:none;font-size:0.78rem;">📒 Vadeli Ödeme Günlüğü</a>'
     +'</div></div>';
 
   body.innerHTML=html;
@@ -14049,11 +14353,11 @@ function dpAdd(){
     if(cleanPhone){ const m=clients.filter(c=>c&&c.phone&&dpNormPhone(c.phone)===cleanPhone); if(m.length===1) _cid=m[0].id; }
     if(_cid==null){ const nn=dpNormName(name); const m2=clients.filter(c=>c&&dpNormName(c.name)===nn); if(m2.length===1) _cid=m2[0].id; }
   }catch(e){}
-  dpList().push({
+  dpList().push(dpTouch({
     id:'dp'+Date.now()+Math.floor(Math.random()*1000),
     name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:cleanPhone, note:note,
     clientId:_cid, paid:false, created:dpToday()
-  });
+  }));
   saveAll();
   ['dp-name','dp-amount','dp-due','dp-phone','dp-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   // The clock goes back to closing time rather than blank, so the next payment
@@ -14077,6 +14381,7 @@ function dpClearApptFlag(p){
 function dpMarkPaid(id){
   const p=dpList().find(x=>x.id===id); if(!p) return;
   p.paid=true; p.paidAt=dpToday();
+  dpTouch(p);
   dpClearApptFlag(p);
   saveAll();
   dpRender();
@@ -14088,6 +14393,9 @@ function dpDelete(id){
   const p=dpList().find(x=>x.id===id); if(!p) return;
   if(!confirm('Bu vadeli ödemeyi silmek istiyor musunuz?\n'+p.name+' — '+dpFmt(p.cur,p.amount))) return;
   dpClearApptFlag(p);
+  // The tombstone goes down BEFORE the record leaves the array, so every other
+  // device learns a deletion and not an absence.
+  dpTombAdd(id,'deleted by hand (dpDelete)',p);
   deferredPayments=dpList().filter(x=>x.id!==id);
   saveAll();
   dpRender();
@@ -14208,7 +14516,7 @@ function dpSaveFromAppt(){
   // the till warning matches with certainty, not by name.
   let _cid=null;
   try{ const _src=apptId?appointments.find(x=>String(x.id)===String(apptId)):null; if(_src&&_src.clientId!=null) _cid=_src.clientId; }catch(e){}
-  dpList().push({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:phone, note:note, clientId:_cid, paid:false, created:dpToday(), apptId:apptId||null });
+  dpList().push(dpTouch({ id:'dp'+Date.now()+Math.floor(Math.random()*1000), name:name, cur:cur, amount:amount, due:due, dueTime:dueTime, phone:phone, note:note, clientId:_cid, paid:false, created:dpToday(), apptId:apptId||null }));
   // Flag the source appointment as "deferred" so the Kasa Kontrol day breakdown references it.
   if(apptId){ const a=appointments.find(x=>String(x.id)===String(apptId)); if(a){ a.collect='deferred'; } }
   saveAll();
@@ -14312,7 +14620,7 @@ function dpKasaCheck(apptId){
 function dpKasaLater(){
   try{
     const today=dpToday();
-    if(_dpKasaCtx) _dpKasaCtx.ids.forEach(id=>{ const p=dpList().find(x=>x.id===id); if(p) p.kasaSnooze=today; });
+    if(_dpKasaCtx) _dpKasaCtx.ids.forEach(id=>{ const p=dpList().find(x=>x.id===id); if(p){ p.kasaSnooze=today; dpTouch(p); } });
     saveAll();
   }catch(e){}
   _dpKasaCtx=null;
@@ -14349,6 +14657,7 @@ function dpKasaCollect(){
   _dpKasaCtx.ids.forEach(id=>{
     const p=dpList().find(x=>x.id===id); if(!p||p.paid) return;
     p.paid=true; p.paidAt=today;
+    dpTouch(p);
     dpClearApptFlag(p);
     const e=dpKasaEntryAdd(p);
     if(e&&!firstEntry) firstEntry=e;
