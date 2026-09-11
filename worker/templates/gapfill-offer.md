@@ -1,6 +1,9 @@
 # WhatsApp template — "Yerimiz açıldı" (the gap-filler's offer)
 
-Prepared 11 Sep 2026 for submission through Piyzi (Meta approval). This is
+Prepared 11 Sep 2026 and SUBMITTED to Meta through Piyzi the same day
+(Kampanyalar → Şablonlar → Yeni Şablon → WhatsApp → Yeni WhatsApp Şablonu;
+category Pazarlama, Türkçe, no header, "Meta kategoriyi düzeltebilsin" on).
+This is
 the ONE message the automatic gap-filler (worker/src/index.js, `runGapFiller`)
 sends. It carries **no customer name and no variables at all** — one fixed
 text — because the same wording must fit every customer and every slot: the
@@ -10,13 +13,13 @@ when the customer replies.
 
 | Field | Value |
 |---|---|
-| Template name | `pyz_yerimiz_acildi_v1` (Piyzi prefixes as it does the others; confirm with `GET /wa/templates`) |
+| Template name | `bosluk_teklifi` — submitted 11 Sep 2026 from Piyzi's form, shown there as "bosluk_teklifi (tr) PENDING". Confirm the API name with `GET /wa/templates` once approved; the reminder templates carry a `pyz_` prefix there, this one may too |
 | Category | **MARKETING** — an offer, not a transaction. Never the r24/r1 reminder templates, which are UTILITY and would be misused for this. |
 | Language | `tr` (Turkish first, English second, an em dash between, the way the salon speaks) |
 | Header | none |
 | Body variables | **none** |
 | Footer | the opt-out line below (Meta requires an opt-out on marketing templates) |
-| Buttons | 1 · Quick reply "Evet, isterim / Yes please" <br> 2 · Phone "Bizi arayın / Call us" → `+90 548 893 3333` |
+| Buttons | 1 · Quick reply "Evet / Yes please" (Piyzi caps a button label at 25 characters; the spec's "Evet, isterim / Yes please" was 26) <br> 2 · Phone "Bizi arayın / Call us" → `+905488933333` |
 
 ## Body (paste exactly — blank lines are the paragraph breaks)
 
