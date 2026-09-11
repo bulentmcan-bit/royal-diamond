@@ -888,11 +888,16 @@ async function handleWa(req, env, ctx, url) {
    number under rdns_gapfill_v1/optout — the panel's 🚫 button writes
    that). No booking of hers within fillMinDaysAhead days of the gap, either
    side. No offer to her in the last cooldownDays. No offer to her for that
-   same day, ever. And either she HOLDS a booking further out (the pull-
-   forward — those come first, soonest booking first) or her last visit was
-   dueAfterDays … dueUntilDays ago (the ones who are due, most recent
-   first). Somebody who visited last week is not due; somebody gone half a
-   year belongs to the win-back template, not to a gap.
+   same day, ever. And either she is DUE — no booking ahead, last visit
+   dueAfterDays … dueUntilDays ago — or she HOLDS a booking further out
+   (the pull-forward). THE DUE COME FIRST, most recent visit first: a due
+   customer in the chair is a visit the till would not otherwise have had.
+   A pull-forward is used only when no due customer is left for the slot —
+   moving her up relocates a booking and opens a gap where she was, so it
+   adds nothing by itself. Somebody who visited last week is not due;
+   somebody gone half a year belongs to the win-back template, not to a gap.
+   notBefore is judged against the SLOT's date, never the run's: on the
+   11th a slot of Hannah's on the 14th is offered, one on the 12th is not.
 
    THE SOFT HOLD. A sent offer is written to rdns_gapfill_v1/offers with the
    slot and the time; for holdMinutes that slot is claimed and no run offers
@@ -1066,10 +1071,12 @@ function gfPlan(input) {
       daysSince
     });
   }
-  // The pull-forwards first, soonest booking first; then the ones who are
-  // due, most recent visit first.
+  // The due ones first, most recent visit first — a visit the till would
+  // not otherwise have. The pull-forwards after them, soonest booking
+  // first: moving a customer up adds no booking, it only relocates one, so
+  // she is used when nobody due is left for the slot.
   cands.sort((x, y) => {
-    if (!!x.nextBooking !== !!y.nextBooking) return x.nextBooking ? -1 : 1;
+    if (!!x.nextBooking !== !!y.nextBooking) return x.nextBooking ? 1 : -1;
     if (x.nextBooking) return x.nextBooking.localeCompare(y.nextBooking) || x.cid.localeCompare(y.cid);
     return (x.daysSince - y.daysSince) || x.cid.localeCompare(y.cid);
   });
@@ -1093,8 +1100,10 @@ function gfPlan(input) {
     if (cfg.isClosed(ymd)) { out.notes.push(ymd + ': kapalı'); continue; }
     for (const tech of cfg.fillOrderOn(ymd)) {
       if (capHit) break;
+      // notBefore is about the SLOT's day: her hours dated before it are not
+      // offered, her hours from that day on are — whatever day the run is.
       const nb = cfg.notBefore[tech.key];
-      if (nb && (todayYmd < nb || ymd < nb)) { out.notes.push(ymd + ' ' + tech.name + ': ' + nb + ' öncesi teklif yok'); continue; }
+      if (nb && ymd < nb) { out.notes.push(ymd + ' ' + tech.name + ': ' + nb + ' öncesi teklif yok'); continue; }
       const busy = gfSpans(appts, tech, ymd), len = cfg.slotFor(tech.key) || 60;
       for (const start of cfg.ladder) {
         if (off === 0 && start < nowMin + g.noticeMinutes) continue;

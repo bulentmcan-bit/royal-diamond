@@ -312,7 +312,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 |---|---|
 | `staffPrefs.serviceSkill` | who may be offered which customer: a technician not listed under a service group is never offered a customer whose usual service is in it (and cannot be booked for it anywhere in the app either) |
 | `staffPrefs.fillOrder` | whose empty hours are offered first (`hannah, lissa, helen`) |
-| `staffPrefs.notBefore` | no offers for a technician before a date — not sent before it, not for a slot dated before it |
+| `staffPrefs.notBefore` | no offers for a technician's hours dated before a date — the SLOT's date is judged, not the run's: on the 11th her Monday-the-14th hours are offered, her Friday ones are not |
 | `gapFill.enabled` | the kill switch |
 | `gapFill.dryRun` | **on by default** — the run writes what it would send and sends nothing, until Bülent sets it `false` and deploys |
 | `gapFill.dailyCap` | hard ceiling of real messages a day (25), counted against the day's log so a re-run cannot leak past it |
@@ -326,9 +326,12 @@ pages pick the file up on a push, the cron only on a deploy.
 on the client, "STOP" / "mesaj istemiyor" in her notes, or her number under
 `rdns_gapfill_v1/optout`); no booking of hers within `fillMinDaysAhead` (3)
 days of the gap either side; no offer to her in the last 7 days; no offer to
-her for that same day, ever. Then either she holds a booking further out (the
-pull-forward, soonest first) or her last visit was 14–120 days ago (the ones
-who are due). One customer gets at most one offer per run.
+her for that same day, ever. Then, in this order: the ones who are DUE — no
+booking ahead, last visit 14–120 days ago, most recent first — and only when
+no due customer is left for a slot, the pull-forwards (she holds a booking
+further out, soonest first). A due customer is a visit the till would not
+otherwise have had; a pull-forward only relocates one and opens a gap where
+she was. One customer gets at most one offer per run.
 
 **What it writes**, all under `rdns_gapfill_v1` in Firebase, as admin
 (`FB_SECRET` — without it the run aborts and says so):

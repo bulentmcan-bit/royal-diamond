@@ -6,14 +6,16 @@
 //   1. the settings: dry run ON, enabled, cap 25, hold 120, Hannah first,
 //      Hannah not before 14 Eylül
 //   2. the walk: fillOrder, the start ladder, her booked hours skipped,
-//      today's notice, a lash customer never to Helen, a wax customer only
-//      to Helen, one customer one offer, one slot one customer
+//      today's notice, the DUE customers before the pull-forwards, a lash
+//      customer never to Helen, a wax customer only to Helen, one customer
+//      one offer, one slot one customer
 //   3. who is left out: KAPALI, a bad phone, an opt-out (notes / the map),
 //      not yet due, gone too long, the 7-day cooldown
 //   4. the soft hold: an active hold blocks the slot, a stale one is
 //      released, an offer whose customer booked is marked booked
 //   5. the daily cap counts what the day's log already holds
-//   6. notBefore keeps Hannah out entirely on the 11th, even for the 14th
+//   6. notBefore is judged against the slot's date: on the 11th Hannah's
+//      Monday-the-14th hours are offered, her Friday and Saturday ones not
 //   7. the 3-day distance rule and the same-day rule
 //   8. the runner: dry run reads, records, sends NOTHING; enabled=false
 //      reads nothing; the panel's pause stops it; live without a template
@@ -145,18 +147,28 @@ console.log('2. the walk');
   const plan = api.gfPlan({ data, offers: baseOffers, optout, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
   const brief = plan.offers.map(o => [o.d, o.t, o.tech, o.name]);
   is(brief, [
-    ['2026-09-15', '12:00', 'Hannah', 'Ceyda'],
-    ['2026-09-15', '13:00', 'Hannah', 'Ayşe'],
-    ['2026-09-15', '14:00', 'Hannah', 'Bella'],
-    ['2026-09-15', '15:00', 'Hannah', 'Kübra'],
+    ['2026-09-15', '12:00', 'Hannah', 'Ayşe'],
+    ['2026-09-15', '13:00', 'Hannah', 'Bella'],
+    ['2026-09-15', '14:00', 'Hannah', 'Kübra'],
+    ['2026-09-15', '15:00', 'Hannah', 'Ceyda'],
     ['2026-09-15', '13:00', 'Helen', 'Hale'],
-  ], 'Hannah first (her 11:00 is booked, 10:00 is under the notice); the pull-forward first, then the due ones; Hale the wax customer waits for Helen\'s first free hour after her 11–13 run');
-  is(plan.offers.map(o => o.why), ['randevusu 2026-09-19 — öne alınabilir', 'son ziyaret 21 gün önce', 'son ziyaret 26 gün önce', 'son ziyaret 35 gün önce', 'son ziyaret 20 gün önce'], 'each offer says why she was picked');
+  ], 'Hannah first (her 11:00 is booked, 10:00 is under the notice); the DUE ones first, most recent visit first, and Ceyda the pull-forward only when they are used up; Hale the wax customer waits for Helen\'s first free hour after her 11–13 run');
+  is(plan.offers.map(o => o.why), ['son ziyaret 21 gün önce', 'son ziyaret 26 gün önce', 'son ziyaret 35 gün önce', 'randevusu 2026-09-19 — öne alınabilir', 'son ziyaret 20 gün önce'], 'each offer says why she was picked');
+  {
+    // The pull-forward is a fallback, never a preference: with the due ones
+    // gone, she is used; with a due customer available, she is not.
+    const noDue = { appointments: appointments.filter(a => [3, 4].includes(a.clientId)), clients };
+    const p = api.gfPlan({ data: noDue, offers: {}, optout, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+    is(p.offers.map(o => [o.t, o.name]), [['12:00', 'Ceyda']], 'nobody due → the pull-forward takes the first slot');
+    const oneDue = { appointments: appointments.filter(a => [1, 3, 4].includes(a.clientId)), clients };
+    const q = api.gfPlan({ data: oneDue, offers: {}, optout, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+    is(q.offers.map(o => [o.t, o.name]), [['12:00', 'Ayşe'], ['13:00', 'Ceyda']], 'one due customer → she takes the first slot, the pull-forward the next');
+  }
   is(plan.offers.some(o => o.tech === 'Helen' && o.name === 'Bella'), false, 'the lash customer never goes to Helen');
   is(plan.offers.some(o => o.tech !== 'Helen' && o.name === 'Hale'), false, 'the wax customer goes to nobody but Helen');
   is(new Set(plan.offers.map(o => o.cid)).size, plan.offers.length, 'one customer, one offer per run');
   is(new Set(plan.offers.map(o => o.d + o.t + o.tech)).size, plan.offers.length, 'one slot, one customer');
-  is(plan.offers[0].phone, '905333333333', 'the phone is the normalised 90… form');
+  is(plan.offers[0].phone, '905331111111', 'the phone is the normalised 90… form');
   is(plan.unfilled.length > 30, true, 'the rest of the free hours have nobody to offer: ' + plan.unfilled.length);
   is(plan.expire, [], 'nothing to release');
   is(plan.booked, [], 'nothing to mark booked');
@@ -220,10 +232,17 @@ console.log('6. notBefore');
   const cfg = api.gfConfig();
   const nowMs = Date.UTC(2026, 8, 11, 7, 0);   // Friday 11 Eylül, 10:00
   const plan = api.gfPlan({ data, offers: {}, optout, cfg, nowMs, todayYmd: '2026-09-11', nowMin: 600 });
-  is(plan.offers.some(o => o.tech === 'Hannah'), false, 'on the 11th nothing of Hannah\'s is offered — not even her 14th');
-  is(plan.notes.filter(n => /Hannah: 2026-09-14 öncesi teklif yok/.test(n)).length, 3, 'said once per working day she was skipped (11, 12, 14)');
+  is(plan.offers.filter(o => o.tech === 'Hannah' && o.d < '2026-09-14'), [], 'on the 11th nothing of Hannah\'s dated before the 14th is offered');
+  is(plan.notes.filter(n => /Hannah: 2026-09-14 öncesi teklif yok/.test(n)), ['2026-09-11 Hannah: 2026-09-14 öncesi teklif yok', '2026-09-12 Hannah: 2026-09-14 öncesi teklif yok'], 'said for the 11th and the 12th — NOT for the 14th');
   is(plan.notes.includes('2026-09-13: kapalı'), true, 'Sunday the 13th is closed');
   is(plan.offers.length > 0, true, 'Lissa and Helen still get their offers');
+  // Her Monday hours ARE offered on the 11th, judged by the slot's date and
+  // not the run's. Only Hannah on the roster, so the customers are not all
+  // used up by Lissa and Helen on the Friday first.
+  const onlyHannah = Object.assign({}, cfg, { fillOrderOn: ymd => cfg.fillOrderOn(ymd).filter(o => o.key === 'hannah') });
+  const mon = api.gfPlan({ data, offers: {}, optout, cfg: onlyHannah, nowMs, todayYmd: '2026-09-11', nowMin: 600 });
+  is(mon.offers.length > 0 && mon.offers.every(o => o.tech === 'Hannah' && o.d === '2026-09-14'), true, 'run on the 11th: her Monday-the-14th slots are offered (' + mon.offers.length + ' of them), nothing earlier');
+  is(mon.offers.map(o => o.t).slice(0, 3), ['08:00', '09:00', '10:00'], 'from her first hour on Monday');
   const later = api.gfPlan({ data, offers: {}, optout, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
   is(later.offers[0].tech, 'Hannah', 'from the 14th on she is first, as fillOrder says');
 }
@@ -261,7 +280,7 @@ console.log('8. the runner');
       const rec = w.calls.find(c => c.method === 'PUT' && c.url.includes('/rdns_gapfill_v1/runs/'));
       is(!!rec, true, 'the run is recorded');
       is([rec.body.mode, rec.body.offers.length, rec.body.sent, rec.body.result], ['dry', 5, 0, 'dry-run — nothing sent'], 'with what it WOULD have sent');
-      is(rec.body.offers[0], { d: '2026-09-15', t: '12:00', tech: 'Hannah', cid: '3', name: 'Ceyda', phone: '905333333333', service: 'Dolgu (Infill)', why: 'randevusu 2026-09-19 — öne alınabilir' }, 'each would-be offer in full');
+      is(rec.body.offers[0], { d: '2026-09-15', t: '12:00', tech: 'Hannah', cid: '1', name: 'Ayşe', phone: '905331111111', service: 'Klasik Manikür', why: 'son ziyaret 21 gün önce' }, 'each would-be offer in full');
       is(w.calls.filter(c => c.method === 'GET').map(c => c.url.replace(/^.*firebaseio\.com\//, '').replace(/\?.*$/, '')), ['rdns_gapfill_v1/control.json', 'rdns_main_v1.json', 'rdns_gapfill_v1/offers.json', 'rdns_gapfill_v1/optout.json', 'rdns_gapfill_v1/runs.json'], 'reads: the pause flag, the diary, the offers, the opt-outs, then the run list to prune');
       is(w.calls.every(c => !c.url.includes('firebaseio') || /auth=sek/.test(c.url)), true, 'every Firebase call carries the secret');
       is(w.logs.filter(l => /WOULD SEND/.test(l)).length, 5, 'and wrangler tail shows the five WOULD SEND lines');
@@ -304,7 +323,7 @@ console.log('8. the runner');
       const r = await w.api.runGapFiller(Object.assign({}, env, { WA_GAPFILL: spec }), new Date(NOW), { gapMs: 0 });
       const piyzi = w.calls.filter(c => c.url.includes('api.piyzi.com'));
       is(piyzi.length, 5, 'five sends');
-      is(piyzi[0].body, { phone: '905333333333', templateName: 'pyz_yerimiz_acildi_v1', languageCode: 'tr', parameters: {} }, 'the fixed template, no parameters, to the normalised number');
+      is(piyzi[0].body, { phone: '905331111111', templateName: 'pyz_yerimiz_acildi_v1', languageCode: 'tr', parameters: {} }, 'the fixed template, no parameters, to the normalised number');
       is([r.run.sent, r.run.failed, r.run.result], [4, 1, '4 sent, 1 failed'], 'Hale\'s refused send is counted as failed');
       const claims = w.calls.filter(c => c.method === 'PUT' && c.url.includes('/offers/'));
       is(claims.length, 5, 'each offer is claimed in the log');

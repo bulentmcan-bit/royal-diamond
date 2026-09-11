@@ -204,9 +204,11 @@ var CROWN = {
      growing. Hannah has the most to fill. A technician on the roster but not
      in this list is taken after the ones that are.
 
-     notBefore — no gap-fill offers for a technician before this date: not a
-     message sent before it, and not a slot of hers dated before it. Remove
-     her line when the date is past (a past date blocks nothing). */
+     notBefore — no gap-fill offers for a technician's hours dated before
+     this date. It is the SLOT's date that is judged, not the day the run
+     happens: with 2026-09-14 here, a run on the 11th offers her Monday
+     the 14th and leaves her Friday and Saturday alone. Remove her line
+     when the date is past (a past date blocks nothing). */
   staffPrefs: {
     serviceSkill: {
       manikur: ['helen', 'lissa', 'hannah'],
@@ -246,8 +248,12 @@ var CROWN = {
                  booking ahead is offered a gap only if her last visit was
                  between these many days ago: sooner and she is not due
                  yet, later and she belongs to the win-back template, not
-                 to a gap. (A customer who HOLDS a booking further out is
-                 offered anyway — she comes earlier — and those go first.)
+                 to a gap. THE DUE COME FIRST — a due customer in the chair
+                 is a visit the till would not otherwise have had. A
+                 customer who HOLDS a booking further out (a pull-forward)
+                 is used only when no due customer is left for the slot:
+                 moving her up relocates a booking and opens a gap where
+                 she was, so on its own it adds nothing.
      Every customer also needs a usable phone, no booking within
      fillMinDaysAhead days of the gap, no offer in the last cooldownDays and
      no offer for that same day, ever; the KAPALI blocker and anyone opted
