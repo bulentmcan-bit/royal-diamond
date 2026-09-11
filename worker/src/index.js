@@ -1029,6 +1029,24 @@ function gfPlan(input) {
     (daysOf[String(a.clientId)] = daysOf[String(a.clientId)] || []).push(a);
   }
   const hasBookingOn = (cid, ymd) => (daysOf[cid] || []).some(a => String(a.datetime).slice(0, 10) === ymd);
+  // ONE PHONE IS ONE CUSTOMER. The book holds the same woman twice more
+  // than once — a name typed again, once in capitals — with the one number
+  // on both records. The first dry run offered "Berin Avunduk" AND "BERİN
+  // AVUNDUK" in the same hour, which live would have been two messages to
+  // one phone. So records are pooled by phone below: her bookings are
+  // pooled, she is offered once per run, and an offer to either record
+  // counts for both for the cooldown, the same-day rule and the booked mark.
+  const byClient = {}, cidsOfPhone = {};
+  for (const c of clients) {
+    if (!c || c.id == null) continue;
+    byClient[String(c.id)] = c;
+    const ph = waPhone(c.phone);
+    if (ph) (cidsOfPhone[ph] = cidsOfPhone[ph] || []).push(String(c.id));
+  }
+  const bookedOn = (o) => {
+    const cids = [String(o.cid)].concat(cidsOfPhone[String(o.phone || '')] || []);
+    return cids.some(cid => hasBookingOn(cid, o.d));
+  };
 
   // The offers log → holds, cooldowns, per-day marks, today's count.
   const held = new Set(), lastOffer = {}, offeredDay = {}, holdMs = g.holdMinutes * 60e3;
@@ -1038,10 +1056,13 @@ function gfPlan(input) {
     if (!o || !(o.st === 'sending' || o.st === 'offered' || o.st === 'expired' || o.st === 'booked')) continue; // 'failed' reached nobody
     const cid = String(o.cid);
     if (o.day === todayYmd) sentToday++;
-    lastOffer[cid] = Math.max(lastOffer[cid] || 0, Number(o.ts) || 0);
-    (offeredDay[cid] = offeredDay[cid] || new Set()).add(o.d);
+    for (const k of [cid, String(o.phone || '')]) {
+      if (!k) continue;
+      lastOffer[k] = Math.max(lastOffer[k] || 0, Number(o.ts) || 0);
+      (offeredDay[k] = offeredDay[k] || new Set()).add(o.d);
+    }
     if (o.st === 'booked') continue;
-    if (o.d && hasBookingOn(cid, o.d)) { out.booked.push(id); continue; }   // she came back: done, slot free
+    if (o.d && bookedOn(o)) { out.booked.push(id); continue; }   // she came back: done, slot free
     if (o.st === 'expired') continue;
     if (nowMs - (Number(o.ts) || 0) < holdMs) held.add(o.d + '|' + o.t + '|' + o.tech);
     else out.expire.push(id);
@@ -1050,9 +1071,7 @@ function gfPlan(input) {
   out.room = Math.max(0, g.dailyCap - sentToday);
 
   // The customers, with what each usually has and when she was last here.
-  const byClient = {};
-  for (const c of clients) if (c && c.id != null) byClient[String(c.id)] = c;
-  const cands = [];
+  const raw = [];
   for (const cid of Object.keys(daysOf)) {
     const c = byClient[cid];
     if (!c || waBlockedName(c.name)) continue;
@@ -1064,13 +1083,28 @@ function gfPlan(input) {
     const lastPast = past[past.length - 1];
     const ref = future[0] || lastPast;
     const daysSince = lastPast ? gfDayDiff(todayYmd, String(lastPast.datetime).slice(0, 10)) : null;
-    cands.push({
+    raw.push({
       cid, name: String(c.name || ''), phone, service: String(ref.service || ''),
       bookings: list.map(a => String(a.datetime).slice(0, 10)),
       nextBooking: future.length ? String(future[0].datetime).slice(0, 10) : null,
       daysSince
     });
   }
+  // Pool the twins (see ONE PHONE IS ONE CUSTOMER above): the record with
+  // the most recent visit names her and says what she has; every booking
+  // on any of her records counts for the distance rule; the soonest
+  // booking ahead on any of them is her next.
+  const byPhone = {};
+  for (const x of raw) {
+    const m = byPhone[x.phone];
+    if (!m) { byPhone[x.phone] = x; continue; }
+    m.bookings = m.bookings.concat(x.bookings);
+    if (x.nextBooking && (!m.nextBooking || x.nextBooking < m.nextBooking)) m.nextBooking = x.nextBooking;
+    if (x.daysSince != null && (m.daysSince == null || x.daysSince < m.daysSince)) {
+      m.daysSince = x.daysSince; m.cid = x.cid; m.name = x.name; m.service = x.service;
+    }
+  }
+  const cands = Object.values(byPhone);
   // The due ones first, most recent visit first — a visit the till would
   // not otherwise have. The pull-forwards after them, soonest booking
   // first: moving a customer up adds no booking, it only relocates one, so
@@ -1087,8 +1121,12 @@ function gfPlan(input) {
     // engaged, not due, and is left alone.
     if (x.nextBooking && !(x.nextBooking > ymd)) return false;
     if (!x.nextBooking && !(x.daysSince >= g.dueAfterDays && x.daysSince <= g.dueUntilDays)) return false;
-    if (lastOffer[x.cid] && nowMs - lastOffer[x.cid] < g.cooldownDays * 86400e3) return false;
-    if (offeredDay[x.cid] && offeredDay[x.cid].has(ymd)) return false;
+    // The cooldown and the same-day rule by her record OR her phone, so an
+    // offer to her twin record is an offer to her.
+    for (const k of [x.cid, x.phone]) {
+      if (lastOffer[k] && nowMs - lastOffer[k] < g.cooldownDays * 86400e3) return false;
+      if (offeredDay[k] && offeredDay[k].has(ymd)) return false;
+    }
     return true;
   };
 
@@ -1111,9 +1149,9 @@ function gfPlan(input) {
         const slotKey = ymd + '|' + gfHm(start) + '|' + tech.name;
         if (claimed.has(slotKey)) continue;
         if (out.offers.length >= out.room) { capHit = true; break; }
-        const pick = cands.find(x => !used.has(x.cid) && cfg.canDo(tech.key, x.service) && eligible(x, ymd));
+        const pick = cands.find(x => !used.has(x.phone) && cfg.canDo(tech.key, x.service) && eligible(x, ymd));
         if (!pick) { out.unfilled.push({ d: ymd, t: gfHm(start), tech: tech.name }); continue; }
-        used.add(pick.cid); claimed.add(slotKey);
+        used.add(pick.phone); claimed.add(slotKey);   // one phone, one offer per run
         out.offers.push({
           d: ymd, t: gfHm(start), tech: tech.name, techKey: tech.key,
           cid: pick.cid, name: pick.name, phone: pick.phone, service: pick.service, group: cfg.group(pick.service),

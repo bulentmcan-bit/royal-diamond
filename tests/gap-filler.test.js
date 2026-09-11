@@ -11,6 +11,8 @@
 //      one offer, one slot one customer
 //   3. who is left out: KAPALI, a bad phone, an opt-out (notes / the map),
 //      not yet due, gone too long, the 7-day cooldown
+//   3b. one phone is one customer: two records with the same number are
+//      offered once, their bookings pool, an offer to either counts for both
 //   4. the soft hold: an active hold blocks the slot, a stale one is
 //      released, an offer whose customer booked is marked booked
 //   5. the daily cap counts what the day's log already holds
@@ -189,6 +191,35 @@ console.log('3. who is left out');
   is(api.gfOptedOut({ notes: 'likes coffee' }, '905', { '905': {} }), true, 'the number in the map');
   is(api.gfOptedOut({ notes: 'likes coffee' }, '905', {}), false, 'a plain customer');
   is(api.gfOptedOut({ notes: 'non-stop talker' }, '905', {}), false, '"non-stop" is not an opt-out');
+}
+
+console.log('3b. one phone is one customer (the "Berin Avunduk" / "BERİN AVUNDUK" case)');
+{
+  const { api } = makeWorker({});
+  const cfg = api.gfConfig();
+  const twins = [
+    { id: 21, name: 'Berin Avunduk', phone: '0548 836 4040' },
+    { id: 22, name: 'BERİN AVUNDUK', phone: '905488364040' },
+  ];
+  const visits = [
+    A(201, 21, 'Helen', daysAgo(17) + 'T10:00', 'Klasik Pedikür (Ojesiz)'),
+    A(202, 22, 'Helen', daysAgo(30) + 'T10:00', 'Dolgu (Infill)'),
+  ];
+  const only = (extra) => ({ appointments: visits.concat(extra || []), clients: twins });
+  const p = api.gfPlan({ data: only(), offers: {}, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(p.offers.length, 1, 'two records, one phone → ONE offer per run, never two messages to one phone');
+  is([p.offers[0].name, p.offers[0].cid, p.offers[0].service, p.offers[0].why], ['Berin Avunduk', '21', 'Klasik Pedikür (Ojesiz)', 'son ziyaret 17 gün önce'], 'named by the record with the most recent visit, and that visit\'s service');
+  const q = api.gfPlan({ data: only([A(203, 22, 'Helen', '2026-09-16T10:00', 'Dolgu (Infill)')]), offers: {}, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(q.offers.length, 0, 'a booking on the twin record within 3 days of every gap keeps HER out — the bookings pool');
+  const prior = { 'x': { d: '2026-09-10', t: '10:00', tech: 'Helen', cid: '22', phone: '905488364040', ts: NOW - 2 * 86400e3, day: daysAgo(2), st: 'expired' } };
+  const r = api.gfPlan({ data: only(), offers: prior, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(r.offers.length, 0, 'an offer to the twin record two days ago is an offer to her: the cooldown holds by phone');
+  const sameDay = { 'y': { d: TODAY, t: '17:00', tech: 'Helen', cid: '22', phone: '905488364040', ts: NOW - 10 * 86400e3, day: daysAgo(10), st: 'expired' } };
+  const s = api.gfPlan({ data: only(), offers: sameDay, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(s.offers[0] && s.offers[0].d, '2026-09-16', 'the same-day rule holds by phone too: she is offered tomorrow, not today');
+  const booked = { 'z': { d: TODAY, t: '17:00', tech: 'Helen', cid: '21', phone: '905488364040', ts: NOW - 30 * 60e3, day: TODAY, st: 'offered' } };
+  const t = api.gfPlan({ data: only([A(204, 22, 'Helen', TODAY + 'T17:00', 'Dolgu (Infill)')]), offers: booked, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(t.booked, ['z'], 'she booked under the twin record: the offer is marked booked all the same');
 }
 
 console.log('4. the soft hold');
