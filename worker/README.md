@@ -222,6 +222,7 @@ too, and the two rotate independently):
 | `POST /wa/send` | `{phone, templateName, params}` → immediate send (the Google-review ask after checkout). |
 | `POST /wa/gapfill-preview` | `{}` → what the gap-filler would do this minute: the planned offers, the slots nobody could be offered, the holds it would release. Reads the diary, writes nothing, sends nothing. The panel's "Şimdi dene". |
 | `POST /wa/gapfill-run` | `{}` → one gap-filler run now, exactly as the hourly cron does it (dry run honoured, cap honoured, run recorded). |
+| `GET/POST /wa/hook` | **Piyzi's webhook — no shared key, the signature is the door.** GET echoes `?challenge=` (registration); POST takes Piyzi's signed events and keeps a customer's reply. See "The Piyzi webhook" below. |
 
 Phone numbers are normalised to `90XXXXXXXXXX`; anything that does not
 normalise to a Turkish mobile is refused rather than sent. The blocker client
@@ -352,3 +353,58 @@ calls `/wa/gapfill-preview` on an armed device.
 name into `WA_GAPFILL` in `wrangler.toml` → `gapFill.dryRun: false` in
 `crown-config.js` → `wrangler deploy`. Watch `wrangler tail` for the
 `[gapfill]` lines on the next hour.
+
+---
+
+# The Piyzi webhook (`/wa/hook`) — what customers write back
+
+Piyzi pushes its WhatsApp events to one https address as **signed POSTs**
+(their docs: app.piyzi.com → Geliştirici Araçları → Dokümantasyon →
+Webhook'lar). This worker receives them at
+
+```
+https://rd-buttons.royaldiamond.workers.dev/wa/hook
+```
+
+**Registering it, once.** Geliştirici Araçları → Webhook → "Webhook Tanımla",
+paste the address. Piyzi immediately GETs it with `?challenge=…` and expects
+the value back as plain text — the route does that — and then shows the
+signing key `whsec_…` **one time only**. Put it on the worker before
+closing that screen:
+
+```
+wrangler secret put PIYZI_WEBHOOK_SECRET
+```
+
+(from a real terminal — the prompt needs a keyboard; a shell without one
+uploads an empty secret). Until it is set the route answers 503 and keeps
+nothing; Piyzi retries a failed delivery five times and, after a long run of
+failures, pauses the webhook until it is re-enabled in their panel.
+
+**How a delivery is checked.** `X-Piyzi-Signature` is `sha256=` + the
+HMAC-SHA256 of the RAW body under that key; the worker recomputes it and
+compares constant-time. Bad or missing → 401, nothing read. The same
+`X-Piyzi-Delivery-Id` can arrive twice; the id is the record's key, so a
+retry finds it already kept and answers 200 without writing again.
+
+**What is kept.** Only `message.received` — a customer wrote, or tapped a
+template button (its label counts as her text). `rdns_wa_replies_v1/<id>`:
+`phone` (normalised, the form the offers use), `name` (Piyzi's contact
+name, else the offer's), `text`, `ts`, `day`, `read:false`, and the
+gap-filler offer she is answering — the latest real offer to that phone in
+the last 14 days — as `offerId` + `offer {d, t, tech, service}`; that
+offer is marked `replied` with her words. `message.sent` is acknowledged
+and dropped; `message.failed` (a planned send that never went) is
+acknowledged and written to `rdns_wa_log_v1`. A refused store answers 503
+so Piyzi tries again.
+
+**In the app** (index.html, WAREPLY): every device watches the path. An
+unread reply gets the treatment a "change requested" answer gets — a red
+toast when it lands, an amber line with the count on the dashboard
+("WhatsApp yanıtı okunmadı — müşteriyi arayın"), a panel with her name,
+number to ring, her words, the offered slot and "Teklife git" (the offer's
+row on the Gap Report page), and on reception's screen the full-screen
+card. **Okundu** marks it read in Firebase, so the card, the line and the
+count fall on every device at once. If the console says
+"[wr] replies read denied", open `rdns_wa_replies_v1` for signed-in reads
+in the Firebase rules, as with the gap-filler's paths.

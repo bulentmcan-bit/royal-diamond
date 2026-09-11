@@ -3732,6 +3732,19 @@ p, span, div, label, h1, h2, h3, h4 {
         <div id="dash-wa-ans-list"><div class="r24-empty">Henüz yanıt yok — hatırlatma mesajındaki butonlardan gelenler burada görünür.</div></div>
       </div>
 
+      <!-- WHATSAPP YANITLARI — what customers WROTE back, delivered by the
+           Piyzi webhook (worker /wa/hook → rdns_wa_replies_v1). Each unread
+           one is a person waiting on her phone: her name, number, her words,
+           the gap-filler offer she is answering. Reception rings, writes the
+           booking, presses Okundu — and the count follows on every device. -->
+      <div class="r24-panel" id="dash-wa-replies-panel" style="display:none;border-color:rgba(196,134,58,.55);">
+        <div class="r24-header">
+          <div class="r24-title">💬 WhatsApp Yanıtları <span class="r24-count" id="dash-wa-replies-count">0</span></div>
+          <div style="font-size:0.74rem;color:var(--muted);">okunmamış · müşterinin yazdığı mesajlar (Piyzi webhook)</div>
+        </div>
+        <div id="dash-wa-replies-list"><div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp'tan yazınca burada görünür.</div></div>
+      </div>
+
       <!-- KAPALI GÜNE DÜŞEN RANDEVULAR — a booking that landed on a day the
            salon is shut (Sunday, or a date marked closed in crown-config.js).
            Nothing here is ever deleted by the system: each customer must be
@@ -12313,7 +12326,7 @@ function rdCallSave(m){
 }
 // Pure: who must be rung right now. Returns one entry per due customer-day —
 // {key, carrier, group, client} — earliest arrival first.
-function rdCallScan(appts, cls, store, now){
+function rdCallScan(appts, cls, store, now, replies){
   const due=[], seen={};
   (appts||[]).forEach(function(a){
     if(!a||a.status!=='confirmed') return;
@@ -12339,9 +12352,26 @@ function rdCallScan(appts, cls, store, now){
     if(st && st.s==='zzz' && now<st.until) return;                      // snoozed, not yet
     due.push({ key:key, carrier:g[0], group:g, client:c||null, mode:(wantsChange?'change':'hour') });
   });
-  // Change requests outrank the hour alerts — they are already overdue.
+  // A customer who WROTE BACK — the Piyzi webhook's replies (WAREPLY) — is
+  // due the moment her message lands, the same treatment as a 'change'
+  // answer: an unread reply raises the card; the desk's "okundu" (which
+  // marks it read for every device) or a snooze puts it down. The key
+  // carries the day second, the shape rdCallSave trims by.
+  (replies||[]).forEach(function(r){
+    if(!r||r.read||!r.id) return;
+    const key='wr|'+String(r.day||new Date(Number(r.ts)||0).toISOString().slice(0,10))+'|'+String(r.id);
+    const st=(store||{})[key];
+    if(st && (st.s==='ok'||st.s==='no')) return;
+    if(st && st.s==='zzz' && now<st.until) return;
+    due.push({ key:key, carrier:null, group:[], client:null, mode:'reply', reply:r });
+  });
+  // Replies first — somebody is waiting on her phone right now — then the
+  // change requests, then the hour alerts. Replies newest first, the rest
+  // by arrival time.
+  const rank={reply:0, change:1, hour:2};
   due.sort(function(x,y){
-    if(x.mode!==y.mode) return x.mode==='change'?-1:1;
+    if(x.mode!==y.mode) return ((x.mode in rank)?rank[x.mode]:9)-((y.mode in rank)?rank[y.mode]:9);
+    if(x.mode==='reply') return (Number(y.reply.ts)||0)-(Number(x.reply.ts)||0);
     return String(x.carrier.datetime).localeCompare(String(y.carrier.datetime));
   });
   return due;
@@ -12391,6 +12421,13 @@ function rdCallRender(){
   const ov=document.getElementById('rdca-ov'), w=document.getElementById('rdca-wrap');
   if(!ov||!w) return;
   if(_rdCallIx>=_rdCallDue.length){ ov.style.display='none'; return; }
+  // A WhatsApp reply has its own card (WAREPLY below) — name, number, her
+  // words, the offer it answers — and the same buttons underneath.
+  if(_rdCallDue[_rdCallIx].mode==='reply' && typeof rdWrCardHtml==='function'){
+    w.innerHTML=rdWrCardHtml(_rdCallDue[_rdCallIx].reply, clients, _rdCallIx, _rdCallDue.length);
+    ov.style.display='flex';
+    return;
+  }
   const d=_rdCallDue[_rdCallIx], a=d.carrier, c=d.client||{};
   const hh=String(a.datetime).slice(11,16);
   const rest=d.group.slice(1).map(function(x){ return String(x.datetime).slice(11,16)+(x.service?' '+x.service:''); }).join(' · ');
@@ -12425,6 +12462,16 @@ function rdCallRender(){
   ov.style.display='flex';
 }
 function rdCallAns(v){
+  // A reply card: "okundu" marks the reply read in Firebase — every device's
+  // card and count follow — and the desk store remembers it meanwhile.
+  try{
+    const d0=_rdCallDue[_rdCallIx];
+    if(d0 && d0.mode==='reply'){
+      if(typeof rdWrMarkRead==='function') rdWrMarkRead(d0.reply.id, true);
+      const m0=rdCallStore(); m0[d0.key]={ s:'ok', at:Date.now() }; rdCallSave(m0);
+      _rdCallIx++; rdCallRender(); return;
+    }
+  }catch(e){ console.warn('[call] reply answer error:', e); }
   try{
     const d=_rdCallDue[_rdCallIx]; if(!d) return;
     const live=(typeof apptById==='function')?apptById(d.carrier.id):d.carrier;
@@ -12455,7 +12502,7 @@ function rdCallTick(){
     }
     const ov=document.getElementById('rdca-ov');
     if(ov && ov.style.display!=='none' && _rdCallIx<_rdCallDue.length) return;   // one is on screen — let it be answered
-    const due=rdCallScan(appointments, clients, rdCallStore(), Date.now());
+    const due=rdCallScan(appointments, clients, rdCallStore(), Date.now(), (typeof rdWrUnread==='function')?rdWrUnread():[]);
     if(!due.length){ if(ov) ov.style.display='none'; return; }
     _rdCallDue=due; _rdCallIx=0; rdCallRender();
   }catch(e){}
@@ -12688,6 +12735,12 @@ function rdDashActions(){
   try{
     const n=(typeof rbItems==='function')?rbItems().filter(i=>i&&i.status==='pending').length:0;
     if(n) items.push({n:n, ic:'📌', txt:'randevuya saat verilecek', act:"rdDashReveal('rbq-panel')"});
+  }catch(e){}
+  // WhatsApp yanıtı: a customer wrote back (the Piyzi webhook) — the loudest,
+  // she is waiting on her phone; each one is a slot to write into the book
+  try{
+    const n=(typeof rdWrUnread==='function')?rdWrUnread().length:0;
+    if(n) items.push({n:n, ic:'💬', txt:'WhatsApp yanıtı okunmadı — müşteriyi arayın', amber:true, act:"rdDashReveal('dash-wa-replies-panel')"});
   }catch(e){}
   // değişiklik isteyen: answers from the reminder page — the loud one
   try{
@@ -18328,7 +18381,7 @@ window.addEventListener('load',function(){
   function rows(list, live){
     if(!list.length) return empty('Teklif edilecek boş saat / uygun müşteri yok.');
     return list.map(function(o){
-      return '<div style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;font-size:0.82rem;">'
+      return '<div'+(live&&o._id?' id="gf-offer-'+esc(o._id)+'"':'')+' style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;font-size:0.82rem;">'
         + '<div style="min-width:150px;"><b>'+esc(dayTR(o.d))+' '+esc(o.t)+'</b><div style="color:var(--muted);font-size:0.74rem;">'+esc(o.tech)+'</div></div>'
         + '<div style="flex:1;min-width:180px;"><b>'+esc(o.name)+'</b> <span style="color:var(--wa);font-weight:700;">'+esc(o.phone)+'</span>'
         + '<div style="color:var(--muted);font-size:0.74rem;">'+esc(o.service||'')+(o.why?' · '+esc(o.why):'')+'</div></div>'
@@ -18413,6 +18466,134 @@ window.addEventListener('load',function(){
     }catch(e){ console.warn('[gf] start:',e); }
   }
   _timer=setInterval(start,3000);
+  try{ render(); }catch(e){}
+})();
+</script>
+
+<script>
+/* ══ WHATSAPP YANITLARI — what the Piyzi webhook brings in ══
+   The worker's /wa/hook keeps every message a customer writes back under
+   rdns_wa_replies_v1 (worker/README.md, "The Piyzi webhook"): her phone,
+   her name, her words, when, and the gap-filler offer she is answering.
+   This page WATCHES that path and gives an unread reply the same treatment
+   as a "change requested" answer: a red toast the moment it lands, an
+   amber line with the count on the dashboard, a panel listing them with
+   her number to ring and a link to the offer, and — on reception's screen
+   — the full-screen card (rdCallScan raises it, mode 'reply'). Okundu marks
+   it read IN FIREBASE, so the card, the line and the count fall on every
+   device at once. Nothing here sends anything. */
+// WAREPLY-SLICE-START (fixture-tested — pure helpers only, no DOM at load)
+function rdWrEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// The Firebase map → a list, newest first, each row carrying its key as id.
+function rdWrList(map){
+  return Object.keys(map||{}).map(function(k){ var r=Object.assign({}, map[k]||{}); if(!r.id) r.id=k; return r; })
+    .filter(function(r){ return r && r.phone; })
+    .sort(function(a,b){ return (Number(b.ts)||0)-(Number(a.ts)||0); });
+}
+function rdWrUnreadOf(map){ return rdWrList(map).filter(function(r){ return !r.read; }); }
+// Her name: what Piyzi's contact carried, else the customer record with
+// that number, else the number itself — never blank on a card that says
+// ARAYIN.
+function rdWrNameFor(r, cls){
+  if(r && r.name) return String(r.name);
+  var ph=String((r&&r.phone)||'');
+  var c=(cls||[]).find(function(x){
+    try{ return !!(x&&x.phone)&&(typeof normalizeWaPhone==='function'?normalizeWaPhone(String(x.phone)):String(x.phone).replace(/\D/g,''))===ph; }catch(e){ return false; }
+  });
+  return (c&&c.name)||('+'+ph);
+}
+function rdWrDayTR(ymd){ try{ return new Date(String(ymd)+'T12:00:00').toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short'}); }catch(e){ return String(ymd||''); } }
+function rdWrWhen(ts){ if(!ts) return ''; var d=new Date(Number(ts)); var p=function(n){ return String(n).padStart(2,'0'); }; return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+// "Pzt 14 Eyl 09:00 · Helen · Dolgu (Infill)" — the slot she was offered.
+function rdWrOfferLine(r){ var o=r&&r.offer; if(!o) return ''; return rdWrDayTR(o.d)+' '+(o.t||'')+(o.tech?' · '+o.tech:'')+(o.service?' · '+o.service:''); }
+// The full-screen reception card, in the call alert's own clothes.
+function rdWrCardHtml(r, cls, ix, total){
+  var esc=rdWrEsc, nm=rdWrNameFor(r, cls), ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,'');
+  var when=r.ts?new Date(Number(r.ts)).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';
+  var off=rdWrOfferLine(r);
+  return '<div class="rdca-kicker chg"><span class="rdca-pulse"></span> WHATSAPP YANITI — ARAYIN</div>'
+    +'<div class="rdca-lead">'+(r.offer?'Boşluk teklifine cevap verdi — arayıp saati deftere yazın':'WhatsApp\'tan yazdı — şimdi arayın')+'</div>'
+    +'<div class="rdca-name">'+esc(nm)+'</div>'
+    +'<div class="rdca-meta">'+(when?esc(when)+' &nbsp;·&nbsp; ':'')+'<b>“'+esc(r.text||'(metin yok)')+'”</b>'
+    +(off?'<br><span style="font-size:15px;color:#e8c579;">Teklif edilen saat: <b>'+esc(off)+'</b></span>':'')+'</div>'
+    +'<a class="rdca-tel" href="'+tel+'">+'+esc(ph)+'</a><div class="rdca-telnote"></div>'
+    +'<a class="rdca-call" href="'+tel+'">📞 ARA</a>'
+    +'<div class="rdca-q">Aradıktan sonra seçin</div>'
+    +'<div class="rdca-row">'
+    +'<button type="button" class="rdca-b ok" onclick="rdCallAns(\'ok\')">✓ Okundu — ilgilendim</button>'
+    +(r.offerId?'<button type="button" class="rdca-b na" onclick="rdWrGoOffer(\''+esc(r.offerId)+'\')">📋 Teklife git</button>':'')
+    +'<button type="button" class="rdca-b na" onclick="rdCallSnooze()">↻ 5 dk sonra hatırlat</button>'
+    +'</div>'
+    +'<div class="rdca-why">Müşteri mesaja cevap verdi'+(r.offer?'; teklif edilen saat bekletme süresi boyunca ona ayrılı — arayıp randevuyu deftere yazın':'')+'. Okundu deyince bu uyarı her cihazda kapanır.</div>'
+    +(total>1?('<div class="rdca-multi">Sırada başka müşteriler var — <b>'+(ix+1)+' / '+total+'</b></div>'):'');
+}
+// WAREPLY-SLICE-END
+(function(){
+  var _wr={}, _seen=null, _started=false, _timer=null;
+  function cls(){ try{ return clients||[]; }catch(e){ return []; } }
+  window.rdWrUnread=function(){ return rdWrUnreadOf(_wr); };
+  window.rdWrMarkRead=function(id, v){
+    var role=''; try{ role=localStorage.getItem('rdns_msg_role')||''; }catch(e){}
+    try{ _fbDb.ref('rdns_wa_replies_v1/'+String(id).replace(/[.#$\/\[\]]/g,'_')).update(v?{read:true, readAt:Date.now(), readBy:role}:{read:false, readAt:null, readBy:null}); }
+    catch(e){ console.warn('[wr] mark read:', e); }
+  };
+  // The offer she is answering, on the Gap Report page, lit for a moment.
+  window.rdWrGoOffer=function(offerId){
+    try{ if(typeof rdCallSnooze==='function' && document.getElementById('rdca-ov') && document.getElementById('rdca-ov').style.display!=='none') rdCallSnooze(); }catch(e){}
+    try{ goto('gapreport', null); }catch(e){}
+    setTimeout(function(){
+      var el=document.getElementById('gf-offer-'+offerId);
+      if(!el){ try{ toast('📋','Teklif listede değil','Bu teklif son 50 teklifin dışında kalmış olabilir.','r'); }catch(e){} return; }
+      try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+      el.style.transition='background 0.4s'; el.style.background='rgba(196,134,58,0.28)';
+      setTimeout(function(){ el.style.background=''; }, 3500);
+    }, 400);
+  };
+  function render(){
+    var list=document.getElementById('dash-wa-replies-list'), count=document.getElementById('dash-wa-replies-count');
+    var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read; });
+    if(count) count.textContent=String(unread.length);
+    if(!list) return;
+    var rows=unread.concat(all.filter(function(r){ return r.read; }).slice(0,30));
+    if(!rows.length){ list.innerHTML='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>'; return; }
+    list.innerHTML=rows.map(function(r){
+      var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;'+(r.read?'opacity:0.6;':'border-left:4px solid #c4863a;background:rgba(196,134,58,0.08);')+'">'
+        +'<div style="flex:1;min-width:220px;">'
+        +'<div style="font-weight:800;font-size:0.92rem;">'+esc(rdWrNameFor(r, cls()))+' <a href="'+tel+'" style="color:var(--wa);text-decoration:none;font-weight:700;font-size:0.82rem;margin-left:6px;">📞 +'+esc(ph)+'</a></div>'
+        +'<div style="font-size:0.9rem;margin-top:3px;">“'+esc(r.text||'(metin yok)')+'”</div>'
+        +'<div style="font-size:0.74rem;color:var(--muted);margin-top:3px;">'+esc(rdWrWhen(r.ts))+(off?' · Teklif: <b>'+esc(off)+'</b>':' · teklifle eşleşmedi')+(r.read?' · okundu'+(r.readBy?' ('+esc(r.readBy)+')':''):'')+'</div>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+        +(r.offerId?'<button onclick="rdWrGoOffer(\''+esc(r.offerId)+'\')" style="background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">📋 Teklife git</button>':'')
+        +'<button onclick="rdWrMarkRead(\''+esc(r.id)+'\','+(r.read?'false':'true')+')" style="background:'+(r.read?'rgba(150,150,150,0.12)':'#1ea34f')+';border:1px solid '+(r.read?'rgba(150,150,150,0.45)':'#1ea34f')+';color:'+(r.read?'#777':'#fff')+';border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">'+(r.read?'↺ Okunmadı':'✓ Okundu')+'</button>'
+        +'</div></div>';
+    }).join('');
+  }
+  function onData(map){
+    _wr=map||{};
+    var list=rdWrList(_wr);
+    if(_seen){
+      list.forEach(function(r){
+        if(_seen[r.id]||r.read) return;
+        try{ toast('💬','WHATSAPP YANITI — ARAYIN', rdWrNameFor(r, cls())+' +'+String(r.phone||'')+': “'+String(r.text||'').slice(0,120)+'”'+(r.offer?' — teklif: '+rdWrOfferLine(r):''), 'r'); }catch(e){}
+      });
+    }
+    _seen={}; list.forEach(function(r){ _seen[r.id]=1; });
+    render();
+    try{ if(typeof rdDashActions==='function') rdDashActions(); }catch(e){}
+    // Reception's card, now — not at the next half-minute tick.
+    try{ if(typeof rdCallTick==='function') rdCallTick(); }catch(e){}
+  }
+  function start(){
+    try{
+      if(_started) return;
+      if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled) return;
+      _started=true; clearInterval(_timer);
+      _fbDb.ref('rdns_wa_replies_v1').limitToLast(100).on('value', function(s){ onData(s.val()); }, function(e){ console.warn('[wr] replies read denied:', e); });
+    }catch(e){ console.warn('[wr] start:', e); }
+  }
+  _timer=setInterval(start, 3000);
   try{ render(); }catch(e){}
 })();
 </script>

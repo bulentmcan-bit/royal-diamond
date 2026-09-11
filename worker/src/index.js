@@ -1248,11 +1248,152 @@ async function runGapFiller(env, now, opts) {
   return { ok: true, mode, run };
 }
 
+/* ── the Piyzi webhook — /wa/hook ──────────────────────────────────────────
+   Piyzi delivers its WhatsApp events to ONE https address as signed POSTs
+   (their docs: app.piyzi.com → Geliştirici Araçları → Dokümantasyon →
+   Webhook'lar, read 11 Sep 2026): message.received — a customer wrote, or
+   tapped a template button — message.sent and message.failed. Every POST
+   carries X-Piyzi-Event, X-Piyzi-Delivery-Id and X-Piyzi-Signature, which is
+   "sha256=" + HMAC-SHA256 of the RAW body under the whsec_… key Piyzi shows
+   ONCE at registration — kept here as the wrangler secret
+   PIYZI_WEBHOOK_SECRET, never in this file. At registration, and at every
+   URL change, Piyzi first GETs the address with ?challenge=… and wants the
+   value echoed back as plain text; no event is delivered until that passes.
+   Their delivery rules: answer 2xx within five seconds, a failed delivery
+   is retried five times with backoff, the same deliveryId can arrive more
+   than once, and order is not guaranteed.
+
+   THIS ROUTE IS PUBLIC — Piyzi holds no x-rd-key — so the signature is the
+   whole door: no secret configured → 503 and nothing is read; a bad or
+   missing signature → 401 and nothing is read; and the comparison is
+   constant-time, like the buttons' key. A verified message.received is
+   kept in rdns_wa_replies_v1/<deliveryId> (the id makes a retry harmless):
+   her phone in the normalised form the offers use, her name (Piyzi's
+   contact name, else the offer's), the text — a button tap's label counts
+   as text — when, and the gap-filler offer she is answering: the latest
+   offer to that phone inside HOOK_OFFER_DAYS, which is marked replied with
+   her words. The app watches that path and raises the reception alert
+   (WAREPLY in index.html). message.sent is acknowledged and dropped;
+   message.failed — a planned send that never went — is acknowledged and
+   written to rdns_wa_log_v1, because a silent failure is the one worth a
+   line. Anything the store refuses answers 503 so Piyzi tries again. */
+const HOOK_REPLIES = 'rdns_wa_replies_v1';
+const HOOK_OFFER_DAYS = 14;
+
+async function hookSign(secret, rawBody) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(String(secret)), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(String(rawBody)));
+  return 'sha256=' + [...new Uint8Array(mac)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// The whole header is compared, constant-time, against what the raw body
+// should have signed to. No secret or no header is simply false.
+async function hookVerify(secret, rawBody, header) {
+  if (!secret || !header) return false;
+  return sameKey(await hookSign(secret, rawBody), String(header).trim());
+}
+// The event → what the salon keeps. Pure; null for something that is not
+// an event at all. The deliveryId is made safe as a Firebase key.
+function hookParse(evt) {
+  if (!evt || typeof evt !== 'object') return null;
+  const d = evt.data || {}, m = d.message || {}, contact = d.contact || {};
+  const text = String(m.text || (m.button && m.button.text) || '').trim();
+  const at = Date.parse(m.timestamp || evt.timestamp || '') || Date.now();
+  return {
+    deliveryId: String(evt.deliveryId || '').replace(/[.#$\/\[\]]/g, '_').slice(0, 120),
+    event: String(evt.event || ''),
+    phone: waPhone(contact.phone),
+    name: String(contact.name || '').trim().slice(0, 80),
+    text: text.slice(0, 1000),
+    type: String(m.type || ''),
+    msgUid: m.uid ? String(m.uid) : null,
+    contextUid: (m.context && m.context.messageUid) ? String(m.context.messageUid) : null,
+    conversationUid: d.conversationUid ? String(d.conversationUid) : null,
+    at
+  };
+}
+// The offer this reply answers: the latest REAL offer to her phone inside
+// HOOK_OFFER_DAYS of the reply — [id, offer], or null. Pure.
+function hookMatchOffer(offers, phone, atMs) {
+  let best = null;
+  for (const id of Object.keys(offers || {})) {
+    const o = offers[id];
+    if (!o || String(o.phone || '') !== String(phone || '')) continue;
+    if (!(o.st === 'sending' || o.st === 'offered' || o.st === 'expired' || o.st === 'booked')) continue;
+    const ts = Number(o.ts) || 0;
+    if (atMs - ts > HOOK_OFFER_DAYS * 86400e3 || ts > atMs + 3600e3) continue;
+    if (!best || ts > (Number(best[1].ts) || 0)) best = [id, o];
+  }
+  return best;
+}
+const hookText = (body, status) =>
+  new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
+
+async function handleHook(req, env, ctx, url) {
+  // The registration handshake: echo the challenge, plain text, nothing else.
+  if (req.method === 'GET') {
+    const ch = url.searchParams.get('challenge');
+    if (ch == null) return hookText('no', 400);
+    console.log('[hook] registration challenge answered');
+    return hookText(String(ch), 200);
+  }
+  if (req.method !== 'POST') return hookText('no', 405);
+  if (!env.PIYZI_WEBHOOK_SECRET) {
+    console.log('[hook] REFUSED: PIYZI_WEBHOOK_SECRET not set — run: wrangler secret put PIYZI_WEBHOOK_SECRET');
+    return hookText('no secret', 503);
+  }
+  const raw = await req.text();
+  if (!(await hookVerify(env.PIYZI_WEBHOOK_SECRET, raw, req.headers.get('x-piyzi-signature')))) {
+    console.log('[hook] REFUSED: bad or missing signature');
+    return hookText('bad signature', 401);
+  }
+  let evt = null;
+  try { evt = JSON.parse(raw); } catch { return hookText('bad json', 400); }
+  const r = hookParse(evt);
+  if (!r || !r.deliveryId) return hookText('bad event', 400);
+  if (r.event !== 'message.received') {
+    if (r.event === 'message.failed') {
+      waLog(env, ctx, { op: 'hook-failed', uid: (evt.data && evt.data.scheduledMessageUid) || null,
+                        outcome: 'failed:' + ((evt.data && evt.data.error && evt.data.error.code) || '?') });
+    } else console.log('[hook]', r.event || '(no event)', 'acknowledged, not kept');
+    return hookText('ignored', 200);
+  }
+  if (!r.phone) { console.log('[hook] message.received without a usable phone — acknowledged, not kept'); return hookText('no phone', 200); }
+  if (!env.FB_SECRET) { console.log('[hook] REFUSED: FB_SECRET not set — cannot keep the reply; Piyzi will retry'); return hookText('no store', 503); }
+  try {
+    if (await fbRead(env, HOOK_REPLIES + '/' + r.deliveryId)) {
+      console.log('[hook] duplicate delivery', r.deliveryId, '— already kept');
+      return hookText('dup', 200);
+    }
+    const offers = (await fbRead(env, GF + '/offers')) || {};
+    const hit = hookMatchOffer(offers, r.phone, r.at);
+    const rec = {
+      id: r.deliveryId, phone: r.phone, name: r.name || (hit ? String(hit[1].name || '') : ''),
+      text: r.text, type: r.type, ts: r.at, day: nicosiaYmd(new Date(r.at)), read: false,
+      offerId: hit ? hit[0] : null,
+      offer: hit ? { d: hit[1].d || '', t: hit[1].t || '', tech: hit[1].tech || '', service: hit[1].service || '' } : null,
+      msgUid: r.msgUid, contextUid: r.contextUid, conversationUid: r.conversationUid
+    };
+    await fbWrite(env, 'PUT', HOOK_REPLIES + '/' + r.deliveryId, rec);
+    if (hit) {
+      await fbWrite(env, 'PATCH', GF + '/offers/' + hit[0], { replied: true, repliedAt: r.at, replyText: r.text.slice(0, 200), replyId: r.deliveryId })
+        .catch(e => console.log('[hook] offer mark failed:', String(e)));
+    }
+    waLog(env, ctx, { op: 'hook-reply', apptId: 'wr-' + r.deliveryId, to: r.phone, outcome: hit ? 'kept:offer-' + hit[0] : 'kept:no-offer' });
+    console.log('[hook] reply kept from', r.phone, hit ? '→ offer ' + hit[0] : '(no offer matched)');
+    return hookText('ok', 200);
+  } catch (e) {
+    console.log('[hook] store failed — Piyzi will retry:', String(e));
+    return hookText('store failed', 503);
+  }
+}
+
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
-         waAnswersFromIndex, gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes };
+         waAnswersFromIndex, gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes,
+         hookSign, hookVerify, hookParse, hookMatchOffer, handleHook };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -1275,6 +1416,9 @@ export default {
 
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    // Piyzi's webhook is the one /wa/ address WITHOUT the shared key — Piyzi
+    // holds none; its signature is the door. Routed before the keyed routes.
+    if (url.pathname === '/wa/hook') return handleHook(req, env, ctx, url);
     if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
     // The "Detaylar / Details" button on both approved WhatsApp templates
     // lands under /r/ — the real confirm page, public by design (customers

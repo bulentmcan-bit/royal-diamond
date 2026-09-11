@@ -88,3 +88,8 @@ WA_CONF = '{"templateName":"pyz_appointment_booked_v2","languageCode":"tr","body
 # nothing and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
 # Once known:  WA_GAPFILL = '{"templateName":"<name>","languageCode":"tr","body":[]}'
 WA_GAPFILL = ''
+
+# The Piyzi webhook (/wa/hook) is signed with the whsec_… key Piyzi shows
+# ONCE when the webhook is registered. It is the wrangler secret
+# PIYZI_WEBHOOK_SECRET — never here. Without it the route answers 503 and
+# reads nothing. See README.md, "The Piyzi webhook".
