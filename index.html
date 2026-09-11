@@ -2347,14 +2347,20 @@
       // The first technician who is free for her own whole length from this
       // start — the same 60 minutes for everyone now, but still read through
       // slotFor() so it is asked, not assumed.
-      const staffPick=_obTechs(req.date).find(t=>_obTechCanStart(t, req.time, maps))||'';
+      // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): only a
+      // technician who does the requested service may take it. If the only
+      // one who does is busy, the request is FULL — nobody else is booked
+      // for it quietly; reception rings with an alternative.
+      const _able=_obTechs(req.date).filter(t=>rdCanDo(t, req.service||''));
+      const staffPick=_able.find(t=>_obTechCanStart(t, req.time, maps))||'';
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
       const _reqDur=staffPick?_obSpacing(staffPick):60;
       if(!_obUnion().includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
-        try{toast('🌐','ONLINE TALEP — SAAT DOLU ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama saat dolu. Tel: '+(req.phone||'—')+' — alternatif için arayın.','r');}catch(e){}
+        const _why=_able.length?'saat dolu':'bu hizmeti ('+(req.service||'')+') yapan personel yok';
+        try{toast('🌐','ONLINE TALEP — SAAT DOLU ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama '+_why+'. Tel: '+(req.phone||'—')+' — alternatif için arayın.','r');}catch(e){}
         publishAvailability();
         return;
       }
@@ -3982,6 +3988,19 @@ p, span, div, label, h1, h2, h3, h4 {
         </div>
         <div id="fcl-free" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;"></div>
         <div id="fcl-body" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;"></div>
+      </div>
+
+      <!-- ══ OTOMATİK BOŞLUK DOLDURUCU — the worker's cron, watched from here ══ -->
+      <div style="margin-top:26px;" id="gf-wrap">
+        <div style="font-weight:700;font-size:1.05rem;color:var(--gold);margin-bottom:3px;">🤖 Otomatik Boşluk Doldurucu</div>
+        <div style="font-size:0.76rem;color:var(--muted);margin-bottom:10px;">
+          Cloudflare worker'da saat başı çalışır (09–18, Pzt–Cmt), salon cihazları kapalıyken de: boş saatleri bugün → +3 gün sırasıyla bulur, her boş saati TEK müşteriye WhatsApp ile teklif eder. Kurallar crown-config.js'te (staffPrefs, gapFill).
+        </div>
+        <div id="gf-status" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:12px;"></div>
+        <div style="font-weight:700;font-size:0.82rem;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;">Son çalışma — ne gönderirdi / ne gönderdi</div>
+        <div id="gf-run" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px;"></div>
+        <div style="font-weight:700;font-size:0.82rem;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;">Son 50 teklif</div>
+        <div id="gf-offers" style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;"></div>
       </div>
     </div>
 
@@ -5853,6 +5872,23 @@ function rdStartLadderHM(){ const p=n=>String(n).padStart(2,'0'); return rdStart
 function rdCanStartAt(m){ return rdStartLadder().indexOf(m)!==-1; }
 // The first offered start at or after this minute — null when none is left.
 function rdNextStart(m){ const l=rdStartLadder(); for(let i=0;i<l.length;i++){ if(l[i]>=m) return l[i]; } return null; }
+// WHO CAN DO WHAT — crown-config.js staffPrefs.serviceSkill, through
+// CROWN.canDo / CROWN.skilledOn. Every place a technician is chosen for a
+// service asks these: the booking form, the online request handler, Uygun
+// Saat Bul and the fill-call list (the automatic gap-filler asks the same
+// config inside the worker). A technician who does not do the service is
+// refused, and NOBODY is substituted for her quietly — the answer is "no
+// availability" and reception rings. Before the config is there (it loads
+// further down the file) everyone can do everything, the old behaviour.
+function rdCanDo(staff, service){
+  try{ const C=window.CROWN; if(C&&C.canDo) return !!C.canDo(staff, service); }catch(e){}
+  return true;
+}
+// Who on the day's roster does this service, best first — names.
+function rdSkilledOn(service, date){
+  try{ const C=window.CROWN; if(C&&C.skilledOn) return C.skilledOn(service, date).map(function(o){ return o.name; }); }catch(e){}
+  return rdStaffOn(date);
+}
 const STAFF_COLORS = {
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
   Zara:'var(--lavender)', Saeideh:'var(--orange)'
@@ -6189,6 +6225,17 @@ function dashEditAppt(id){
         const priorKnown = apptKnownPrice(live);
         const wasCompleted = live.status === 'completed';
 
+        // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): a pairing
+        // that is being CHANGED here must be allowed. A record that already
+        // stands — a checkout, a price correction on an old job — is never
+        // refused for what it always was.
+        {
+          const _stv=document.getElementById('a-staff').value, _svv=document.getElementById('a-service').value||live.service;
+          if(_stv && _svv && (_stv!==live.staff || _svv!==live.service) && typeof rdCanDo==='function' && !rdCanDo(_stv,_svv)){
+            toast('🚫','Personel bu hizmeti yapmıyor', _stv+' — '+_svv+'. Yapan: '+(rdSkilledOn(_svv, live.datetime).join(', ')||'kimse')+'.','r');
+            return;
+          }
+        }
         // Never let an empty select wipe a service name. Old appointments carry
         // names that are no longer in the dropdown, and writing that blank back
         // is what left records with no Hizmet at all.
@@ -8762,6 +8809,27 @@ try{
   document.getElementById('a-staff').addEventListener('change',autoDurFill);
   document.getElementById('a-service').addEventListener('change',autoDurFill);
 }catch(e){}
+// WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): when the service
+// changes, the Personel list greys out whoever does not do it, and a choice
+// that has just become impossible is CLEARED — never swapped for somebody
+// who does. Saving re-checks the pair (rdCanDo) whichever way it was set.
+function rdApplySkillToStaffSel(){
+  try{
+    const st=document.getElementById('a-staff'), sv=document.getElementById('a-service');
+    if(!st||!sv) return;
+    const svc=sv.value;
+    for(let i=0;i<st.options.length;i++){
+      const o=st.options[i]; if(!o.value) continue;
+      const ok=rdCanDo(o.value, svc);
+      o.disabled=!ok; o.textContent=o.value+(ok?'':' — bu hizmeti yapmıyor');
+    }
+    if(st.value && !rdCanDo(st.value, svc)){
+      const was=st.value; st.value='';
+      try{ toast('🚫','Personel bu hizmeti yapmıyor', was+' — '+svc+'. Yapan: '+(rdSkilledOn(svc, (document.getElementById('a-dt')||{}).value).join(', ')||'kimse')+'.','r'); }catch(e){}
+    }
+  }catch(e){}
+}
+try{ document.getElementById('a-service').addEventListener('change',rdApplySkillToStaffSel); }catch(e){}
 function renderGapReport(){
   const dateInput = document.getElementById('gr-date');
   if(!dateInput) return;
@@ -18086,11 +18154,15 @@ window.addEventListener('load',function(){
           var c = _clis().find(function(x){ return String(x.id)===String(a.clientId); });
           if(!c || !c.phone) return;
           var t = techOf(a), dur = durOf(a);
-          var same = t ? fits(win, t, dur) : null;
+          // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): her own
+          // technician must do this service for the window to be hers, and
+          // the "other technician" she could be moved to must do it too — a
+          // lash customer is never offered Helen's window.
+          var same = (t && rdCanDo(t, a.service)) ? fits(win, t, dur) : null;
           var other = null, otherTech = null;
           if(!same){
             for(var j=0;j<dayTechs.length;j++){
-              var tt = dayTechs[j]; if(tt===t) continue;
+              var tt = dayTechs[j]; if(tt===t || !rdCanDo(tt, a.service)) continue;
               var s = fits(win, tt, dur);
               if(s){ other = s; otherTech = tt; break; }
             }
@@ -18229,6 +18301,119 @@ window.addEventListener('load',function(){
     try{ renderFillCallList(); }catch(e){ console.warn('fcl:', e); }
   };
 
+})();
+</script>
+
+<script>
+/* ══ OTOMATİK BOŞLUK DOLDURUCU — the panel ══
+   The gap-filler itself runs in the Cloudflare worker on a cron
+   (worker/README.md, "The automatic gap-filler"); this page only WATCHES it:
+   the last run's output (the dry-run list, or what was sent) and the last
+   fifty offers under rdns_gapfill_v1, with three hand actions — ✓ yanıt
+   geldi, 🚫 mesaj istemiyor, ⏸ durdur (owner PIN; pauses the cron without a
+   deploy) — and "Şimdi dene", which asks the worker for a preview from a
+   device that has the shared key. Nothing here sends anything. */
+(function(){
+  var _offers={}, _run=null, _control=null, _started=false, _timer=null;
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function when(ts){ if(!ts) return ''; var d=new Date(ts); var p=function(n){ return String(n).padStart(2,'0'); }; return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }
+  function dayTR(ymd){ try{ return new Date(String(ymd)+'T12:00:00').toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short'}); }catch(e){ return ymd; } }
+  function cfg(){ try{ return (window.CROWN&&CROWN.gapFill)||{}; }catch(e){ return {}; } }
+  function stLabel(o){
+    var m={sending:['gönderiliyor','#c4863a'],offered:['teklif edildi','#2f7fe0'],failed:['GÖNDERİLEMEDİ','#e34948'],expired:['süresi doldu','#8a8a8a'],booked:['✅ randevu aldı','#1ea34f']};
+    var x=m[o.st]||[o.st||'?','#8a8a8a'];
+    return '<span style="color:'+x[1]+';font-weight:700;">'+esc(x[0])+'</span>'+(o.replied?' <span style="color:#1ea34f;font-weight:700;">· yanıtladı</span>':'');
+  }
+  function empty(t){ return '<div style="color:var(--muted);font-size:0.82rem;padding:12px 14px;font-style:italic;">'+t+'</div>'; }
+  function rows(list, live){
+    if(!list.length) return empty('Teklif edilecek boş saat / uygun müşteri yok.');
+    return list.map(function(o){
+      return '<div style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;font-size:0.82rem;">'
+        + '<div style="min-width:150px;"><b>'+esc(dayTR(o.d))+' '+esc(o.t)+'</b><div style="color:var(--muted);font-size:0.74rem;">'+esc(o.tech)+'</div></div>'
+        + '<div style="flex:1;min-width:180px;"><b>'+esc(o.name)+'</b> <span style="color:var(--wa);font-weight:700;">'+esc(o.phone)+'</span>'
+        + '<div style="color:var(--muted);font-size:0.74rem;">'+esc(o.service||'')+(o.why?' · '+esc(o.why):'')+'</div></div>'
+        + (live ? '<div style="min-width:140px;font-size:0.76rem;">'+stLabel(o)+'<div style="color:var(--muted);">'+esc(when(o.ts))+'</div></div>'
+                + '<div style="display:flex;gap:6px;">'
+                + '<button onclick="gfReplied(\''+esc(o._id)+'\','+(o.replied?'false':'true')+')" title="Yanıt geldi — ikinci basış geri alır" style="background:'+(o.replied?'#1ea34f':'rgba(30,163,79,0.12)')+';border:1px solid rgba(30,163,79,0.45);color:'+(o.replied?'#fff':'#1ea34f')+';border-radius:8px;padding:5px 9px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">✓</button>'
+                + '<button onclick="gfOptOut(\''+esc(o.phone)+'\',\''+esc(o.name)+'\')" title="Bu müşteriye bir daha teklif gönderme" style="background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.45);color:#777;border-radius:8px;padding:5px 9px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">🚫</button>'
+                + '</div>'
+              : '')
+        + '</div>';
+    }).join('');
+  }
+  function render(){
+    var st=document.getElementById('gf-status'), rn=document.getElementById('gf-run'), of=document.getElementById('gf-offers');
+    if(!st||!rn||!of) return;
+    var c=cfg(), paused=!!(_control&&_control.paused), live=(c.dryRun===false);
+    var mode = live ? 'CANLI — gerçekten gönderir' : 'KURU ÇALIŞMA — sadece listeler, göndermez';
+    st.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
+      + '<span style="font-weight:800;color:'+(c.enabled===false?'#e34948':paused?'#c4863a':(live?'#1ea34f':'#2f7fe0'))+';">'
+      + (c.enabled===false?'⛔ KAPALI (crown-config gapFill.enabled)':paused?'⏸ DURDURULDU (panelden)':'● '+mode)+'</span>'
+      + '<span style="color:var(--muted);font-size:0.78rem;">günlük sınır '+esc(c.dailyCap!=null?c.dailyCap:25)+' · bekletme '+esc(c.holdMinutes!=null?c.holdMinutes:120)+' dk · '+esc(c.cooldownDays!=null?c.cooldownDays:7)+' günde bir müşteri</span>'
+      + '<span style="flex:1;"></span>'
+      + '<button onclick="gfPause('+(paused?'false':'true')+')" class="btn btn-sm" style="'+(paused?'background:#1ea34f;color:#fff;':'background:rgba(227,73,72,0.12);color:#e34948;border:1px solid rgba(227,73,72,0.4);')+'">'+(paused?'▶ Devam et':'⏸ Durdur')+'</button>'
+      + '<button onclick="gfPreview()" class="btn btn-sm" style="background:rgba(212,169,106,0.15);color:var(--gold);border:1px solid rgba(212,169,106,0.4);">🔎 Şimdi dene</button>'
+      + '</div>';
+    if(!_run){ rn.innerHTML=empty('Henüz çalışma kaydı yok — cron ilk kez saat başı çalışınca burada görünür.'); }
+    else{
+      var r=_run;
+      rn.innerHTML = '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:0.82rem;font-weight:700;">'
+        + 'Son çalışma: '+esc(r.day||'')+' '+esc(r.at||when(r.ts))+' · '+(r.mode==='live'?'<span style="color:#1ea34f;">CANLI</span>':'<span style="color:#2f7fe0;">KURU</span>')
+        + ' · '+((r.offers||[]).length)+' teklif'+(r.mode==='live'?' · '+(r.sent||0)+' gönderildi · '+(r.failed||0)+' hata':' (gönderilmedi)')
+        + (r.unfilled?' · '+esc(r.unfilled)+' boş saat için uygun müşteri yok':'')
+        + (r.result?'<div style="font-weight:400;color:var(--muted);margin-top:2px;">'+esc(r.result)+'</div>':'')
+        + ((r.notes||[]).length?'<div style="font-weight:400;color:var(--muted);margin-top:2px;">'+esc(r.notes.join(' · '))+'</div>':'')
+        + '</div>' + rows(r.offers||[], false);
+    }
+    var list=Object.keys(_offers).map(function(k){ var o=Object.assign({}, _offers[k]||{}); o._id=k; return o; })
+      .sort(function(a,b){ return (b.ts||0)-(a.ts||0); }).slice(0,50);
+    of.innerHTML = list.length ? rows(list, true) : empty('Gönderilmiş teklif yok'+(live?'':' — kuru çalışmada hiçbir şey gönderilmez')+'.');
+  }
+  window.gfReplied=function(id, v){
+    try{ _fbDb.ref('rdns_gapfill_v1/offers/'+id).update({replied:!!v, repliedAt:Date.now()}); }catch(e){ console.warn('[gf] replied:',e); }
+  };
+  window.gfOptOut=function(phone, name){
+    if(!phone) return;
+    if(!confirm((name||phone)+' — bu numaraya bir daha boşluk teklifi GÖNDERİLMESİN mi?')) return;
+    var role=''; try{ role=localStorage.getItem('rdns_msg_role')||''; }catch(e){}
+    try{
+      _fbDb.ref('rdns_gapfill_v1/optout/'+String(phone).replace(/[^0-9]/g,'')).set({ts:Date.now(), name:String(name||''), by:role});
+      toast('🚫','Teklif kapatıldı',(name||phone)+' artık otomatik teklif almaz.','g');
+    }catch(e){ console.warn('[gf] optout:',e); }
+  };
+  window.gfPause=function(p){
+    if(typeof ownerPin==='function' && !ownerPin()) return;
+    try{
+      _fbDb.ref('rdns_gapfill_v1/control').update({paused:!!p, at:Date.now()});
+      toast('🤖', p?'Boşluk doldurucu DURDURULDU':'Boşluk doldurucu devam ediyor', p?'Saat başı çalışma hiçbir şey göndermeden çıkar.':'Bir sonraki saat başı normal çalışır.', p?'r':'g');
+    }catch(e){ console.warn('[gf] pause:',e); }
+  };
+  window.gfPreview=function(){
+    if(typeof rdWaOn!=='function'||!rdWaOn()){ toast('🤖','Bu cihazda anahtar yok','Önizleme için dashboard 🤖 düğmesinden paylaşılan anahtarı girin.','r'); return; }
+    var rn=document.getElementById('gf-run'); if(rn) rn.innerHTML=empty('Worker soruluyor…');
+    rdWaFetch('/wa/gapfill-preview',{}).then(function(j){
+      if(!j||!j.ok){
+        var err=j&&j.error, why=(err&&err.code)||(typeof err==='string'?err:'')||(j&&j.skipped)||'?';
+        if(rn) rn.innerHTML='<div style="padding:12px 14px;font-size:0.82rem;color:#e34948;">Önizleme alınamadı: '+esc(why)+'</div>';
+        return;
+      }
+      var p=j.plan||{};
+      if(rn) rn.innerHTML='<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:0.82rem;font-weight:700;">Önizleme (şu an) · '+(j.mode==='live'?'CANLI':'KURU')+' · '+((p.offers||[]).length)+' teklif planlanır · '+((p.unfilled||[]).length)+' boş saat için uygun müşteri yok · bugün gönderilen '+esc(p.sentToday||0)+' / kalan '+esc(p.room||0)
+        + ((p.notes||[]).length?'<div style="font-weight:400;color:var(--muted);margin-top:2px;">'+esc(p.notes.join(' · '))+'</div>':'')+'</div>'+rows(p.offers||[], false);
+    }).catch(function(e){ if(rn) rn.innerHTML='<div style="padding:12px 14px;font-size:0.82rem;color:#e34948;">Worker\'a ulaşılamadı: '+esc(String(e))+'</div>'; });
+  };
+  function start(){
+    try{
+      if(_started) return;
+      if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled) return;
+      _started=true; clearInterval(_timer);
+      _fbDb.ref('rdns_gapfill_v1/offers').limitToLast(50).on('value',function(s){ _offers=s.val()||{}; render(); },function(e){ console.warn('[gf] offers read denied:',e); });
+      _fbDb.ref('rdns_gapfill_v1/runs').limitToLast(1).on('value',function(s){ var v=s.val()||{}; var k=Object.keys(v).sort(); _run=k.length?v[k[k.length-1]]:null; render(); },function(e){ console.warn('[gf] runs read denied:',e); });
+      _fbDb.ref('rdns_gapfill_v1/control').on('value',function(s){ _control=s.val()||null; render(); },function(e){ console.warn('[gf] control read denied:',e); });
+    }catch(e){ console.warn('[gf] start:',e); }
+  }
+  _timer=setInterval(start,3000);
+  try{ render(); }catch(e){}
 })();
 </script>
 
@@ -18547,6 +18732,14 @@ window.addEventListener('load',function(){
       const dt    = document.getElementById('a-dt').value;
       const staff = document.getElementById('a-staff').value;
       const dur   = parseInt(document.getElementById('a-dur').value) || 60;
+      // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): checked
+      // before the clash check, so the answer is the real reason — not a
+      // "next free time" for a technician who does not do the job at all.
+      const _svc  = (document.getElementById('a-service')||{}).value || '';
+      if(staff && _svc && typeof rdCanDo==='function' && !rdCanDo(staff, _svc)){
+        toast('🚫','Personel bu hizmeti yapmıyor', staff+' — '+_svc+'. Yapan: '+(rdSkilledOn(_svc, dt).join(', ')||'kimse')+'. Personeli değiştirin.','r');
+        return;
+      }
       if(dt && staff){
         const clash = rdFindClash(staff, dt, dur);
         if(clash){
@@ -18918,7 +19111,17 @@ window.addEventListener('load',function(){
 
     const dur=(typeof rdSvcDur==='function')?rdSvcDur(svc):60;
     const want=parseInt(timeStr.split(':')[0])*60+parseInt(timeStr.split(':')[1]);
-    const list=only?[only]:rdStaffOn(dayStr);
+    // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): only the
+    // technicians who do this service are searched. A named one who does
+    // not is refused with the reason, and nobody is put in her place; a
+    // service nobody on the day does says so instead of listing anyone.
+    const able=(typeof rdSkilledOn==='function')?rdSkilledOn(svc, dayStr):rdStaffOn(dayStr);
+    if(only && able.indexOf(only)===-1){
+      out.innerHTML='<div style="color:var(--red);font-size:0.85rem;">✕ '+only+' bu hizmeti yapmıyor ('+svc+')'+(able.length?' — yapan: '+able.join(', '):' — bu hizmeti yapan personel yok')+'.</div>';
+      return;
+    }
+    const list=only?[only]:able;
+    if(!list.length){ out.innerHTML='<div style="color:var(--red);font-size:0.85rem;">✕ Bu hizmeti yapan personel yok ('+svc+').</div>'; return; }
     const busy={}; list.forEach(function(t){ busy[t]=busyOf(t,dayStr); });
 
     // tam istenen saatte uygun olanlar — a time that is not on the ladder

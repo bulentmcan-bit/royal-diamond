@@ -13,8 +13,16 @@ workers_dev = true
 # Asia/Nicosia — the firing that is not 06:00 there leaves without doing
 # anything. Exactly one of the two can be six o'clock on any given day, the
 # clock-change Sundays included, so a reminder can never go out twice.
+#
+# The third line is the automatic gap-filler: every hour, 09:00–18:00 at the
+# salon, Monday to Saturday. 06:00–16:00 UTC covers that range in both
+# seasons (09:00 salon is 06:00Z in summer and 07:00Z in winter; 18:00 salon
+# is 15:00Z / 16:00Z), and the worker again asks the salon clock — a firing
+# that lands on 08:00 or 19:00 there leaves without doing anything. Its
+# rules and switches (dry run, cap, kill switch) live in crown-config.js
+# `gapFill`, bundled into the worker at deploy — see the note there.
 [triggers]
-crons = ["0 3 * * *", "0 4 * * *"]
+crons = ["0 3 * * *", "0 4 * * *", "0 6-16 * * 1-6"]
 
 # The confirm-page store. Each key holds ONE appointment's public face — date,
 # time, service, and the customer's answer — and nothing else: no name, no
@@ -72,3 +80,11 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 # above: an empty or broken value makes the route refuse with
 # TEMPLATES_NOT_CONFIGURED instead of sending under a guessed shape.
 WA_CONF = '{"templateName":"pyz_appointment_booked_v2","languageCode":"tr","body":["{dateLong}","{time}"]}'
+
+# The gap-filler's offer — the MARKETING template in templates/gapfill-offer.md,
+# no name and no variables, sent by the hourly cron (runGapFiller). Empty
+# until Meta approves it and its real name comes back from GET /wa/templates;
+# while it is empty a LIVE run (crown-config gapFill.dryRun=false) sends
+# nothing and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
+# Once known:  WA_GAPFILL = '{"templateName":"<name>","languageCode":"tr","body":[]}'
+WA_GAPFILL = ''

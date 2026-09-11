@@ -76,6 +76,7 @@ select,input{width:100%;padding:12px;border:1.5px solid #e2ded6;border-radius:12
     <optgroup label="🪒 AĞDA"><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda</option><option value="Tam Bacak Ağda">Tam Bacak Ağda</option><option value="Bikini Ağda">Bikini Ağda</option><option value="Özel Bölge Ağda">Özel Bölge Ağda</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda</option><option value="Tam Kol Ağda">Tam Kol Ağda</option></optgroup>
     <optgroup label="✨ DİĞER"><option value="Güzellik Uygulaması">Güzellik Uygulaması</option><option value="Diğer / Other">Diğer / Other</option></optgroup>
   </select>
+  <div class="closed-note" id="skillNote"></div>
   <div class="lbl">🙋‍♀️ Adınız / Your name</div>
   <input id="nm" placeholder="Adınız Soyadınız">
   <div class="lbl">📞 Telefonunuz / Your phone</div>
@@ -217,6 +218,30 @@ function renderDays(){
 }
 renderDays();
 
+// ── Who does the chosen service ──
+// crown-config.js staffPrefs.serviceSkill, read through CROWN.canDo: a time
+// is free for THIS booking only if a technician who does the chosen service
+// can start there — a lash customer sees the times Lissa or Hannah can take,
+// a wax or brow customer Helen's, and if the only one who does it is busy the
+// time is Dolu. Nobody is substituted. A page whose config failed to load
+// falls back to "anyone free"; the desk re-checks every request against the
+// same rule and rings if it cannot stand.
+function svcNow(){ try{ return document.getElementById('svc').value||''; }catch(e){ return ''; } }
+function techCan(name){ try{ if(window.CROWN&&CROWN.canDo) return !!CROWN.canDo(name, svcNow()); }catch(e){} return true; }
+// The line under the service: who does it (when that is not everyone), or
+// that nobody is available for it right now — said, not left to a row of
+// grey times.
+function skillNoteText(){
+  try{
+    const C=window.CROWN; if(!C||!C.skilledOn||!C.serviceGroup||!C.rosterOn) return '';
+    const svc=svcNow(); if(!C.serviceGroup(svc)) return '';
+    const day=selDay||new Date();
+    const names=C.skilledOn(svc, day).map(o=>o.name);
+    if(!names.length) return '⚠️ Bu hizmet için şu an müsait personelimiz yok — lütfen bizi arayın. / No technician available for this service right now — please call us.';
+    if(names.length>=C.rosterOn(day).length) return '';
+    return '✨ Bu hizmeti yapan: '+names.join(', ')+' — saatler ona göre gösterilir. / Done by '+names.join(', ')+'; times shown accordingly.';
+  }catch(e){ return ''; }
+}
 // ── Time chips: green if free, gray if full/past ──
 function slotState(day,slot){
   if(bkClosed(day))return 'closed';
@@ -239,13 +264,14 @@ function slotState(day,slot){
   // jobs that run past the last published half hour, so it is the whole test —
   // one technician saying yes is a free time.
   if(s.a && Object.keys(s.a).length){
-    return Object.keys(s.a).some(function(tech){return Number(s.a[tech]);})?'free':'full';
+    return Object.keys(s.a).some(function(tech){return Number(s.a[tech]) && techCan(tech);})?'free':'full';
   }
   // Older published data, before per-technician starts: fall back to how many
   // of them are busy at this half hour against the day's capacity.
   return (Number(s.b)||0)>=(Number(s.c)||CAP)?'full':'free';
 }
 function renderTimes(){
+  try{ const n=document.getElementById('skillNote'); if(n) n.textContent=skillNoteText(); }catch(e){}
   tEl.innerHTML='';
   if(!selDay){SLOTS.forEach(t=>{const c=document.createElement('button');c.className='chip';c.style.opacity='0.75';c.type='button';c.textContent=t;c.disabled=true;tEl.appendChild(c);});return;}
   SLOTS.forEach(t=>{
@@ -272,6 +298,9 @@ function renderTimes(){
   if(!hit){ for(const o of sel.options){ if(o.value.toLowerCase().indexOf(want)!==-1){hit=o;break;} } }
   if(hit)sel.value=hit.value;
 })();
+// A different service can mean different technicians, so the times are
+// drawn again for it.
+try{ document.getElementById('svc').addEventListener('change',function(){ selTime=null; renderTimes(); }); }catch(e){}
 renderTimes();
 
 // ── Firebase: anonymous sign-in + live availability ──

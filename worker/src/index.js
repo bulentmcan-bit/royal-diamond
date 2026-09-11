@@ -845,24 +845,385 @@ async function handleWa(req, env, ctx, url) {
     return waJson({ ok: true, messageUid });
   }
 
+  // ── POST /wa/gapfill-preview — what the gap-filler would do right now ─────
+  // The plan only: reads the diary and the offers log, writes nothing, sends
+  // nothing, whatever mode the config is in. The app panel's "Şimdi dene".
+  if (route === '/wa/gapfill-preview') {
+    const r = await runGapFiller(env, new Date(), { preview: true });
+    return waJson(r, r.ok ? 200 : 503);
+  }
+  // ── POST /wa/gapfill-run — one run now, exactly as the cron would do it ───
+  // Honours dryRun, the cap, the holds; records the run. For testing the
+  // whole path without waiting for the hour.
+  if (route === '/wa/gapfill-run') {
+    const r = await runGapFiller(env, new Date());
+    return waJson(r, r.ok ? 200 : 503);
+  }
+
   return waJson({ ok: false, error: { code: 'NOT_FOUND', message: 'No such route' } }, 404);
+}
+
+/* ── the automatic gap-filler ───────────────────────────────────────────────
+   Every hour from 09:00 to 18:00, Monday to Saturday (the third cron in
+   wrangler.toml, checked against the salon clock like the other two), this
+   reads the diary out of Firebase, finds the empty hours today, tomorrow, +2
+   and +3, and offers each one to ONE customer by WhatsApp — with every salon
+   device switched off; nothing here runs in a browser.
+
+   THE RULES live in crown-config.js, bundled in at deploy (the import
+   below): staffPrefs.serviceSkill says who may be offered which customer,
+   staffPrefs.fillOrder whose hours go first, staffPrefs.notBefore who is
+   not offered yet at all, gapFill the switches and numbers. So a change
+   there is a `wrangler deploy` here.
+
+   THE WALK. Days in order, today first. Within a day the technicians in
+   fillOrder, then anyone the list leaves out. Within a technician every
+   rung of the start ladder that is free for her whole length, not under a
+   hold, and (today) at least noticeMinutes ahead. For each such slot the
+   FIRST eligible customer whose usual service she can do — one customer
+   gets at most one offer per run, one slot goes to at most one customer.
+
+   WHO IS ELIGIBLE. A usable phone, not the KAPALI blocker, not opted out
+   (a waOptOut flag or "STOP" / "mesaj istemiyor" in her notes, or her
+   number under rdns_gapfill_v1/optout — the panel's 🚫 button writes
+   that). No booking of hers within fillMinDaysAhead days of the gap, either
+   side. No offer to her in the last cooldownDays. No offer to her for that
+   same day, ever. And either she HOLDS a booking further out (the pull-
+   forward — those come first, soonest booking first) or her last visit was
+   dueAfterDays … dueUntilDays ago (the ones who are due, most recent
+   first). Somebody who visited last week is not due; somebody gone half a
+   year belongs to the win-back template, not to a gap.
+
+   THE SOFT HOLD. A sent offer is written to rdns_gapfill_v1/offers with the
+   slot and the time; for holdMinutes that slot is claimed and no run offers
+   it to anyone else. After that, with no booking, the next run marks it
+   expired and the slot is free to offer again. An offer whose customer
+   turns up in the diary on that day is marked booked. The app panel shows
+   the last fifty and lets reception mark a reply by hand.
+
+   SAFETY. gapFill.dryRun is ON: the run writes what it WOULD send to
+   rdns_gapfill_v1/runs (the panel shows the latest) and sends nothing —
+   until Bülent sets it false and deploys. gapFill.enabled=false is the kill
+   switch in config; rdns_gapfill_v1/control.paused is the one the panel's
+   ⏸ button flips without a deploy. dailyCap is counted against the day's
+   log, so a re-run cannot leak past it. The message is a MARKETING template
+   with no variables (worker/templates/gapfill-offer.md) — never the r24/r1
+   reminders; until WA_GAPFILL names it, a live run refuses to send and says
+   TEMPLATES_NOT_CONFIGURED in the run record instead. */
+import '../../crown-config.js';   // → globalThis.CROWN, see the note at the top of that file
+
+const GF = 'rdns_gapfill_v1';
+const GF_RUNS_KEPT = 30;          // run records kept for the panel
+const GF_OFFERS_KEPT_DAYS = 60;   // offers older than this are pruned
+const GF_SEND_GAP_MS = 2500;      // between two sends: Piyzi allows 30 POSTs a minute
+
+function fbUrl(env, path, params) {
+  const q = [];
+  if (env.FB_SECRET) q.push('auth=' + encodeURIComponent(env.FB_SECRET));
+  for (const k of Object.keys(params || {})) q.push(k + '=' + encodeURIComponent(params[k]));
+  return `${DB}/${path}.json` + (q.length ? '?' + q.join('&') : '');
+}
+async function fbRead(env, path, params) {
+  const r = await fetch(fbUrl(env, path, params));
+  if (!r.ok) throw new Error('Firebase read ' + path + ' refused: ' + r.status);
+  return r.json();
+}
+async function fbWrite(env, method, path, body) {
+  const r = await fetch(fbUrl(env, path), {
+    method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { 'content-type': 'application/json' }
+  });
+  if (!r.ok) throw new Error('Firebase ' + method + ' ' + path + ' refused: ' + r.status);
+  return r;
+}
+
+function nicosiaMinutes(now) {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Nicosia', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+  const g = k => Number(p.find(x => x.type === k).value);
+  return (g('hour') % 24) * 60 + g('minute');
+}
+const gfHm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const gfDayUtc = ymd => Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10));
+const gfDayDiff = (a, b) => Math.round((gfDayUtc(a) - gfDayUtc(b)) / 86400e3);
+const gfAddDays = (ymd, n) => new Date(gfDayUtc(ymd) + n * 86400e3).toISOString().slice(0, 10);
+
+// The settings, read off CROWN (crown-config.js) into a plain shape the
+// planner and the tests can hold. Every number is checked the safe way
+// round: a missing or nonsense dryRun is ON, a missing enabled is on, a
+// nonsense cap is 0 — nothing sent — never 25.
+function gfConfig(C) {
+  C = C || globalThis.CROWN;
+  if (!C || typeof C.startLadder !== 'function' || typeof C.canDo !== 'function') return null;
+  const raw = C.gapFill || {};
+  const num = (v, d) => { const n = Number(v); return v == null ? d : (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0); };
+  const gap = {
+    enabled: raw.enabled !== false,
+    dryRun: raw.dryRun !== false,
+    dailyCap: num(raw.dailyCap, 25),
+    holdMinutes: num(raw.holdMinutes, 120),
+    daysAhead: Math.max(1, num(raw.daysAhead, 4)),
+    cooldownDays: num(raw.cooldownDays, 7),
+    noticeMinutes: num(raw.noticeMinutes, 60),
+    dueAfterDays: num(raw.dueAfterDays, 14),
+    dueUntilDays: num(raw.dueUntilDays, 120)
+  };
+  const min = Number(C.fillMinDaysAhead);
+  return {
+    gap,
+    ladder: C.startLadder(),
+    fillMinDaysAhead: min >= 1 ? Math.floor(min) : 3,
+    notBefore: (C.staffPrefs && C.staffPrefs.notBefore) || {},
+    isClosed: ymd => !!C.isClosedDay(ymd),
+    fillOrderOn: ymd => C.fillOrderOn(ymd),
+    canDo: (key, service) => C.canDo(key, service),
+    group: s => C.serviceGroup(s),
+    slotFor: key => C.slotFor(key)
+  };
+}
+
+function gfOptedOut(c, phone, optout) {
+  if (c && c.waOptOut === true) return true;
+  // STOP as a word of its own — "non-stop" in a note is not an opt-out.
+  if (/(^|[^\w-])stop([^\w-]|$)|mesaj istemiyor|whatsapp istemiyor/i.test(String((c && c.notes) || ''))) return true;
+  return !!(optout && phone && optout[phone]);
+}
+
+// Her booked runs on one day, [start, end] in minutes — matched the way the
+// fill-call list matches (the staff field carries her name).
+function gfSpans(appts, tech, ymd) {
+  const out = [];
+  const nm = String(tech.name || '').toLowerCase(), key = String(tech.key || '').toLowerCase();
+  for (const a of appts) {
+    if (!a || a.status === 'cancelled') continue;
+    const dt = String(a.datetime || '');
+    if (dt.slice(0, 10) !== ymd) continue;
+    const s = String(a.staff || '').toLowerCase().trim();
+    if (!(s === key || s === nm || (nm && s.indexOf(nm) !== -1))) continue;
+    const st = (+dt.slice(11, 13)) * 60 + (+dt.slice(14, 16));
+    out.push([st, st + (parseInt(a.duration) || 60)]);
+  }
+  return out;
+}
+
+// The plan for one run. Pure: everything it needs comes in, and the answer
+// is a list of offers plus the housekeeping — never a send.
+function gfPlan(input) {
+  const { data, offers, optout, cfg, nowMs, todayYmd, nowMin } = input;
+  const g = cfg.gap;
+  const appts = (data && Array.isArray(data.appointments)) ? data.appointments : [];
+  const clients = (data && Array.isArray(data.clients)) ? data.clients : [];
+  const out = { offers: [], unfilled: [], expire: [], booked: [], notes: [], sentToday: 0, room: 0 };
+
+  // Who has a live booking on which day — for spotting a reply that became
+  // a booking, and for the distance rule.
+  const daysOf = {};
+  for (const a of appts) {
+    if (!a || a.status === 'cancelled') continue;
+    const dt = String(a.datetime || '');
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) continue;
+    (daysOf[String(a.clientId)] = daysOf[String(a.clientId)] || []).push(a);
+  }
+  const hasBookingOn = (cid, ymd) => (daysOf[cid] || []).some(a => String(a.datetime).slice(0, 10) === ymd);
+
+  // The offers log → holds, cooldowns, per-day marks, today's count.
+  const held = new Set(), lastOffer = {}, offeredDay = {}, holdMs = g.holdMinutes * 60e3;
+  let sentToday = 0;
+  for (const id of Object.keys(offers || {})) {
+    const o = offers[id];
+    if (!o || !(o.st === 'sending' || o.st === 'offered' || o.st === 'expired' || o.st === 'booked')) continue; // 'failed' reached nobody
+    const cid = String(o.cid);
+    if (o.day === todayYmd) sentToday++;
+    lastOffer[cid] = Math.max(lastOffer[cid] || 0, Number(o.ts) || 0);
+    (offeredDay[cid] = offeredDay[cid] || new Set()).add(o.d);
+    if (o.st === 'booked') continue;
+    if (o.d && hasBookingOn(cid, o.d)) { out.booked.push(id); continue; }   // she came back: done, slot free
+    if (o.st === 'expired') continue;
+    if (nowMs - (Number(o.ts) || 0) < holdMs) held.add(o.d + '|' + o.t + '|' + o.tech);
+    else out.expire.push(id);
+  }
+  out.sentToday = sentToday;
+  out.room = Math.max(0, g.dailyCap - sentToday);
+
+  // The customers, with what each usually has and when she was last here.
+  const byClient = {};
+  for (const c of clients) if (c && c.id != null) byClient[String(c.id)] = c;
+  const cands = [];
+  for (const cid of Object.keys(daysOf)) {
+    const c = byClient[cid];
+    if (!c || waBlockedName(c.name)) continue;
+    const phone = waPhone(c.phone);
+    if (!phone || gfOptedOut(c, phone, optout)) continue;
+    const list = daysOf[cid].slice().sort((x, y) => String(x.datetime).localeCompare(String(y.datetime)));
+    const past = list.filter(a => String(a.datetime).slice(0, 10) < todayYmd);
+    const future = list.filter(a => String(a.datetime).slice(0, 10) >= todayYmd);
+    const lastPast = past[past.length - 1];
+    const ref = future[0] || lastPast;
+    const daysSince = lastPast ? gfDayDiff(todayYmd, String(lastPast.datetime).slice(0, 10)) : null;
+    cands.push({
+      cid, name: String(c.name || ''), phone, service: String(ref.service || ''),
+      bookings: list.map(a => String(a.datetime).slice(0, 10)),
+      nextBooking: future.length ? String(future[0].datetime).slice(0, 10) : null,
+      daysSince
+    });
+  }
+  // The pull-forwards first, soonest booking first; then the ones who are
+  // due, most recent visit first.
+  cands.sort((x, y) => {
+    if (!!x.nextBooking !== !!y.nextBooking) return x.nextBooking ? -1 : 1;
+    if (x.nextBooking) return x.nextBooking.localeCompare(y.nextBooking) || x.cid.localeCompare(y.cid);
+    return (x.daysSince - y.daysSince) || x.cid.localeCompare(y.cid);
+  });
+  const eligible = (x, ymd) => {
+    if (x.bookings.some(b => Math.abs(gfDayDiff(b, ymd)) < cfg.fillMinDaysAhead)) return false;
+    // A booking she holds is only a reason to offer when the gap is BEFORE
+    // it (she comes earlier); a customer already booked before the gap is
+    // engaged, not due, and is left alone.
+    if (x.nextBooking && !(x.nextBooking > ymd)) return false;
+    if (!x.nextBooking && !(x.daysSince >= g.dueAfterDays && x.daysSince <= g.dueUntilDays)) return false;
+    if (lastOffer[x.cid] && nowMs - lastOffer[x.cid] < g.cooldownDays * 86400e3) return false;
+    if (offeredDay[x.cid] && offeredDay[x.cid].has(ymd)) return false;
+    return true;
+  };
+
+  // The walk.
+  const used = new Set(), claimed = new Set(held);
+  let capHit = false;
+  for (let off = 0; off < g.daysAhead && !capHit; off++) {
+    const ymd = gfAddDays(todayYmd, off);
+    if (cfg.isClosed(ymd)) { out.notes.push(ymd + ': kapalı'); continue; }
+    for (const tech of cfg.fillOrderOn(ymd)) {
+      if (capHit) break;
+      const nb = cfg.notBefore[tech.key];
+      if (nb && (todayYmd < nb || ymd < nb)) { out.notes.push(ymd + ' ' + tech.name + ': ' + nb + ' öncesi teklif yok'); continue; }
+      const busy = gfSpans(appts, tech, ymd), len = cfg.slotFor(tech.key) || 60;
+      for (const start of cfg.ladder) {
+        if (off === 0 && start < nowMin + g.noticeMinutes) continue;
+        if (busy.some(b => start < b[1] && b[0] < start + len)) continue;
+        const slotKey = ymd + '|' + gfHm(start) + '|' + tech.name;
+        if (claimed.has(slotKey)) continue;
+        if (out.offers.length >= out.room) { capHit = true; break; }
+        const pick = cands.find(x => !used.has(x.cid) && cfg.canDo(tech.key, x.service) && eligible(x, ymd));
+        if (!pick) { out.unfilled.push({ d: ymd, t: gfHm(start), tech: tech.name }); continue; }
+        used.add(pick.cid); claimed.add(slotKey);
+        out.offers.push({
+          d: ymd, t: gfHm(start), tech: tech.name, techKey: tech.key,
+          cid: pick.cid, name: pick.name, phone: pick.phone, service: pick.service, group: cfg.group(pick.service),
+          why: pick.nextBooking ? 'randevusu ' + pick.nextBooking + ' — öne alınabilir' : 'son ziyaret ' + pick.daysSince + ' gün önce'
+        });
+      }
+    }
+  }
+  if (capHit) out.notes.push('günlük sınır ' + g.dailyCap + ' doldu (bugün gönderilen ' + sentToday + ')');
+  return out;
+}
+
+const gfSleep = ms => new Promise(r => setTimeout(r, ms));
+
+// One run: read, plan, house-keep, send (or not), record. `opts.preview`
+// returns the plan and writes nothing; `opts.gapMs` is the pause between
+// sends (the tests pass 0).
+async function runGapFiller(env, now, opts) {
+  opts = opts || {};
+  const log = (...a) => console.log('[gapfill]', ...a);
+  const cfg = gfConfig();
+  if (!cfg) { log('ABORT: crown-config.js is not bundled into this worker'); return { ok: false, error: 'NO_CONFIG' }; }
+  const g = cfg.gap, mode = g.dryRun ? 'dry' : 'live';
+  const todayYmd = nicosiaYmd(now), nowMin = nicosiaMinutes(now);
+  if (!g.enabled) { log(todayYmd, gfHm(nowMin), '— switched OFF (crown-config gapFill.enabled=false); nothing read, nothing sent'); return { ok: true, skipped: 'disabled', mode }; }
+  if (!env.FB_SECRET) { log('ABORT: FB_SECRET not set — cannot read the appointment book'); return { ok: false, error: 'NO_FB_SECRET', mode }; }
+
+  let control, raw, offers, optout;
+  try {
+    control = await fbRead(env, GF + '/control');
+    if (control && control.paused) {
+      log(todayYmd, gfHm(nowMin), '— PAUSED from the app panel (' + GF + '/control.paused); nothing sent');
+      return { ok: true, skipped: 'paused', mode };
+    }
+    raw = await fbRead(env, 'rdns_main_v1');
+    offers = (await fbRead(env, GF + '/offers')) || {};
+    optout = (await fbRead(env, GF + '/optout')) || {};
+  } catch (e) { log('ABORT:', String(e)); return { ok: false, error: String(e), mode }; }
+  const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+
+  const plan = gfPlan({ data, offers, optout, cfg, nowMs: now.getTime(), todayYmd, nowMin });
+  if (opts.preview) return { ok: true, mode, todayYmd, plan };
+
+  // Housekeeping first: released holds and spotted bookings, so the log
+  // reads true even if the sends below never happen.
+  for (const id of plan.expire) await fbWrite(env, 'PATCH', GF + '/offers/' + id, { st: 'expired', expiredAt: now.getTime() }).catch(e => log('expire', id, 'failed:', String(e)));
+  for (const id of plan.booked) await fbWrite(env, 'PATCH', GF + '/offers/' + id, { st: 'booked', bookedAt: now.getTime() }).catch(e => log('booked', id, 'failed:', String(e)));
+
+  const run = {
+    ts: now.getTime(), day: todayYmd, at: gfHm(nowMin), mode,
+    offers: plan.offers.map(o => ({ d: o.d, t: o.t, tech: o.tech, cid: o.cid, name: o.name, phone: o.phone, service: o.service, why: o.why })),
+    unfilled: plan.unfilled.length, notes: plan.notes, sentToday: plan.sentToday, room: plan.room,
+    sent: 0, failed: 0, result: ''
+  };
+  log(todayYmd, gfHm(nowMin), mode.toUpperCase(), '—', plan.offers.length, 'offer(s) planned,', plan.unfilled.length, 'slot(s) with nobody to offer,', plan.expire.length, 'hold(s) released,', plan.booked.length, 'booked');
+  for (const o of plan.offers) log(mode === 'dry' ? 'WOULD SEND' : 'SEND', o.d, o.t, o.tech, '→', o.name, o.phone, '(' + o.why + ')');
+
+  if (mode === 'dry') run.result = 'dry-run — nothing sent';
+  else {
+    const spec = waSpec(env.WA_GAPFILL);
+    if (!spec) { run.result = 'TEMPLATES_NOT_CONFIGURED — fill WA_GAPFILL in wrangler.toml; nothing sent'; log(run.result); }
+    else if (!env.PIYZI_API_KEY) { run.result = 'PIYZI_KEY_NOT_SET — nothing sent'; log(run.result); }
+    else {
+      let i = 0;
+      for (const o of plan.offers) {
+        const id = (now.getTime() + '-' + o.techKey + '-' + o.d + '-' + o.t).replace(/[.#$\/\[\]:]/g, '');
+        const rec = { d: o.d, t: o.t, tech: o.tech, cid: o.cid, name: o.name, phone: o.phone, service: o.service, why: o.why, ts: now.getTime(), day: todayYmd, st: 'sending', replied: false };
+        // Claimed BEFORE the send — a run that dies mid-way leaves an offer
+        // that may not have gone, never a customer messaged twice.
+        try { await fbWrite(env, 'PUT', GF + '/offers/' + id, rec); }
+        catch (e) { log('claim', id, 'refused — skipped:', String(e)); run.failed++; continue; }
+        let r = null, uid = null, err = '';
+        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: o.phone, ...waFill(spec, {}) }); } catch (e) { err = 'PIYZI_UNREACHABLE'; }
+        if (r && r.body && r.body.success) uid = (r.body.data && r.body.data.messageUid) || null;
+        else if (r) err = piyziErr(r).code;
+        const ok = !!(r && r.body && r.body.success);
+        if (ok) run.sent++; else run.failed++;
+        await fbWrite(env, 'PATCH', GF + '/offers/' + id, ok ? { st: 'offered', uid } : { st: 'failed', err: String(err).slice(0, 120) }).catch(e => log('mark', id, 'failed:', String(e)));
+        waLog(env, null, { op: 'gapfill', apptId: 'gf-' + id, to: o.phone, uid, outcome: ok ? 'sent' : 'failed:' + err });
+        if (++i < plan.offers.length) await gfSleep(opts.gapMs == null ? GF_SEND_GAP_MS : opts.gapMs);
+      }
+      run.result = run.sent + ' sent, ' + run.failed + ' failed';
+    }
+  }
+
+  // The run record, and the pruning that keeps the two lists small.
+  try { await fbWrite(env, 'PUT', GF + '/runs/' + now.getTime(), run); } catch (e) { log('run record failed:', String(e)); }
+  try {
+    const keys = Object.keys((await fbRead(env, GF + '/runs', { shallow: 'true' })) || {}).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - GF_RUNS_KEPT))) await fbWrite(env, 'DELETE', GF + '/runs/' + k);
+    const cutoff = now.getTime() - GF_OFFERS_KEPT_DAYS * 86400e3;
+    for (const k of Object.keys(offers)) { const ts = Number(offers[k] && offers[k].ts); if (ts && ts < cutoff) await fbWrite(env, 'DELETE', GF + '/offers/' + k); }
+  } catch (e) { log('prune failed:', String(e)); }
+  return { ok: true, mode, run };
 }
 
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
-         waAnswersFromIndex };
+         waAnswersFromIndex, gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes };
 
 export default {
   async scheduled(event, env, ctx) {
-    // Two firings a day arrive here; the one for which it is actually six in
-    // the morning at the salon does the work, the other leaves quietly.
-    if (nicosiaHour(new Date(event.scheduledTime)) !== 6) return;
-    await sendMorningReminders(env);
-    // The answers index self-heal — the one list() of the day. After the
-    // reminders, so a slow KV can never delay a text.
-    await waAnswersReindex(env);
+    // Every firing is judged on the salon's clock, never on its UTC hour.
+    // 06:00 → the morning reminders (two UTC crons, one of them is six);
+    // 09:00–18:00 → the gap-filler (the hourly Mon–Sat cron, which also
+    // fires once an hour on either side of that range across the seasons);
+    // anything else leaves quietly.
+    const when = new Date(event.scheduledTime);
+    const h = nicosiaHour(when);
+    if (h === 6) {
+      await sendMorningReminders(env);
+      // The answers index self-heal — the one list() of the day. After the
+      // reminders, so a slow KV can never delay a text.
+      await waAnswersReindex(env);
+      return;
+    }
+    if (h >= 9 && h <= 18) await runGapFiller(env, when);
   },
 
   async fetch(req, env, ctx) {

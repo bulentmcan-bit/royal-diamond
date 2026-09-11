@@ -59,6 +59,7 @@ console.log('3. the candidate loop');
     const loop = html.slice(a, b);
     is(/for\(var i=minAhead; i<=Math\.max\(FCL_SOURCE, minAhead\); i\+\+\)/.test(loop), true, 'the loop starts fclMinAhead() days out, never at tomorrow');
     is(/perClient\[String\(a\.clientId\)\] > 1\) return;/.test(loop), true, 'a customer with two bookings that day is skipped — her visit is never split');
+    is(/rdCanDo\(t, a\.service\)/.test(loop) && /!rdCanDo\(tt, a\.service\)\) continue;/.test(loop), true, 'her own technician and any "other technician" must do her service (crown-config serviceSkill)');
     // Run the loop's selection against a small diary: gap day 11 Eylül.
     const ctx = {
       window: { CROWN: loadCrown() }, used: {}, base: new Date(2026, 8, 11, 12), win: {}, dayTechs: ['Helen', 'Lissa'],
@@ -77,9 +78,23 @@ console.log('3. the candidate loop');
     ctx.apptKey = a => String(a.id); ctx.techOf = a => a.staff; ctx.durOf = () => 60;
     ctx.fits = () => '10:00';   // every day has room — only the distance and the split rules decide
     ctx.fclMinAhead = () => ctx.window.CROWN.fillMinDaysAhead;
+    ctx.rdCanDo = (w, s) => ctx.window.CROWN.canDo(w, s);   // the real skill rule
     vm.createContext(ctx);
     vm.runInContext(loop + ';__ids=cands.map(function(x){ return x.a.id; });', ctx);
     is(ctx.__ids, [3, 6], 'only the 3-day and 4-day customers are offered: not tomorrow, not the day after, and not Claire');
+
+    // The skill rule inside the same loop: a lash customer of Lissa's, 3 days
+    // out, with only Helen's window free — Helen does not do lashes, so she
+    // is not offered at all; a manicure customer in the same spot is offered
+    // Helen as the "other technician".
+    ctx.appts = [
+      { id: 7, clientId: 7, staff: 'Lissa', status: 'confirmed', datetime: '2026-09-14T10:00', duration: 60, service: 'Klasik Kirpik Uygulaması' },
+      { id: 8, clientId: 8, staff: 'Lissa', status: 'confirmed', datetime: '2026-09-14T11:00', duration: 60, service: 'Klasik Manikür' } ];
+    ctx.clis = [7, 8].map(id => ({ id, name: 'C' + id, phone: '0533' }));
+    ctx.used = {};
+    ctx.fits = (win, t) => t === 'Helen' ? '10:00' : null;   // only Helen has room
+    vm.runInContext(loop + ';__out=cands.map(function(x){ return [x.a.id, x.same, x.other, x.otherTech]; });', ctx);
+    is(ctx.__out, [[8, null, '10:00', 'Helen']], 'the lash customer is never offered Helen\'s window; the manicure customer is offered it as the other technician');
   }
 }
 

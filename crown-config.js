@@ -40,8 +40,17 @@
    tills keep their column — and every screen that counts money (salary,
    Aylık, kesinti, avans, komisyon, kasa) never asks rosterOn at all, so she
    stays on all of those in full.
+
+   ONE FILE, TWO RUNTIMES. The browser pages read it as window.CROWN, as they
+   always have. The Cloudflare worker (worker/src/index.js) imports this same
+   file — wrangler bundles it in at deploy — so the automatic gap-filler asks
+   the very same serviceSkill, fillOrder, notBefore and gapFill written here.
+   That is why the file sets a plain `var CROWN` and exposes it at the bottom:
+   a change to any of those settings needs a git push for the pages AND a
+   `wrangler deploy` from the worker folder for the cron. Nothing in this file
+   may touch `window` or `document` at load time — the worker has neither.
    ========================================================================== */
-window.CROWN = {
+var CROWN = {
 
   operators: [
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
@@ -173,6 +182,139 @@ window.CROWN = {
      11th is offered bookings from the 14th on. Change it here and nothing
      else. */
   fillMinDaysAhead: 3,
+
+  /* ── WHO CAN DO WHAT, and whose empty hours are sold first ────────────────
+     serviceSkill — for each GROUP of services, the technicians who perform
+     it, best first. The groups are the headings of the service list the
+     booking page and the diary already use (💅 MANİKÜR, 🦶 PEDİKÜR,
+     👁 KİRPİK, 🤨 KAŞ, 🪒 AĞDA); serviceGroup() below sorts any service
+     name into one by its wording, so "Jel Pedikür" is pedikur, "Kaş
+     Laminasyon" is kas, and "Bıyık / Çene Ağda" — the lip and chin wax;
+     there is no separate lip category in the list — is agda. A technician
+     NOT listed under a group cannot be booked for it ANYWHERE: the diary's
+     booking form, the customer booking page, the online request handler,
+     Uygun Saat Bul, the fill-call list and the automatic gap-filler all ask
+     canDo() below. If the only technician who can do a service is busy, the
+     answer is "no availability" — nobody is substituted quietly. A service
+     that fits no group ("Güzellik Uygulaması", "Diğer / Other") is open to
+     everyone, and so is a name that is not a technician at all (Manager).
+
+     fillOrder — whose empty hours the gap-filler offers FIRST. Helen is 95%
+     manicures and already in demand: her gaps fill themselves. Lissa is
+     growing. Hannah has the most to fill. A technician on the roster but not
+     in this list is taken after the ones that are.
+
+     notBefore — no gap-fill offers for a technician before this date: not a
+     message sent before it, and not a slot of hers dated before it. Remove
+     her line when the date is past (a past date blocks nothing). */
+  staffPrefs: {
+    serviceSkill: {
+      manikur: ['helen', 'lissa', 'hannah'],
+      pedikur: ['helen', 'lissa', 'hannah'],
+      kirpik:  ['lissa', 'hannah'],     // Helen does not do lashes
+      kas:     ['helen'],               // Helen only — Altın Oran, Kaş Boyama, Laminasyon, Microblading
+      agda:    ['helen']                // Helen only — every wax, the lip/chin wax included
+    },
+    fillOrder: ['hannah', 'lissa', 'helen'],
+    notBefore: { hannah: '2026-09-14' }
+  },
+
+  /* ── THE AUTOMATIC GAP-FILLER (worker/src/index.js, on a cron) ────────────
+     It runs in the Cloudflare worker every hour 09:00–18:00 Monday to
+     Saturday, with every salon device switched off: it reads the diary from
+     Firebase, walks the empty hours today, tomorrow, +2 and +3 in fillOrder,
+     and sends ONE customer ONE WhatsApp offer per slot — the fixed marketing
+     template in worker/templates/gapfill-offer.md, no name, no variables.
+
+     enabled   — the kill switch. false: the hourly run logs "switched off"
+                 and reads nothing, sends nothing. (The app's panel also has
+                 a ⏸ Durdur button that pauses it without a deploy.)
+     dryRun    — ON until Bülent turns it off. true: every run works out
+                 exactly what it would send, writes that list to Firebase
+                 (rdns_gapfill_v1/runs, shown in the app's panel) and sends
+                 NOTHING. Set it to false and `wrangler deploy` to go live.
+     dailyCap  — hard ceiling of real messages per salon day, re-runs
+                 included: what the day's log already holds counts against it.
+     holdMinutes — an offered slot is "teklif edildi" for this long: no other
+                 customer is offered it. When the time is up with no booking
+                 it is released on the next run, automatically.
+     daysAhead — how many days are worked, today first: 4 = today … +3.
+     cooldownDays — a customer hears from the gap-filler at most once in this
+                 many days, whatever the slot.
+     noticeMinutes — a slot TODAY must start at least this far ahead.
+     dueAfterDays / dueUntilDays — who counts as DUE. A customer with no
+                 booking ahead is offered a gap only if her last visit was
+                 between these many days ago: sooner and she is not due
+                 yet, later and she belongs to the win-back template, not
+                 to a gap. (A customer who HOLDS a booking further out is
+                 offered anyway — she comes earlier — and those go first.)
+     Every customer also needs a usable phone, no booking within
+     fillMinDaysAhead days of the gap, no offer in the last cooldownDays and
+     no offer for that same day, ever; the KAPALI blocker and anyone opted
+     out (waOptOut on her record, "STOP" or "mesaj istemiyor" in her notes,
+     or the panel's 🚫) are never offered anything. */
+  gapFill: {
+    enabled: true,
+    dryRun: true,
+    dailyCap: 25,
+    holdMinutes: 120,
+    daysAhead: 4,
+    cooldownDays: 7,
+    noticeMinutes: 60,
+    dueAfterDays: 14,
+    dueUntilDays: 120
+  },
+
+  /* Which GROUP a service name belongs to — the headings of the service list:
+     'manikur' | 'pedikur' | 'kirpik' | 'kas' | 'agda', or null for a name that
+     fits none ("Güzellik Uygulaması", "Diğer / Other", an old free-typed
+     service). Turkish letters are folded (ş→s, ğ→g, ı→i, İ→i…) so "KİRPİK",
+     "Kirpik" and "kirpik" read the same. The order matters: pedikur before
+     manikur so "Jel Pedikür" is not a manicure, kirpik before manikur so
+     "Kirpik Dolgu" is not an infill. */
+  serviceGroup: function(service){
+    var s = String(service || '').toLowerCase()
+      .replace(/i̇/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+      .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ç/g, 'c');
+    if (!s.trim()) return null;
+    if (/pedik|pedic/.test(s)) return 'pedikur';
+    if (/kirpi|lash/.test(s)) return 'kirpik';
+    if (/\bkas\b|microblad|brow/.test(s)) return 'kas';
+    if (/agda|wax/.test(s)) return 'agda';
+    if (/manik|manic|jel|gel|dolgu|infill|nail|french|ombre|tirnak|akrilik|acrylic|biab|builder|oje|protez/.test(s)) return 'manikur';
+    return null;
+  },
+  // May `who` (key or name) be booked for this service? A name that is not
+  // a technician (Manager, a blank) is not governed here — true. A service
+  // with no group, or a group nobody has written down, is open — true. A
+  // technician missing from the group's list — false, everywhere.
+  canDo: function(who, service){
+    var o = this.find(who);
+    if (!o) return true;
+    var g = this.serviceGroup(service);
+    if (!g) return true;
+    var list = this.staffPrefs && this.staffPrefs.serviceSkill && this.staffPrefs.serviceSkill[g];
+    if (!Array.isArray(list)) return true;
+    return list.indexOf(o.key) !== -1;
+  },
+  // Who on the day's roster can do this service, best first (serviceSkill
+  // order). Empty means nobody — say "no availability", never substitute.
+  skilledOn: function(service, date){
+    var roster = this.rosterOn(date);
+    var g = this.serviceGroup(service);
+    var list = g && this.staffPrefs && this.staffPrefs.serviceSkill && this.staffPrefs.serviceSkill[g];
+    if (!Array.isArray(list)) return roster;
+    return list.map(function(k){ return roster.filter(function(o){ return o.key === k; })[0]; }).filter(Boolean);
+  },
+  // The day's roster in the order the gap-filler works it: fillOrder first,
+  // then anyone on the roster the list does not name, in roster order.
+  fillOrderOn: function(date){
+    var roster = this.rosterOn(date);
+    var order = (this.staffPrefs && this.staffPrefs.fillOrder) || [];
+    var out = order.map(function(k){ return roster.filter(function(o){ return o.key === k; })[0]; }).filter(Boolean);
+    roster.forEach(function(o){ if (out.indexOf(o) === -1) out.push(o); });
+    return out;
+  },
 
   /* Is the salon shut on this day? Takes a Date or anything that starts
      'YYYY-MM-DD' (a date key, a datetime string). Unreadable INPUT counts
@@ -469,3 +611,8 @@ window.CROWN = {
     return m;
   }
 };
+// The same object for whoever loaded the file: the pages as window.CROWN,
+// the worker (which has no window) as globalThis.CROWN. See the note at the
+// top of the file.
+if (typeof window !== 'undefined') window.CROWN = CROWN;
+else if (typeof globalThis !== 'undefined') globalThis.CROWN = CROWN;

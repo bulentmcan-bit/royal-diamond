@@ -220,6 +220,8 @@ too, and the two rotate independently):
 | `POST /wa/confirm-booking` | `{apptId, phone, dateISO, timeHHMM}` (+ optional `name` for the KAPALI check) → sends `pyz_appointment_booked_v2` **immediately** — no scheduledAt. The worker itself words `{{1}}` as the Turkish long date ("2 Eylül Çarşamba") and passes `{{2}}` as the hour; returns `{ok:true, messageUid}`. The app stores the uid on the appointment (`wa.c`) and enforces one confirmation per customer per day via the carrier grouping. |
 | `POST /wa/cancel` | `{uids:[…]}` → cancels each; "already sent" and "already gone" count as success. |
 | `POST /wa/send` | `{phone, templateName, params}` → immediate send (the Google-review ask after checkout). |
+| `POST /wa/gapfill-preview` | `{}` → what the gap-filler would do this minute: the planned offers, the slots nobody could be offered, the holds it would release. Reads the diary, writes nothing, sends nothing. The panel's "Şimdi dene". |
+| `POST /wa/gapfill-run` | `{}` → one gap-filler run now, exactly as the hourly cron does it (dry run honoured, cap honoured, run recorded). |
 
 Phone numbers are normalised to `90XXXXXXXXXX`; anything that does not
 normalise to a Turkish mobile is refused rather than sent. The blocker client
@@ -291,3 +293,59 @@ its own reminders and fires its own immediate confirmation
 (`rdWaConfirmBooking` — one per customer per day, uid kept on `wa.c`), every
 cancellation or move kills the pending reminders, dormant per device until
 the shared key is pasted in via the 🤖 button on the dashboard.
+
+---
+
+# The automatic gap-filler (cron, 09:00–18:00 Mon–Sat)
+
+Reception touches nothing. Every hour the worker reads the diary out of
+Firebase, finds the empty hours today, tomorrow, +2 and +3, and offers each
+one to ONE customer by WhatsApp — the fixed MARKETING template in
+`templates/gapfill-offer.md` (no name, no variables; never the r24/r1
+reminders). It runs with every salon device switched off.
+
+**Where the rules are.** `crown-config.js` — the same file the pages read —
+is bundled into this worker at deploy (`import '../../crown-config.js'` in
+`src/index.js`), so:
+
+| Setting | Means |
+|---|---|
+| `staffPrefs.serviceSkill` | who may be offered which customer: a technician not listed under a service group is never offered a customer whose usual service is in it (and cannot be booked for it anywhere in the app either) |
+| `staffPrefs.fillOrder` | whose empty hours are offered first (`hannah, lissa, helen`) |
+| `staffPrefs.notBefore` | no offers for a technician before a date — not sent before it, not for a slot dated before it |
+| `gapFill.enabled` | the kill switch |
+| `gapFill.dryRun` | **on by default** — the run writes what it would send and sends nothing, until Bülent sets it `false` and deploys |
+| `gapFill.dailyCap` | hard ceiling of real messages a day (25), counted against the day's log so a re-run cannot leak past it |
+| `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (120) and offered to nobody else; released automatically after |
+| `gapFill.cooldownDays` | one offer per customer per this many days (7) |
+
+**A change to any of those is `wrangler deploy` from this folder** — the
+pages pick the file up on a push, the cron only on a deploy.
+
+**Who is eligible.** A usable phone, not KAPALI, not opted out (`waOptOut`
+on the client, "STOP" / "mesaj istemiyor" in her notes, or her number under
+`rdns_gapfill_v1/optout`); no booking of hers within `fillMinDaysAhead` (3)
+days of the gap either side; no offer to her in the last 7 days; no offer to
+her for that same day, ever. Then either she holds a booking further out (the
+pull-forward, soonest first) or her last visit was 14–120 days ago (the ones
+who are due). One customer gets at most one offer per run.
+
+**What it writes**, all under `rdns_gapfill_v1` in Firebase, as admin
+(`FB_SECRET` — without it the run aborts and says so):
+
+| Path | Holds |
+|---|---|
+| `offers/<id>` | one real offer: slot (`d`, `t`, `tech`), customer (`cid`, `name`, `phone`), `ts`, `day`, `st` (`sending → offered / failed`, then `expired` or `booked`), `uid`, `replied` (the panel's tick). Claimed BEFORE the send, so a run that dies mid-way never messages anyone twice. Pruned after 60 days. |
+| `runs/<ts>` | one record per run: mode, the offers planned (the dry-run output), slots nobody could be offered, notes (closed days, notBefore, the cap), sent/failed. Last 30 kept. |
+| `control` | `{paused:true}` — the panel's ⏸ button; pauses the cron without a deploy |
+| `optout/<phone>` | the panel's 🚫 button |
+
+The app's Gap Report page carries the panel: the last run's output (what it
+would send, or did), the last fifty offers with their state, a ✓ to mark a
+reply by hand, 🚫 to opt a customer out, ⏸ to pause, and "Şimdi dene" which
+calls `/wa/gapfill-preview` on an armed device.
+
+**Going live, in order:** submit the template (the .md says how) → its real
+name into `WA_GAPFILL` in `wrangler.toml` → `gapFill.dryRun: false` in
+`crown-config.js` → `wrangler deploy`. Watch `wrangler tail` for the
+`[gapfill]` lines on the next hour.
