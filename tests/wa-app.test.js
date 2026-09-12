@@ -407,18 +407,23 @@ function makeDevice() {
   console.log('11. checkout guards and the desk-side free times');
   {
     const mFree = html.match(/function rbFreeTimes\(staff, ds, dur\)\{[\s\S]*?\n\}/);
+    const mStaff = html.match(/function rdStaffOn\(date\)\{[\s\S]*?\n\}/);   // rbFreeTimes reads the roster through it
     // The ladder of starts it offers (crown-config `starts`, Sep 2026) — pulled
     // in with CROWN absent, so its inline copy of the rule answers, same as a
     // page where crown-config failed to load.
     const mLad = html.match(/function rdStartLadder\(\)\{[\s\S]*?\n\}/);
     const mBlk = html.match(/function rdIsBlocker\(clientId\)\{[\s\S]*?\n\}/);
     const mPrc = html.match(/function rdPriceConfirm\(p\)\{[\s\S]*?\n\}/);
-    if (!mFree || !mLad || !mBlk || !mPrc) { fail++; console.log('  ✗ guard/flow functions not found'); }
+    if (!mFree || !mStaff || !mLad || !mBlk || !mPrc) { fail++; console.log('  ✗ guard/flow functions not found'); }
     else {
       const d = makeDevice();
       let confirms = [];
+      // rbFreeTimes reads the roster (rdStaffOn → window.CROWN.rosterOn), so the
+      // real crown-config.js is loaded into the device: Hannah is on it.
+      d.ctx.window = d.ctx.window || {};
+      vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'crown-config.js'), 'utf8'), d.ctx);
       d.ctx.confirm = q => { confirms.push(q); return false; };   // reception taps İptal
-      vm.runInContext(mLad[0] + '\n' + mFree[0] + '\n' + mBlk[0] + '\n' + mPrc[0]
+      vm.runInContext(mStaff[0] + '\n' + mLad[0] + '\n' + mFree[0] + '\n' + mBlk[0] + '\n' + mPrc[0]
         + ';__free=rbFreeTimes;__blk=rdIsBlocker;__prc=rdPriceConfirm;', d.ctx);
       d.ctx.clients.push({ id: 90, name: 'KAPALI — Personel', phone: '' }, { id: 91, name: 'Ayşe', phone: '05338669933' });
       d.ctx.appointments.push(

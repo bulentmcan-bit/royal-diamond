@@ -2500,7 +2500,12 @@
   // so it is read when called, never at parse time — and it is asked FOR A DAY:
   // rosterOn(dateKey) leaves a technician out from the day she left, so she is
   // never published as bookable again, while every earlier day still has her.
-  // The fallback is the pair still working, for the moment before it is there.
+  // The fallback below is reached ONLY when window.CROWN is absent — the
+  // config failed to load, or _obTechs was called before the <script> tag at
+  // the foot of the file ran. In normal use it is never reached: an online
+  // request is handled long after the page has loaded. It is not a roster;
+  // do not add a name to it. (tests/roster-hardcode.test.js allows exactly
+  // this one line, by its text.)
   const RD_OB_FALLBACK_TECHS=['Helen','Lissa'];
   function _obTechs(dateKey){
     try{
@@ -6128,20 +6133,29 @@ document.addEventListener('click', function(e){
   if(dd && inp && !dd.contains(e.target) && e.target!==inp) dd.style.display='none';
 });
 
+// The Personel dropdown of the booking form: "Manager" first, then the ROSTER
+// for the day in the form — crown-config.js rosterOn, so a date before a
+// technician's leftOn still offers her and a later one does not. Re-run when
+// the date changes. THE ONE PLACE TO ADD OR REMOVE A TECHNICIAN is
+// crown-config.js; a list of names here is a bug, and
+// tests/roster-hardcode.test.js fails the build on one.
 function popStaffSel(){
   const sel = document.getElementById("a-staff");
   if(!sel) return;
   const prev = sel.value;
   sel.innerHTML = "";
-  // Always show all 6 technicians + Manager
-  ["Manager","Helen","Hannah","Lissa"].forEach(function(n){
+  const day = String((document.getElementById("a-dt")||{}).value||"").slice(0,10);
+  ["Manager"].concat(rdStaffOn(day||new Date())).forEach(function(n){
     const opt = document.createElement("option");
     opt.value = n; opt.textContent = n;
     sel.appendChild(opt);
   });
-  // Restore previous selection
+  // Restore previous selection if she is still on the list
   if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  // …and label whoever is not down for the chosen service (never disabled)
+  if(typeof rdApplySkillToStaffSel==='function') rdApplySkillToStaffSel();
 }
+try{ document.getElementById("a-dt").addEventListener("change", popStaffSel); }catch(e){}
 
 // ══════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -6155,9 +6169,13 @@ let dashGridDate = new Date();
 // Who is WORKING on a day — asked of crown-config.js (rosterOn), so a
 // technician who has left drops out of the diary's columns from her leftOn
 // date and stays in every earlier day. Read at call time, the config loads
-// further down the file; before it is there, the pair still working. The
-// money screens (salary, Aylık, kesinti, avans, komisyon, kasa) keep their
-// own full lists and never ask this.
+// further down the file. The last line is reached ONLY when window.CROWN is
+// absent — the config failed to load, or a caller ran before the <script>
+// tag at the foot of the file; nothing in normal use gets there, and it is
+// not a roster, so do not add a name to it (tests/roster-hardcode.test.js
+// allows exactly that one line, by its text). The money screens (salary,
+// Aylık, kesinti, avans, komisyon, kasa) keep their own full lists and
+// never ask this.
 function rdStaffOn(date){
   try{
     const C=window.CROWN;
@@ -9846,7 +9864,7 @@ function rbFreeTimes(staff, ds, dur){
   try{
     dur=Math.min(60,parseInt(dur)||60);
     const s=String(staff||'').toLowerCase();
-    const tech=['Helen','Hannah','Lissa'].find(t=>s.includes(t.toLowerCase()));
+    const tech=rdStaffOn(ds).find(t=>s.includes(t.toLowerCase()));   // the roster for that day (crown-config), never a list of names
     if(!tech) return null;   // unknown column: no grid to offer
     const grid=rdStartLadder();
     const busy=(appointments||[]).filter(a=>{
@@ -12964,7 +12982,7 @@ function rdDashTiles(){
 // step if the working grids ever change).
 function rdGapEmptyToday(){
   try{
-    const TECHS=['Helen','Hannah','Lissa'];
+    const TECHS=rdStaffOn(todayStr());   // the roster today (crown-config), never a list of names
     const JOB=(window.CROWN&&CROWN.slotDefault)||60;
     const L=rdStartLadder();   // the same rungs the Gap Report draws
     const t=todayStr(); const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
@@ -17946,10 +17964,12 @@ function rvSendAll(){
    üst üste binen randevuları bulur ve çözüm önerir.
    ══════════════════════════════════════════════════════════════ */
 (function(){
-  const TECHS=['Helen','Hannah','Lissa'];
+  // The roster, read when asked (crown-config.js loads further down the
+  // file, so never at parse time) — never a list of names.
+  const TECHS=()=>rdStaffOn(new Date());
   function _ap(){try{return appointments||[];}catch(e){return[];}}
   function _cl(){try{return clients||[];}catch(e){return[];}}
-  function techOf(st){const s=String(st||'').toLowerCase();return TECHS.find(t=>s.includes(t.toLowerCase()))||null;}
+  function techOf(st){const s=String(st||'').toLowerCase();return TECHS().find(t=>s.includes(t.toLowerCase()))||null;}
   function cname(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.name:'Müşteri';}
   function cphone(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.phone:null;}
   function fmtDT(d){return d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'})+' '+d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});}
@@ -18009,7 +18029,7 @@ function rvSendAll(){
       const t=new Date(a.datetime).getTime();
       return !isNaN(t)&&t>=now-3600000&&t<=horizon&&techOf(a.staff);
     });
-    TECHS.forEach(t=>{
+    TECHS().forEach(t=>{
       const mine=list.filter(a=>techOf(a.staff)===t)
         .sort((x,y)=>new Date(x.datetime)-new Date(y.datetime));
       for(let i=0;i<mine.length-1;i++){
@@ -18100,16 +18120,19 @@ function rvSendAll(){
 <script>
 /* ══════════════════════════════════════════════════════════════
    👻 ESKİ PERSONEL RANDEVULARI
-   Ayrılan personele (Zara, Lilly, Saeideh…) atanmış randevular
+   Ayrılan personele (Lilly, Saeideh…) atanmış randevular
    panolarda görünmez ama veride durur. Burada listelenir,
    yeni personele aktarılır veya silinir.
    ══════════════════════════════════════════════════════════════ */
 (function(){
-  const ACTIVE=['Helen','Hannah','Lissa'];
+  // Who is ACTIVE is the roster in crown-config.js, read when asked (it
+  // loads further down the file) — never a list of names. Add a technician
+  // there and her bookings stop being "old staff" bookings here by themselves.
+  const ACTIVE=()=>rdStaffOn(new Date());
   function _ap(){try{return appointments||[];}catch(e){return[];}}
   function _cl(){try{return clients||[];}catch(e){return[];}}
   function isActive(st){const s=String(st||'').toLowerCase().trim();
-    return ACTIVE.some(t=>s.indexOf(t.toLowerCase())!==-1);}
+    return ACTIVE().some(t=>s.indexOf(t.toLowerCase())!==-1);}
   function cname(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.name:'Müşteri';}
   function fmt(d){return d.toLocaleDateString('tr-TR',{day:'numeric',month:'short'})+' '+
     d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});}
@@ -18189,7 +18212,7 @@ function rvSendAll(){
         +' <span style="background:rgba(196,134,58,.18);color:#c4863a;border-radius:6px;padding:1px 7px;font-size:0.7rem;font-weight:700;">'+(a.staff||'personel yok')+'</span>'
         +' <span style="background:rgba(120,120,120,.18);color:var(--muted);border-radius:6px;padding:1px 7px;font-size:0.68rem;font-weight:700;">'+(a.status||'')+'</span></div>'
         +'<div style="display:flex;gap:5px;">'
-        + ACTIVE.map(t=>'<button onclick="rdOrphanMove(\''+a.id+'\',\''+t+'\')" style="background:rgba(30,163,79,.14);border:1px solid rgba(30,163,79,.45);color:#1ea34f;border-radius:7px;padding:4px 9px;font-size:0.72rem;font-weight:700;cursor:pointer;">→ '+t+'</button>').join('')
+        + ACTIVE().map(t=>'<button onclick="rdOrphanMove(\''+a.id+'\',\''+t+'\')" style="background:rgba(30,163,79,.14);border:1px solid rgba(30,163,79,.45);color:#1ea34f;border-radius:7px;padding:4px 9px;font-size:0.72rem;font-weight:700;cursor:pointer;">→ '+t+'</button>').join('')
         +'<button onclick="rdOrphanDelete(\''+a.id+'\')" style="background:rgba(227,73,72,.14);border:1px solid rgba(227,73,72,.45);color:#e34948;border-radius:7px;padding:4px 10px;font-size:0.72rem;font-weight:700;cursor:pointer;">🗑</button>'
         +'</div></div>';
     });
