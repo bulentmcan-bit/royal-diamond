@@ -88,10 +88,13 @@ console.log('3. skilledOn / fillOrderOn');
   is(C.skilledOn('Jel Pedikür', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'pedicure: the same four in the same order');
   is(C.skilledOn('Diğer / Other', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'ungrouped: the whole roster in roster order');
   // The operators array IS the board's column order: Helen, Lissa, Zara,
-  // Hannah left to right. Hannah stays hidden from the wall until her flag
-  // comes off; Zara has no photo on purpose (temporary staff).
+  // Hannah left to right. Zara is hidden from the wall (hiddenOnBoard, and
+  // only that — she keeps her key, skills, diary column and salary screens);
+  // Hannah is on it. Zara has no photo on purpose (temporary staff).
   is(C.operators.map(o => o.key), ['helen', 'lissa', 'zara', 'hannah'], 'operators: helen, lissa, zara, hannah — the column order');
-  is(C.operators.filter(o => !o.hiddenOnBoard).map(o => o.key), ['helen', 'lissa', 'zara'], 'on the wall today: Helen, Lissa, Zara');
+  is(C.operators.filter(o => !o.hiddenOnBoard).map(o => o.key), ['helen', 'lissa', 'hannah'], 'on the wall today: Helen, Lissa, Hannah — Zara hidden');
+  is(C.find('zara').leftOn, undefined, 'Zara has no leftOn — hidden from the wall is not gone');
+  is(C.rosterOn('2026-09-15').map(o => o.key), ['helen', 'lissa', 'zara', 'hannah'], 'the diary, booking page and free-time finder still see Zara');
   is('photo' in C.find('zara'), false, 'Zara names no photo file');
   is(C.find('hannah').commissionPaused, true, 'the commission pause on Hannah survives the reorder');
   is(C.fillOrderOn('2026-09-15').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fillOrder: Hannah, Lissa, Helen, then Zara — not in fillOrder yet, so appended last');

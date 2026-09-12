@@ -54,13 +54,17 @@ var CROWN = {
 
   operators: [
     /* The ORDER of this array is the order of the board columns, left to
-       right: Helen, Lissa, Zara, Hannah. Hannah is hidden from the wall for
-       now (hiddenOnBoard below); when that flag comes off she appears fourth,
-       on the right, without any other line changing. */
+       right: Helen, Lissa, Zara, Hannah — the wall shows whoever is not
+       hiddenOnBoard, in this order. Zara is off the wall for now; take the
+       flag off her line and she appears third, between Lissa and Hannah,
+       without any other line changing. */
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  },
-    /* Zara is temporary staff — no photo on purpose, her tile shows none. */
-    { key:'zara',   name:'Zara' },
+    /* Zara is temporary staff — no photo on purpose, her tile shows none.
+       hiddenOnBoard keeps her OFF THE WALL BOARD and nothing else: her key,
+       her manikur/pedikur skills, her diary column, her online booking
+       availability and every salary screen still see her. */
+    { key:'zara',   name:'Zara',   hiddenOnBoard: true },
     /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
        included) her jobs earn no commission on any screen that counts money;
        everything she earned BEFORE that date stays exactly as it was, and her
@@ -72,7 +76,7 @@ var CROWN = {
        that month from the date onward earn again; if the paused stretch must
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
-    { key:'hannah', name:'Hannah', photo:'op-hannah.png', hiddenOnBoard: true,
+    { key:'hannah', name:'Hannah', photo:'op-hannah.png',
       commissionPaused: true, commissionPausedSince: '2026-08-01' }
   ],
 
