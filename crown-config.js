@@ -200,14 +200,23 @@ var CROWN = {
      👁 KİRPİK, 🤨 KAŞ, 🪒 AĞDA); serviceGroup() below sorts any service
      name into one by its wording, so "Jel Pedikür" is pedikur, "Kaş
      Laminasyon" is kas, and "Bıyık / Çene Ağda" — the lip and chin wax;
-     there is no separate lip category in the list — is agda. A technician
-     NOT listed under a group cannot be booked for it ANYWHERE: the diary's
-     booking form, the customer booking page, the online request handler,
-     Uygun Saat Bul, the fill-call list and the automatic gap-filler all ask
-     canDo() below. If the only technician who can do a service is busy, the
-     answer is "no availability" — nobody is substituted quietly. A service
-     that fits no group ("Güzellik Uygulaması", "Diğer / Other") is open to
-     everyone, and so is a name that is not a technician at all (Manager).
+     there is no separate lip category in the list — is agda. Every path
+     asks canDo() below, and they answer it two different ways:
+       · the DIARY WARNS. Reception's booking form labels a technician who
+         is not down for the service ("— bu hizmeti yapmıyor") but leaves her
+         selectable, and saving — a new booking, or an edit that changes the
+         pairing — asks once ("Yine de kaydedilsin mi?") and goes ahead if she
+         says yes. Reception knows the staff better than this list does.
+       · EVERYTHING AUTOMATIC OR CUSTOMER-FACING REFUSES. The customer booking
+         page, the online request handler, Uygun Saat Bul, the fill-call list
+         and the automatic gap-filler never offer or book a technician for a
+         service she is not listed under. If the only technician who can do a
+         service is busy, the answer is "no availability" — nobody is
+         substituted quietly. A machine offering a customer the wrong
+         technician is a problem; reception overriding on purpose is not.
+     A service that fits no group ("Güzellik Uygulaması", "Diğer / Other") is
+     open to everyone, and so is a name that is not a technician at all
+     (Manager).
 
      fillOrder — whose empty hours the gap-filler offers FIRST. Helen is 95%
      manicures and already in demand: her gaps fill themselves. Lissa is

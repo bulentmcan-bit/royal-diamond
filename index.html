@@ -6184,12 +6184,16 @@ function rdCanStartAt(m){ return rdStartLadder().indexOf(m)!==-1; }
 function rdNextStart(m){ const l=rdStartLadder(); for(let i=0;i<l.length;i++){ if(l[i]>=m) return l[i]; } return null; }
 // WHO CAN DO WHAT — crown-config.js staffPrefs.serviceSkill, through
 // CROWN.canDo / CROWN.skilledOn. Every place a technician is chosen for a
-// service asks these: the booking form, the online request handler, Uygun
-// Saat Bul and the fill-call list (the automatic gap-filler asks the same
-// config inside the worker). A technician who does not do the service is
-// refused, and NOBODY is substituted for her quietly — the answer is "no
-// availability" and reception rings. Before the config is there (it loads
-// further down the file) everyone can do everything, the old behaviour.
+// service asks these, and they answer two ways. The diary's booking form
+// WARNS: the name is labelled "— bu hizmeti yapmıyor" but stays selectable,
+// and saving asks once and lets reception through if she says yes — she
+// knows the staff better than the config does. The online request handler,
+// Uygun Saat Bul and the fill-call list (and the automatic gap-filler, which
+// asks the same config inside the worker) REFUSE: a technician who does not
+// do the service is never offered or booked, and NOBODY is substituted for
+// her quietly — the answer is "no availability" and reception rings. Before
+// the config is there (it loads further down the file) everyone can do
+// everything, the old behaviour.
 function rdCanDo(staff, service){
   try{ const C=window.CROWN; if(C&&C.canDo) return !!C.canDo(staff, service); }catch(e){}
   return true;
@@ -6536,14 +6540,15 @@ function dashEditAppt(id){
         const wasCompleted = live.status === 'completed';
 
         // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): a pairing
-        // that is being CHANGED here must be allowed. A record that already
-        // stands — a checkout, a price correction on an old job — is never
-        // refused for what it always was.
+        // that is being CHANGED here is questioned — a confirm reception can
+        // click through, the same speed bump as a new booking, never a
+        // refusal. A record that already stands — a checkout, a price
+        // correction on an old job — is never even asked about for what it
+        // always was.
         {
           const _stv=document.getElementById('a-staff').value, _svv=document.getElementById('a-service').value||live.service;
           if(_stv && _svv && (_stv!==live.staff || _svv!==live.service) && typeof rdCanDo==='function' && !rdCanDo(_stv,_svv)){
-            toast('🚫','Personel bu hizmeti yapmıyor', _stv+' — '+_svv+'. Yapan: '+(rdSkilledOn(_svv, live.datetime).join(', ')||'kimse')+'.','r');
-            return;
+            if(!confirm(_stv+' — '+_svv+' — bu hizmeti yapmıyor olarak kayıtlı.\n\nYine de kaydedilsin mi?')) return;
           }
         }
         // Never let an empty select wipe a service name. Old appointments carry
@@ -9120,9 +9125,14 @@ try{
   document.getElementById('a-service').addEventListener('change',autoDurFill);
 }catch(e){}
 // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): when the service
-// changes, the Personel list greys out whoever does not do it, and a choice
-// that has just become impossible is CLEARED — never swapped for somebody
-// who does. Saving re-checks the pair (rdCanDo) whichever way it was set.
+// changes, the Personel list LABELS whoever is not down for it — the name
+// stays selectable, nothing is disabled, nothing is cleared and no toast
+// fires. Reception knows the staff better than the config does; the label is
+// the information and that is enough. Saving asks once (a confirm she can
+// click through) and then lets her through — the diary WARNS, it does not
+// refuse. Every automatic and customer-facing path (the online request
+// handler, Uygun Saat Bul, the fill-call list, booking.html, the gap-filler)
+// still refuses outright.
 function rdApplySkillToStaffSel(){
   try{
     const st=document.getElementById('a-staff'), sv=document.getElementById('a-service');
@@ -9131,11 +9141,7 @@ function rdApplySkillToStaffSel(){
     for(let i=0;i<st.options.length;i++){
       const o=st.options[i]; if(!o.value) continue;
       const ok=rdCanDo(o.value, svc);
-      o.disabled=!ok; o.textContent=o.value+(ok?'':' — bu hizmeti yapmıyor');
-    }
-    if(st.value && !rdCanDo(st.value, svc)){
-      const was=st.value; st.value='';
-      try{ toast('🚫','Personel bu hizmeti yapmıyor', was+' — '+svc+'. Yapan: '+(rdSkilledOn(svc, (document.getElementById('a-dt')||{}).value).join(', ')||'kimse')+'.','r'); }catch(e){}
+      o.textContent=o.value+(ok?'':' — bu hizmeti yapmıyor');
     }
   }catch(e){}
 }
@@ -19222,13 +19228,15 @@ function rdWrCardHtml(r, cls, ix, total){
       const dt    = document.getElementById('a-dt').value;
       const staff = document.getElementById('a-staff').value;
       const dur   = parseInt(document.getElementById('a-dur').value) || 60;
-      // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): checked
-      // before the clash check, so the answer is the real reason — not a
-      // "next free time" for a technician who does not do the job at all.
+      // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): asked before
+      // the clash check, so the question comes first and is the real one —
+      // not a "next free time" for a technician who is not down for the job.
+      // A speed bump, not a wall: reception is told and asked, and if she says
+      // yes the booking is saved as she typed it. Only the automatic and
+      // customer-facing paths refuse outright.
       const _svc  = (document.getElementById('a-service')||{}).value || '';
       if(staff && _svc && typeof rdCanDo==='function' && !rdCanDo(staff, _svc)){
-        toast('🚫','Personel bu hizmeti yapmıyor', staff+' — '+_svc+'. Yapan: '+(rdSkilledOn(_svc, dt).join(', ')||'kimse')+'. Personeli değiştirin.','r');
-        return;
+        if(!confirm(staff+' — '+_svc+' — bu hizmeti yapmıyor olarak kayıtlı.\n\nYine de kaydedilsin mi?')) return;
       }
       if(dt && staff){
         const clash = rdFindClash(staff, dt, dur);

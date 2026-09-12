@@ -157,9 +157,21 @@ console.log('6. the check is carried everywhere it must be');
   is(/bu hizmeti \('\+\(req\.service\|\|''\)\+'\) yapan personel yok/.test(html), true, '…and says so when nobody does');
   is(/const able=\(typeof rdSkilledOn==='function'\)\?rdSkilledOn\(svc, dayStr\):rdStaffOn\(dayStr\);/.test(html), true, 'Uygun Saat Bul searches only those who do the service');
   is(/bu hizmeti yapmıyor \('\+svc\+'\)/.test(html), true, '…and refuses a named technician who does not, by name');
-  is(/if\(staff && _svc && typeof rdCanDo==='function' && !rdCanDo\(staff, _svc\)\)/.test(html), true, 'saving a new booking refuses the pairing before the clash check');
-  is(/\(_stv!==live\.staff \|\| _svv!==live\.service\) && typeof rdCanDo==='function' && !rdCanDo\(_stv,_svv\)/.test(html), true, 'editing refuses a CHANGED pairing only — an old record is never refused for what it always was');
-  is(/addEventListener\('change',rdApplySkillToStaffSel\)/.test(html), true, 'the form greys out who does not do the chosen service');
+  // The DIARY is the one place that warns instead of refusing: reception
+  // knows the staff better than the config does, so she is told and asked,
+  // never blocked. Everything automatic or customer-facing above still refuses.
+  const bump = (a, b) => "if(!confirm(" + a + "+' — '+" + b + "+' — bu hizmeti yapmıyor olarak kayıtlı.\\n\\nYine de kaydedilsin mi?')) return;";
+  const saveAt = html.indexOf("if(staff && _svc && typeof rdCanDo==='function' && !rdCanDo(staff, _svc)){");
+  const editAt = html.indexOf("(_stv!==live.staff || _svv!==live.service) && typeof rdCanDo==='function' && !rdCanDo(_stv,_svv)){");
+  is(saveAt > 0 && html.slice(saveAt, saveAt + 400).includes(bump('staff', '_svc')), true, 'saving a new booking ASKS ("Yine de kaydedilsin mi?") before the clash check and goes on if she says yes');
+  is(editAt > 0 && html.slice(editAt, editAt + 400).includes(bump('_stv', '_svv')), true, 'editing asks about a CHANGED pairing only — an old record is never even asked about for what it always was');
+  is(html.split('Yine de kaydedilsin mi?').length - 1, 2, 'exactly the two speed bumps — the save and the edit');
+  is(html.includes('Personel bu hizmeti yapmıyor'), false, 'the red refusal toast is gone from the diary');
+  const fStart = html.indexOf('function rdApplySkillToStaffSel(){'); const form = fStart < 0 ? '' : html.slice(fStart, html.indexOf('\n}', fStart));
+  is(fStart > 0 && form.includes("o.textContent=o.value+(ok?'':' — bu hizmeti yapmıyor')"), true, 'the form LABELS who is not down for the chosen service…');
+  is(fStart > 0 && !form.includes('o.disabled') && !form.includes("st.value=''") && !form.includes('toast('), true, '…and only labels: nobody is disabled, the selection is not cleared, no toast');
+  is(html.includes("addEventListener('change',rdApplySkillToStaffSel)"), true, 'the labels refresh when the service changes');
+  is(fs.readFileSync(path.join(__dirname, '..', 'crown-config.js'), 'utf8').includes('cannot be booked for it ANYWHERE'), false, 'crown-config.js no longer claims the diary refuses');
 }
 
 console.log('');
