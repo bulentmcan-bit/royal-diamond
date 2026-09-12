@@ -53,7 +53,14 @@
 var CROWN = {
 
   operators: [
+    /* The ORDER of this array is the order of the board columns, left to
+       right: Helen, Lissa, Zara, Hannah. Hannah is hidden from the wall for
+       now (hiddenOnBoard below); when that flag comes off she appears fourth,
+       on the right, without any other line changing. */
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
+    { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  },
+    /* Zara is temporary staff — no photo on purpose, her tile shows none. */
+    { key:'zara',   name:'Zara' },
     /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
        included) her jobs earn no commission on any screen that counts money;
        everything she earned BEFORE that date stays exactly as it was, and her
@@ -66,8 +73,7 @@ var CROWN = {
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
     { key:'hannah', name:'Hannah', photo:'op-hannah.png', hiddenOnBoard: true,
-      commissionPaused: true, commissionPausedSince: '2026-08-01' },
-    { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  }
+      commissionPaused: true, commissionPausedSince: '2026-08-01' }
   ],
 
   /* ── How long each technician gets ──────────────────────────────────────────
@@ -211,8 +217,8 @@ var CROWN = {
      when the date is past (a past date blocks nothing). */
   staffPrefs: {
     serviceSkill: {
-      manikur: ['helen', 'lissa', 'hannah'],
-      pedikur: ['helen', 'lissa', 'hannah'],
+      manikur: ['helen', 'lissa', 'zara', 'hannah'],
+      pedikur: ['helen', 'lissa', 'zara', 'hannah'],
       kirpik:  ['lissa', 'hannah'],     // Helen does not do lashes
       kas:     ['helen'],               // Helen only — Altın Oran, Kaş Boyama, Laminasyon, Microblading
       agda:    ['helen']                // Helen only — every wax, the lip/chin wax included

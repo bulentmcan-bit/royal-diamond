@@ -133,7 +133,7 @@ console.log('1. the settings');
   is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [25, 120, 4, 7, 60], 'cap 25, hold 120, 4 days, 7-day cooldown, 60-minute notice');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
-  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen'], 'fill order Hannah, Lissa, Helen');
+  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fill order Hannah, Lissa, Helen, then Zara (not in fillOrder, appended)');
   is(cfg.ladder[0] + '-' + cfg.ladder[cfg.ladder.length - 1] + '/' + cfg.ladder.length, '480-1080/12', 'the start ladder: 08:00 … 18:00, 12 rungs');
   // the safe way round for a broken config
   const bad = api.gfConfig(Object.assign({}, C, { gapFill: { dryRun: 'no', enabled: 'yes', dailyCap: 'lots' } }));

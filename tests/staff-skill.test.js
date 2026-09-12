@@ -68,6 +68,13 @@ console.log('2. canDo');
   is(C.canDo('Helen', 'Microblading'), true, 'Helen only — brows');
   is(C.canDo('Helen', 'Tam Kol Ağda'), true, 'Helen only — wax');
   is(C.canDo('Hannah', 'Jel Pedikür'), true, 'everyone does pedicures');
+  // Zara (temporary, 12 Eylül): manicure and pedicure, nothing else — her
+  // absence from kirpik, kas and agda is deliberate, not an omission.
+  is(C.canDo('Zara', 'Klasik Manikür'), true, 'Zara does manicures');
+  is(C.canDo('zara', 'Jel Pedikür'), true, 'Zara does pedicures (by key)');
+  is(C.canDo('Zara', 'Kirpik Dolgu'), false, 'Zara does not do lashes');
+  is(C.canDo('Zara', 'Kaş Laminasyon'), false, 'Zara does not do brows');
+  is(C.canDo('Zara', 'Bikini Ağda'), false, 'Zara does not wax');
   is(C.canDo('Manager', 'Bikini Ağda'), true, 'Manager is not a technician — the rule does not govern the name');
   is(C.canDo('Lissa', 'Güzellik Uygulaması'), true, 'an ungrouped service is open to everyone');
   is(C.canDo('', 'Kirpik Dolgu'), true, 'no staff chosen yet — nothing to refuse');
@@ -77,14 +84,22 @@ console.log('3. skilledOn / fillOrderOn');
 {
   is(C.skilledOn('Klasik Kirpik Uygulaması', '2026-09-15').map(o => o.name), ['Lissa', 'Hannah'], 'lashes: Lissa then Hannah, the serviceSkill order');
   is(C.skilledOn('Tüm Yüz Ağda', '2026-09-15').map(o => o.name), ['Helen'], 'wax: Helen alone');
-  is(C.skilledOn('Klasik Manikür', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Hannah'], 'manicure: everyone, best first');
-  is(C.skilledOn('Diğer / Other', '2026-09-15').map(o => o.name), ['Helen', 'Hannah', 'Lissa'], 'ungrouped: the whole roster in roster order');
-  is(C.fillOrderOn('2026-09-15').map(o => o.key), ['hannah', 'lissa', 'helen'], 'fillOrder: Hannah, Lissa, Helen');
+  is(C.skilledOn('Klasik Manikür', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'manicure: everyone, best first — Zara after Lissa, ahead of Hannah');
+  is(C.skilledOn('Jel Pedikür', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'pedicure: the same four in the same order');
+  is(C.skilledOn('Diğer / Other', '2026-09-15').map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'ungrouped: the whole roster in roster order');
+  // The operators array IS the board's column order: Helen, Lissa, Zara,
+  // Hannah left to right. Hannah stays hidden from the wall until her flag
+  // comes off; Zara has no photo on purpose (temporary staff).
+  is(C.operators.map(o => o.key), ['helen', 'lissa', 'zara', 'hannah'], 'operators: helen, lissa, zara, hannah — the column order');
+  is(C.operators.filter(o => !o.hiddenOnBoard).map(o => o.key), ['helen', 'lissa', 'zara'], 'on the wall today: Helen, Lissa, Zara');
+  is('photo' in C.find('zara'), false, 'Zara names no photo file');
+  is(C.find('hannah').commissionPaused, true, 'the commission pause on Hannah survives the reorder');
+  is(C.fillOrderOn('2026-09-15').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fillOrder: Hannah, Lissa, Helen, then Zara — not in fillOrder yet, so appended last');
   is(C.staffPrefs.notBefore, { hannah: '2026-09-14' }, 'notBefore: Hannah not before 14 Eylül');
   // A technician who has left drops out of both answers for that date.
   const C2 = loadCrown(); C2.operators.find(o => o.key === 'hannah').leftOn = '2026-09-20';
   is(C2.skilledOn('Kirpik Dolgu', '2026-09-21').map(o => o.name), ['Lissa'], 'after Hannah leaves, lashes are Lissa only');
-  is(C2.fillOrderOn('2026-09-21').map(o => o.key), ['lissa', 'helen'], 'and the fill order skips her');
+  is(C2.fillOrderOn('2026-09-21').map(o => o.key), ['lissa', 'helen', 'zara'], 'and the fill order skips her');
 }
 
 console.log('4. index.html: rdCanDo / rdSkilledOn');

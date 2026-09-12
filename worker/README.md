@@ -312,7 +312,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | Setting | Means |
 |---|---|
 | `staffPrefs.serviceSkill` | who may be offered which customer: a technician not listed under a service group is never offered a customer whose usual service is in it (and cannot be booked for it anywhere in the app either) |
-| `staffPrefs.fillOrder` | whose empty hours are offered first (`hannah, lissa, helen`) |
+| `staffPrefs.fillOrder` | whose empty hours are offered first (`hannah, lissa, helen`; a technician not in the list, Zara today, is taken after them) |
 | `staffPrefs.notBefore` | no offers for a technician's hours dated before a date — the SLOT's date is judged, not the run's: on the 11th her Monday-the-14th hours are offered, her Friday ones are not |
 | `gapFill.enabled` | the kill switch |
 | `gapFill.dryRun` | **on by default** — the run writes what it would send and sends nothing, until Bülent sets it `false` and deploys |
