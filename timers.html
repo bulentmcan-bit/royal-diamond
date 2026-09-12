@@ -53,7 +53,7 @@
 
   /* The columns follow the roster: two on the board and each takes half the
      screen, three take a third, one takes all of it — buildBoard() writes the
-     count into --cols, never more than three across. A phone keeps one column. */
+     count into --cols, never more than four across. A phone keeps one column. */
   main{flex:1; display:grid; gap:clamp(10px,1.6vmin,22px); min-height:0;
        grid-template-columns:1fr; grid-auto-rows:minmax(0,1fr);}
   @media(min-width:640px){ main{grid-template-columns:repeat(var(--cols,3),minmax(0,1fr));} }
@@ -370,9 +370,10 @@ if (!AREA) {
 function buildBoard(){
   const host = $('board');
   host.innerHTML = '';
-  // Two on the board and each takes half the screen; three take a third; one
-  // takes all of it. Never more than three across, never fewer than one.
-  host.style.setProperty('--cols', String(Math.max(1, Math.min(BOARD_OPS.length, 3))));
+  // Two on the board and each takes half the screen; three take a third; four
+  // a quarter; one takes all of it. Never more than four across, never fewer
+  // than one — the count is whatever BOARD_OPS holds, nothing is hard-coded.
+  host.style.setProperty('--cols', String(Math.max(1, Math.min(BOARD_OPS.length, 4))));
   BOARD_OPS.forEach(o => {
     const el = document.createElement('div');
     el.className = 'tile free';
