@@ -243,7 +243,7 @@ var CROWN = {
   /* ── THE AUTOMATIC GAP-FILLER (worker/src/index.js, on a cron) ────────────
      It runs in the Cloudflare worker every hour 09:00–18:00 Monday to
      Saturday, with every salon device switched off: it reads the diary from
-     Firebase, walks the empty hours today, tomorrow, +2 and +3 in fillOrder,
+     Firebase, walks the empty hours today, tomorrow, +2, +3 and +4 in fillOrder,
      and sends ONE customer ONE WhatsApp offer per slot — the fixed marketing
      template in worker/templates/gapfill-offer.md, no name, no variables.
 
@@ -263,7 +263,7 @@ var CROWN = {
      holdMinutes — an offered slot is "teklif edildi" for this long: no other
                  customer is offered it. When the time is up with no booking
                  it is released on the next run, automatically.
-     daysAhead — how many days are worked, today first: 4 = today … +3.
+     daysAhead — how many days are worked, today first: 5 = today … +4.
      cooldownDays — a customer hears from the gap-filler at most once in this
                  many days, whatever the slot.
      noticeMinutes — a slot TODAY must start at least this far ahead.
@@ -286,11 +286,11 @@ var CROWN = {
     enabled: true,
     dryRun: false,
     dailyCap: 25,
-    holdMinutes: 120,
-    daysAhead: 4,
+    holdMinutes: 60,
+    daysAhead: 5,
     cooldownDays: 7,
     noticeMinutes: 60,
-    dueAfterDays: 14,
+    dueAfterDays: 10,
     dueUntilDays: 120
   },
 

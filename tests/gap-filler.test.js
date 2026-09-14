@@ -4,11 +4,12 @@
 // diary and a recording stub for fetch. No network, no Piyzi, no key.
 //
 //   1. the settings, as crown-config.js has them TODAY: live (dry run OFF
-//      since 14 Eylül 2026), enabled, cap 25 (5 on the first live day), hold 120,
-//      Hannah first, Hannah not before 14 Eylül. Every other section runs on
-//      REH — the same config with dry run ON and cap 25 — so the walk, the
-//      cap arithmetic and the dry-run rehearsal keep their fixed numbers
-//      whatever Bülent sets the operational switches to.
+//      since 14 Eylül 2026), enabled, cap 25 (5 on the first live day), hold 60,
+//      5 days, due after 10, Hannah first, Hannah not before 14 Eylül. Every
+//      other section runs on REH — the same config with dry run ON, cap 25,
+//      hold 120, 4 days, due after 14 — so the walk, the cap arithmetic and
+//      the dry-run rehearsal keep their fixed numbers whatever Bülent sets
+//      the operational values to.
 //   2. the walk: fillOrder, the start ladder, her booked hours skipped,
 //      today's notice, the DUE customers before the pull-forwards, a lash
 //      customer never to Helen, a wax customer only to Helen, one customer
@@ -47,10 +48,11 @@ function loadCrown() {
   return c.window.CROWN;
 }
 const C = loadCrown();
-// The rehearsal config: the real crown-config.js with the two OPERATIONAL
-// switches pinned — dry run ON, cap 25 — so the scenarios below do not drift
-// when Bülent turns the live switches (section 1 pins those on C itself).
-const REH = Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { dryRun: true, dailyCap: 25 }) });
+// The rehearsal config: the real crown-config.js with the OPERATIONAL
+// switches pinned — dry run ON, cap 25, hold 120, 4 days, due after 14 — so
+// the scenarios below (and their diary, written for those numbers) do not
+// drift when Bülent tunes the live values (section 1 pins those on C itself).
+const REH = Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { dryRun: true, dailyCap: 25, holdMinutes: 120, daysAhead: 4, dueAfterDays: 14 }) });
 
 // The worker slice, with a recording fetch. `store` answers the Firebase
 // reads by path; every call is kept for the assertions.
@@ -138,7 +140,7 @@ console.log('1. the settings');
   const cfg = api.gfConfig();
   is(cfg.gap.dryRun, false, 'dry run is OFF — live since 14 Eylül 2026');
   is(cfg.gap.enabled, true, 'enabled');
-  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [25, 120, 4, 7, 60], 'cap 25 (raised from the first-day 5 on 15 Eylül), hold 120, 4 days, 7-day cooldown, 60-minute notice');
+  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes, cfg.gap.dueAfterDays, cfg.gap.dueUntilDays], [25, 60, 5, 7, 60, 10, 120], 'cap 25, hold 60, 5 days, 7-day cooldown, 60-minute notice, due 10–120 days (tuned 14 Eylül evening after the first live day)');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
   is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fill order Hannah, Lissa, Helen, then Zara (not in fillOrder, appended)');

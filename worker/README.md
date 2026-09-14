@@ -300,7 +300,7 @@ the shared key is pasted in via the 🤖 button on the dashboard.
 # The automatic gap-filler (cron, 09:00–18:00 Mon–Sat)
 
 Reception touches nothing. Every hour the worker reads the diary out of
-Firebase, finds the empty hours today, tomorrow, +2 and +3, and offers each
+Firebase, finds the empty hours today, tomorrow, +2, +3 and +4, and offers each
 one to ONE customer by WhatsApp — the fixed MARKETING template in
 `templates/gapfill-offer.md` (no name, no variables; never the r24/r1
 reminders). It runs with every salon device switched off.
@@ -317,7 +317,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | `gapFill.enabled` | the kill switch |
 | `gapFill.dryRun` | **off since 14 Eylül 2026** — live. Set it `true` and deploy to rehearse again: the run then writes what it would send and sends nothing |
 | `gapFill.dailyCap` | hard ceiling of real messages a day (25; it was 5 on the first live day, 14 Eylül 2026, as a safety limit), counted against the day's log so a re-run cannot leak past it |
-| `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (120) and offered to nobody else; released automatically after |
+| `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (60; 120 on the first live day) and offered to nobody else; released automatically after |
 | `gapFill.cooldownDays` | one offer per customer per this many days (7) |
 
 **A change to any of those is `wrangler deploy` from this folder** — the
@@ -328,7 +328,7 @@ on the client, "STOP" / "mesaj istemiyor" in her notes, or her number under
 `rdns_gapfill_v1/optout`); no booking of hers within `fillMinDaysAhead` (3)
 days of the gap either side; no offer to her in the last 7 days; no offer to
 her for that same day, ever. Then, in this order: the ones who are DUE — no
-booking ahead, last visit 14–120 days ago, most recent first — and only when
+booking ahead, last visit 10–120 days ago (14 on the first live day), most recent first — and only when
 no due customer is left for a slot, the pull-forwards (she holds a booking
 further out, soonest first). A due customer is a visit the till would not
 otherwise have had; a pull-forward only relocates one and opens a gap where
