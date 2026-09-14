@@ -317,7 +317,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | `gapFill.enabled` | the kill switch |
 | `gapFill.dryRun` | **off since 14 Eylül 2026** — live. Set it `true` and deploy to rehearse again: the run then writes what it would send and sends nothing |
 | `gapFill.dailyCap` | hard ceiling of real messages a day (25; it was 5 on the first live day, 14 Eylül 2026, as a safety limit), counted against the day's log so a re-run cannot leak past it |
-| `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (60; 120 on the first live day) and offered to nobody else; released automatically after |
+| `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (45 — it clears before the next hourly run, so a silent customer's slot is re-offered at the top of the next hour; 120 on the first live day) and offered to nobody else; released automatically after |
 | `gapFill.cooldownDays` | one offer per customer per this many days (7) |
 
 **A change to any of those is `wrangler deploy` from this folder** — the

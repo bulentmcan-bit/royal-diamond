@@ -262,7 +262,10 @@ var CROWN = {
                  0 failed, no complaints.
      holdMinutes — an offered slot is "teklif edildi" for this long: no other
                  customer is offered it. When the time is up with no booking
-                 it is released on the next run, automatically.
+                 it is released on the next run, automatically. 45 clears
+                 before the next hourly run, so a silent customer's slot is
+                 re-offered at the top of the next hour instead of sitting
+                 dead (it was 120 on the first live day).
      daysAhead — how many days are worked, today first: 5 = today … +4.
      cooldownDays — a customer hears from the gap-filler at most once in this
                  many days, whatever the slot.
@@ -286,7 +289,7 @@ var CROWN = {
     enabled: true,
     dryRun: false,
     dailyCap: 25,
-    holdMinutes: 60,
+    holdMinutes: 45,
     daysAhead: 5,
     cooldownDays: 7,
     noticeMinutes: 60,
