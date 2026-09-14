@@ -3,8 +3,12 @@
 // worker/src/index.js, with the REAL crown-config.js, run against a small
 // diary and a recording stub for fetch. No network, no Piyzi, no key.
 //
-//   1. the settings: dry run ON, enabled, cap 25, hold 120, Hannah first,
-//      Hannah not before 14 Eylül
+//   1. the settings, as crown-config.js has them TODAY: live (dry run OFF
+//      since 14 Eylül 2026), enabled, cap 5 for the first live day, hold 120,
+//      Hannah first, Hannah not before 14 Eylül. Every other section runs on
+//      REH — the same config with dry run ON and cap 25 — so the walk, the
+//      cap arithmetic and the dry-run rehearsal keep their fixed numbers
+//      whatever Bülent sets the operational switches to.
 //   2. the walk: fillOrder, the start ladder, her booked hours skipped,
 //      today's notice, the DUE customers before the pull-forwards, a lash
 //      customer never to Helen, a wax customer only to Helen, one customer
@@ -43,6 +47,10 @@ function loadCrown() {
   return c.window.CROWN;
 }
 const C = loadCrown();
+// The rehearsal config: the real crown-config.js with the two OPERATIONAL
+// switches pinned — dry run ON, cap 25 — so the scenarios below do not drift
+// when Bülent turns the live switches (section 1 pins those on C itself).
+const REH = Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { dryRun: true, dailyCap: 25 }) });
 
 // The worker slice, with a recording fetch. `store` answers the Firebase
 // reads by path; every call is kept for the assertions.
@@ -71,7 +79,7 @@ function makeWorker(store, opts) {
   const ctx = {
     console: { log: (...a) => logs.push(a.join(' ')), warn: () => {}, error: () => {} },
     TextEncoder, Intl, setTimeout, AbortSignal, fetch, Response: class {},
-    R_PAGE: '', CROWN: opts.crown || C
+    R_PAGE: '', CROWN: opts.crown || REH
   };
   vm.createContext(ctx);
   vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
@@ -126,11 +134,11 @@ const baseOffers = {
 
 console.log('1. the settings');
 {
-  const { api } = makeWorker({});
+  const { api } = makeWorker({}, { crown: C });
   const cfg = api.gfConfig();
-  is(cfg.gap.dryRun, true, 'dry run is ON');
+  is(cfg.gap.dryRun, false, 'dry run is OFF — live since 14 Eylül 2026');
   is(cfg.gap.enabled, true, 'enabled');
-  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [25, 120, 4, 7, 60], 'cap 25, hold 120, 4 days, 7-day cooldown, 60-minute notice');
+  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [5, 120, 4, 7, 60], 'cap 5 for the first live day, hold 120, 4 days, 7-day cooldown, 60-minute notice');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
   is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fill order Hannah, Lissa, Helen, then Zara (not in fillOrder, appended)');
@@ -253,7 +261,7 @@ console.log('5. the daily cap');
   is([plan.sentToday, plan.room], [24, 1], '24 already out today (a failed one does not count) → room for 1');
   is(plan.offers.length, 1, 'exactly one offer planned');
   is(plan.notes.some(n => /günlük sınır 25 doldu/.test(n)), true, 'the cap is written into the notes');
-  const cfg0 = api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { dailyCap: 0 }) }));
+  const cfg0 = api.gfConfig(Object.assign({}, REH, { gapFill: Object.assign({}, REH.gapFill, { dailyCap: 0 }) }));
   is(api.gfPlan({ data, offers: {}, optout, cfg: cfg0, nowMs: NOW, todayYmd: TODAY, nowMin: 600 }).offers, [], 'cap 0 → nothing');
 }
 
@@ -321,7 +329,7 @@ console.log('8. the runner');
     }
     // switched off
     {
-      const w = makeWorker(store(), { crown: Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { enabled: false }) }) });
+      const w = makeWorker(store(), { crown: Object.assign({}, REH, { gapFill: Object.assign({}, REH.gapFill, { enabled: false }) }) });
       const r = await w.api.runGapFiller(env, new Date(NOW));
       is([r.ok, r.skipped, w.calls.length], [true, 'disabled', 0], 'enabled=false: reads nothing, writes nothing');
     }
@@ -339,7 +347,7 @@ console.log('8. the runner');
       is([r.ok, r.error, w.calls.length], [false, 'NO_FB_SECRET', 0], 'no FB_SECRET: aborts before touching anything');
     }
     // live, template not configured
-    const LIVE = Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { dryRun: false }) });
+    const LIVE = Object.assign({}, REH, { gapFill: Object.assign({}, REH.gapFill, { dryRun: false }) });
     {
       const w = makeWorker(store(), { crown: LIVE });
       const r = await w.api.runGapFiller(env, new Date(NOW), { gapMs: 0 });
@@ -390,7 +398,7 @@ console.log('8. the runner');
       const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
       const src = fs.readFileSync(path.join(__dirname, '..', 'worker', 'src', 'index.js'), 'utf8');
       is(/crons = \["0 3 \* \* \*", "0 4 \* \* \*", "0 6-16 \* \* 1-6"\]/.test(toml), true, 'the hourly Mon–Sat cron sits beside the two morning ones');
-      is(/^WA_GAPFILL = ''$/m.test(toml), true, 'WA_GAPFILL is empty until the template is approved');
+      is(/^WA_GAPFILL = '\{"templateName":"bosluk_teklifi","languageCode":"tr","body":\[\]\}'$/m.test(toml), true, 'WA_GAPFILL names the approved template bosluk_teklifi, tr, no variables');
       is(/if \(h === 6\) \{[\s\S]*?await sendMorningReminders\(env\);[\s\S]*?\}\s*if \(h >= 9 && h <= 18\) await runGapFiller\(env, when\);/.test(src), true, 'the scheduled handler: six o\'clock → reminders, nine to six → the gap-filler, else nothing');
       is(/^import '\.\.\/\.\.\/crown-config\.js';/m.test(src), true, 'crown-config.js is imported into the worker');
       is(/route === '\/wa\/gapfill-preview'/.test(src) && /route === '\/wa\/gapfill-run'/.test(src), true, 'the preview and run routes exist for the panel');

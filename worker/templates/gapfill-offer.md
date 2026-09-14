@@ -13,7 +13,7 @@ when the customer replies.
 
 | Field | Value |
 |---|---|
-| Template name | `bosluk_teklifi` — submitted 11 Sep 2026 from Piyzi's form, shown there as "bosluk_teklifi (tr) PENDING". Confirm the API name with `GET /wa/templates` once approved; the reminder templates carry a `pyz_` prefix there, this one may too |
+| Template name | `bosluk_teklifi` — submitted 11 Sep 2026 from Piyzi's form, approved by Meta 14 Sep 2026 (Piyzi confirmed 10:09). `GET /wa/templates` returns it under exactly that name, no `pyz_` prefix, category MARKETING, language tr, variableCount 0, no buttons, sendable |
 | Category | **MARKETING** — an offer, not a transaction. Never the r24/r1 reminder templates, which are UTILITY and would be misused for this. |
 | Language | `tr` (Turkish first, English second, an em dash between, the way the salon speaks) |
 | Header | none |
@@ -55,9 +55,9 @@ Reply STOP if you no longer wish to receive messages.
   message. The phone button is the fallback.
 - Because there are no variables, the sample values Meta asks for at
   submission are simply the text itself.
-- Once approved, wire it in `wrangler.toml` like the others:
-  `WA_GAPFILL = '{"templateName":"<name from /wa/templates>","languageCode":"tr","body":[]}'`
-  and `wrangler deploy`. Until then a LIVE run (gapFill.dryRun=false in
+- Wired in `wrangler.toml` on 14 Sep 2026 like the others:
+  `WA_GAPFILL = '{"templateName":"bosluk_teklifi","languageCode":"tr","body":[]}'`
+  and deployed. If it is ever emptied a LIVE run (gapFill.dryRun=false in
   crown-config.js) refuses to send and records `TEMPLATES_NOT_CONFIGURED`
   in its run record; a dry run needs no template at all.
 - A customer who replies STOP is handled at Piyzi's end; on our side her

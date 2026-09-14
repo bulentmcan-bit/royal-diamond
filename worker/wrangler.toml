@@ -82,12 +82,13 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 WA_CONF = '{"templateName":"pyz_appointment_booked_v2","languageCode":"tr","body":["{dateLong}","{time}"]}'
 
 # The gap-filler's offer — the MARKETING template in templates/gapfill-offer.md,
-# no name and no variables, sent by the hourly cron (runGapFiller). Empty
-# until Meta approves it and its real name comes back from GET /wa/templates;
-# while it is empty a LIVE run (crown-config gapFill.dryRun=false) sends
-# nothing and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
-# Once known:  WA_GAPFILL = '{"templateName":"<name>","languageCode":"tr","body":[]}'
-WA_GAPFILL = ''
+# no name and no variables, sent by the hourly cron (runGapFiller). Meta
+# approved it 14 Eylül 2026 and GET /wa/templates returns it under exactly
+# this name (no pyz_ prefix), language tr, variableCount 0, no buttons,
+# sendable. If it is ever emptied a LIVE run (crown-config
+# gapFill.dryRun=false) sends nothing and records TEMPLATES_NOT_CONFIGURED —
+# a dry run needs no template.
+WA_GAPFILL = '{"templateName":"bosluk_teklifi","languageCode":"tr","body":[]}'
 
 # The Piyzi webhook (/wa/hook) is signed with the whsec_… key Piyzi shows
 # ONCE when the webhook is registered. It is the wrangler secret

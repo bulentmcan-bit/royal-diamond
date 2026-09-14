@@ -250,12 +250,16 @@ var CROWN = {
      enabled   — the kill switch. false: the hourly run logs "switched off"
                  and reads nothing, sends nothing. (The app's panel also has
                  a ⏸ Durdur button that pauses it without a deploy.)
-     dryRun    — ON until Bülent turns it off. true: every run works out
-                 exactly what it would send, writes that list to Firebase
-                 (rdns_gapfill_v1/runs, shown in the app's panel) and sends
-                 NOTHING. Set it to false and `wrangler deploy` to go live.
+     dryRun    — LIVE since 14 Eylül 2026, when Meta approved the template.
+                 true: every run works out exactly what it would send,
+                 writes that list to Firebase (rdns_gapfill_v1/runs, shown
+                 in the app's panel) and sends NOTHING. Set it back to true
+                 and `wrangler deploy` to rehearse again without sending.
      dailyCap  — hard ceiling of real messages per salon day, re-runs
                  included: what the day's log already holds counts against it.
+                 5 for the first live day (14 Eylül 2026): if the wording or
+                 the targeting is wrong, better wrong five times than
+                 twenty-five. Bülent raises it once the first replies are in.
      holdMinutes — an offered slot is "teklif edildi" for this long: no other
                  customer is offered it. When the time is up with no booking
                  it is released on the next run, automatically.
@@ -280,8 +284,8 @@ var CROWN = {
      or the panel's 🚫) are never offered anything. */
   gapFill: {
     enabled: true,
-    dryRun: true,
-    dailyCap: 25,
+    dryRun: false,
+    dailyCap: 5,
     holdMinutes: 120,
     daysAhead: 4,
     cooldownDays: 7,
