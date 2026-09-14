@@ -316,7 +316,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | `staffPrefs.notBefore` | no offers for a technician's hours dated before a date — the SLOT's date is judged, not the run's: on the 11th her Monday-the-14th hours are offered, her Friday ones are not |
 | `gapFill.enabled` | the kill switch |
 | `gapFill.dryRun` | **off since 14 Eylül 2026** — live. Set it `true` and deploy to rehearse again: the run then writes what it would send and sends nothing |
-| `gapFill.dailyCap` | hard ceiling of real messages a day (5 for the first live day, to be raised once the first replies are seen), counted against the day's log so a re-run cannot leak past it |
+| `gapFill.dailyCap` | hard ceiling of real messages a day (25; it was 5 on the first live day, 14 Eylül 2026, as a safety limit), counted against the day's log so a re-run cannot leak past it |
 | `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (120) and offered to nobody else; released automatically after |
 | `gapFill.cooldownDays` | one offer per customer per this many days (7) |
 
@@ -352,6 +352,7 @@ calls `/wa/gapfill-preview` on an armed device.
 **Went live 14 Eylül 2026**, in this order: the template approved by Meta →
 its API name (`bosluk_teklifi`, confirmed from `GET /wa/templates`) into
 `WA_GAPFILL` in `wrangler.toml` → `gapFill.dryRun: false` and `dailyCap: 5`
+(raised to 25 the next day)
 in `crown-config.js` → `wrangler deploy`. Watch `wrangler tail` for the
 `[gapfill]` lines on the next hour.
 

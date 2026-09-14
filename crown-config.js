@@ -257,9 +257,9 @@ var CROWN = {
                  and `wrangler deploy` to rehearse again without sending.
      dailyCap  — hard ceiling of real messages per salon day, re-runs
                  included: what the day's log already holds counts against it.
-                 5 for the first live day (14 Eylül 2026): if the wording or
-                 the targeting is wrong, better wrong five times than
-                 twenty-five. Bülent raises it once the first replies are in.
+                 Was 5 for the first live day (14 Eylül 2026) as a safety
+                 limit; 25 since 15 Eylül, that day having gone 5 sent,
+                 0 failed, no complaints.
      holdMinutes — an offered slot is "teklif edildi" for this long: no other
                  customer is offered it. When the time is up with no booking
                  it is released on the next run, automatically.
@@ -285,7 +285,7 @@ var CROWN = {
   gapFill: {
     enabled: true,
     dryRun: false,
-    dailyCap: 5,
+    dailyCap: 25,
     holdMinutes: 120,
     daysAhead: 4,
     cooldownDays: 7,

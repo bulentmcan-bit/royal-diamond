@@ -4,7 +4,7 @@
 // diary and a recording stub for fetch. No network, no Piyzi, no key.
 //
 //   1. the settings, as crown-config.js has them TODAY: live (dry run OFF
-//      since 14 Eylül 2026), enabled, cap 5 for the first live day, hold 120,
+//      since 14 Eylül 2026), enabled, cap 25 (5 on the first live day), hold 120,
 //      Hannah first, Hannah not before 14 Eylül. Every other section runs on
 //      REH — the same config with dry run ON and cap 25 — so the walk, the
 //      cap arithmetic and the dry-run rehearsal keep their fixed numbers
@@ -138,7 +138,7 @@ console.log('1. the settings');
   const cfg = api.gfConfig();
   is(cfg.gap.dryRun, false, 'dry run is OFF — live since 14 Eylül 2026');
   is(cfg.gap.enabled, true, 'enabled');
-  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [5, 120, 4, 7, 60], 'cap 5 for the first live day, hold 120, 4 days, 7-day cooldown, 60-minute notice');
+  is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes], [25, 120, 4, 7, 60], 'cap 25 (raised from the first-day 5 on 15 Eylül), hold 120, 4 days, 7-day cooldown, 60-minute notice');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
   is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fill order Hannah, Lissa, Helen, then Zara (not in fillOrder, appended)');
