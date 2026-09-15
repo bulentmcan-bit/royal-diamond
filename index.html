@@ -3899,6 +3899,7 @@ p, span, div, label, h1, h2, h3, h4 {
   </div>
   <div class="tb-center" id="clock">09:55:26</div>
   <div class="tb-right">
+    <button class="lang-btn" id="tb-find" onclick="rdFindOpen()" title="Müşteri Bul — telefondaki müşteriyi ismi ya da numarasının son rakamlarıyla bul (kısayol: /)">🔍 Bul</button>
     <div class="lang-switch">
       <button class="lang-btn active" id="lang-tr" onclick="setLang(&#39;tr&#39;)">TR</button>
       <button class="lang-btn" id="lang-en" onclick="setLang(&#39;en&#39;)">EN</button>
@@ -5304,6 +5305,23 @@ p, span, div, label, h1, h2, h3, h4 {
       <button class="btn btn-ghost" onclick="closeModal('mDailyReminders')">Daha Sonra</button>
       <button class="btn btn-wa" onclick="sendAll24hReminders()">💬 Hepsini Oluştur &amp; Gönder</button>
     </div>
+  </div>
+</div>
+
+<!-- 🔍 MÜŞTERİ BUL — the call panel: "I have an appointment but I don't know
+     when". Opens over any page with "/" or the 🔍 button; reads, never writes.
+     Everything it shows comes through rdFindRows below; every change it
+     offers goes through the existing edit / cancel / detail paths. -->
+<div class="overlay" id="mFind" onclick="if(event.target===this)rdFindClose()">
+  <div class="modal" style="width:640px;max-height:90vh;display:flex;flex-direction:column;padding:18px 20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <span style="font-size:1.3rem;">🔍</span>
+      <input id="find-q" type="text" autocomplete="off" spellcheck="false" placeholder="İsim ya da numaranın son rakamları…" oninput="rdFindRender()"
+        style="flex:1;font-size:1.15rem;font-weight:700;padding:10px 14px;border-radius:12px;border:2px solid var(--gold);background:rgba(255,255,255,0.04);color:var(--text);font-family:inherit;outline:none;">
+      <button class="mclose" onclick="rdFindClose()" title="Kapat (Esc)">✕</button>
+    </div>
+    <div id="find-results" style="overflow-y:auto;flex:1;min-height:60px;"></div>
+    <div style="font-size:0.66rem;color:var(--muted);margin-top:8px;">/ açar · Esc kapatır · bir sonuç kalınca kart kendiliğinden açılır</div>
   </div>
 </div>
 
@@ -8921,10 +8939,20 @@ const rdNorm = s => String(s||'')
 // instead of being mangled by float parsing.
 function rdIdArg(id){ return typeof id==='string' ? "'"+String(id).replace(/['"\\]/g,'')+"'" : String(id); }
 
+// THE ONE customer matcher — the Müşteriler list and the Müşteri Bul call
+// panel both ask it, so there is one search, not two. Turkish-normalised
+// substring on the name (rdNorm on both sides), digits-only substring on the
+// phone — so the last four digits of a caller's number find her. A query
+// with no letters and no digits matches everyone (the list shows all; the
+// call panel shows nothing — it checks rdFindEmpty first).
+function rdClientMatcher(q){
+  const qn=rdNorm(q), qd=String(q||'').replace(/\D/g,'');
+  return c=>!!c&&((qn&&rdNorm(c.name).includes(qn))||(qd&&String(c.phone||'').replace(/\D/g,'').includes(qd))||(!qn&&!qd));
+}
+function rdFindEmpty(q){ return !rdNorm(q)&&!String(q||'').replace(/\D/g,''); }
 function renderClients(){
   const q=(document.getElementById("client-search")?.value||"");
-  const qn=rdNorm(q), qd=q.replace(/\D/g,'');
-  const list=clients.filter(c=>(qn&&rdNorm(c.name).includes(qn))||(qd&&String(c.phone||'').replace(/\D/g,'').includes(qd))||(!qn&&!qd)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
+  const list=clients.filter(rdClientMatcher(q)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
   const _pill=document.getElementById("client-count-pill");
   if(_pill)_pill.textContent=q?`${list.length} / ${clients.length} müşteri`:`${clients.length} müşteri`;
   document.getElementById("clients-body").innerHTML=list.map(c=>`
@@ -23285,6 +23313,177 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
   else boot();
 })();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   🔍 MÜŞTERİ BUL — the call panel.
+   The phone rings: "I have an appointment but I don't know when." Reception
+   presses "/" (or the 🔍 button), types the name — or the last four digits
+   of the number on the screen — and reads the answer off the row: her NEXT
+   appointment in bold, every booking she holds ahead, "Yaklaşan randevusu
+   yok" when there is none (that is an answer too, and the moment to offer a
+   slot), her last visit, and any money she owes.
+
+   ONE SEARCH, NOT TWO: rdClientMatcher, the Müşteriler list's own matcher,
+   decides who matches. THE PANEL READS, IT NEVER WRITES: the buttons on the
+   card hand over to dashEditAppt, cancelAppt, quickBook and showClientDetail,
+   which keep their confirmations and PINs. The functions that build the rows
+   (rdFindRows, rdFindApptLine, rdFindDebts, rdFindDue) are pure and take
+   what they need as arguments, so tests/find-panel.test.js runs them on a
+   fixture without a page.
+   ══════════════════════════════════════════════════════════════════════════ */
+const RD_FIND_MAX = 8;   // never more rows than this on screen
+const RD_FIND_WD = ['Paz','Pzt','Sal','Çar','Perş','Cum','Cmt'];
+const RD_FIND_MON = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+const RD_FIND_MON_LONG = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+// "Perş 17 Eyl 14:00 · Helen · Dolgu (Infill)" — from the diary's own
+// 'YYYY-MM-DDTHH:MM', read as a string so no timezone can move the day.
+function rdFindApptLine(a){
+  const dt=String((a&&a.datetime)||'');
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return String((a&&a.service)||'');
+  const d=new Date(dt.slice(0,10)+'T12:00:00');
+  const when=RD_FIND_WD[d.getDay()]+' '+(+dt.slice(8,10))+' '+RD_FIND_MON[+dt.slice(5,7)-1]+' '+dt.slice(11,16);
+  return when+' · '+String((a&&a.staff)||'—')+' · '+String((a&&a.service)||'—');
+}
+// "2 Eyl" for a 'YYYY-MM-DD…' (or "—" for none); "1 Ağustos" for a due date.
+function rdFindDay(s){ s=String(s||''); return /^\d{4}-\d{2}-\d{2}/.test(s) ? (+s.slice(8,10))+' '+RD_FIND_MON[+s.slice(5,7)-1] : '—'; }
+function rdFindDue(due){ const s=String(due||'').slice(0,10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? (+s.slice(8,10))+' '+RD_FIND_MON_LONG[+s.slice(5,7)-1] : s; }
+// The open deferred payments that are HERS: linked by clientId first, then by
+// the same phone (digits only — the record holds 90533…, the card 0533…, so
+// the last ten digits are what is compared), then by a name that exactly one
+// customer carries — a name two customers share links nothing, nothing is
+// guessed.
+function rdFindDebts(c, dps, clients){
+  const digits=s=>{ const d=String(s||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):d; };
+  const norm=s=>String(s||'').trim().replace(/\s+/g,' ').toLocaleUpperCase('tr-TR');
+  const cd=digits(c.phone), cn=norm(c.name);
+  const nameUnique=(clients||[]).filter(x=>x&&norm(x.name)===cn).length===1;
+  return (dps||[]).filter(p=>{
+    if(!p||p.paid) return false;
+    if(p.clientId!=null) return String(p.clientId)===String(c.id);
+    if(p.phone&&cd) return digits(p.phone)===cd;
+    return nameUnique&&norm(p.name)===cn;
+  });
+}
+function rdFindDebtLine(p){
+  const n=Number(p.amount)||0;
+  return '⚠ '+(p.cur||'₺')+n.toLocaleString('tr-TR',{maximumFractionDigits:2})+' vadeli ödeme — vade '+rdFindDue(p.due);
+}
+// The rows for a query. `ctx`: clients, apptsOf(id) → her appointments,
+// dps (deferred payments), now 'YYYY-MM-DDTHH:MM'. Answers {rows, total}
+// with at most RD_FIND_MAX rows; an empty query answers nothing at all.
+function rdFindRows(q, ctx){
+  if(rdFindEmpty(q)) return {rows:[], total:0};
+  const all=(ctx.clients||[]).filter(rdClientMatcher(q)).sort((a,b)=>String(a.name).localeCompare(String(b.name),'tr',{sensitivity:'base'}));
+  const rows=all.slice(0,RD_FIND_MAX).map(c=>rdFindRow(c, ctx));
+  return {rows, total:all.length};
+}
+// One customer's answer: her bookings ahead (soonest first, live ones only),
+// her last completed visit, how many visits, her usual technician and
+// service (the most frequent in her completed visits), and what she owes.
+function rdFindRow(c, ctx){
+  const appts=(ctx.apptsOf?ctx.apptsOf(c.id):[])||[];
+  const stamp=a=>String((a&&a.datetime)||'').slice(0,16);
+  const live=a=>a&&a.status!=='cancelled'&&!a.noShow;
+  const future=appts.filter(a=>live(a)&&a.status!=='completed'&&stamp(a)>=ctx.now).sort((a,b)=>stamp(a).localeCompare(stamp(b)));
+  const done=appts.filter(a=>a&&a.status==='completed').sort((a,b)=>stamp(b).localeCompare(stamp(a)));
+  const top=key=>{ const n={}; done.forEach(a=>{ const v=String(a[key]||'').trim(); if(v) n[v]=(n[v]||0)+1; }); return Object.keys(n).sort((x,y)=>n[y]-n[x])[0]||''; };
+  const last=done.length?done[0].datetime:(String(c.lastVisit||'').match(/^\d{4}-\d{2}-\d{2}/)?c.lastVisit:null);
+  // Visits: the diary's completed count, or the card's own counter when that
+  // is higher — a customer from before the diary carries her history there.
+  return { c, future, last, visits: Math.max(done.length, Number(c.visits)||0), staff: top('staff'), service: top('service'), debts: rdFindDebts(c, ctx.dps, ctx.clients) };
+}
+function rdFindCtx(){
+  const t=new Date(), p=n=>String(n).padStart(2,'0');
+  return {
+    clients: (typeof clients!=='undefined'&&Array.isArray(clients))?clients:[],
+    apptsOf: id=>(typeof rdClientAppts==='function')?rdClientAppts(id):[],
+    dps: (typeof dpList==='function')?dpList():[],
+    now: t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate())+'T'+p(t.getHours())+':'+p(t.getMinutes())
+  };
+}
+// ── the screen ──────────────────────────────────────────────────────────────
+function rdFindOpen(){
+  const ov=document.getElementById('mFind'); if(!ov) return;
+  ov.classList.add('open');
+  const q=document.getElementById('find-q'); if(q){ q.value=''; }
+  const r=document.getElementById('find-results'); if(r) r.innerHTML='';
+  window._rdFindCard=null;
+  setTimeout(()=>{ try{ q&&q.focus(); }catch(e){} }, 30);
+}
+function rdFindClose(){ const ov=document.getElementById('mFind'); if(ov) ov.classList.remove('open'); window._rdFindCard=null; }
+function rdFindIsOpen(){ const ov=document.getElementById('mFind'); return !!(ov&&ov.classList.contains('open')); }
+function rdFindEsc(s){ return (typeof dtEscHtml==='function')?dtEscHtml(s==null?'':s):String(s==null?'':s); }
+function rdFindRender(){
+  const box=document.getElementById('find-results'); if(!box) return;
+  const q=(document.getElementById('find-q')||{}).value||'';
+  window._rdFindCard=null;
+  if(rdFindEmpty(q)){ box.innerHTML=''; return; }
+  const {rows,total}=rdFindRows(q, rdFindCtx());
+  if(!total){ box.innerHTML='<div style="padding:18px 6px;color:var(--muted);font-size:0.9rem;">Bulunamadı — ismin bir kısmını ya da numaranın son 4 rakamını deneyin.</div>'; return; }
+  // One and only one: straight to the card, no list to click through.
+  if(total===1){ rdFindCard(rows[0].c.id); return; }
+  const hi=(s)=>rdFindEsc(s);
+  box.innerHTML=rows.map(r=>{
+    const c=r.c, id=String(c.id).replace(/['"\\]/g,'');
+    const nxt=r.future.length
+      ? r.future.map((a,i)=>'<div style="font-weight:'+(i===0?'800':'600')+';font-size:'+(i===0?'0.98rem':'0.88rem')+';color:var(--text);">▸ '+hi(rdFindApptLine(a))+'</div>').join('')
+      : '<div style="font-weight:800;color:#d9a441;">Yaklaşan randevusu yok</div>';
+    const debt=r.debts.map(p=>'<div style="color:#e34948;font-weight:700;font-size:0.84rem;">'+hi(rdFindDebtLine(p))+'</div>').join('');
+    return '<div class="find-row" onclick="rdFindCard(\''+id+'\')" style="cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:11px;margin-bottom:7px;background:rgba(255,255,255,0.025);">'
+      +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;"><span style="font-weight:800;font-size:1rem;">'+hi(c.name)+'</span><span style="color:var(--muted);font-size:0.86rem;">'+hi(c.phone||'telefon yok')+'</span></div>'
+      +nxt+debt
+      +'<div style="color:var(--muted);font-size:0.78rem;margin-top:2px;">Son ziyaret: '+hi(rdFindDay(r.last))+' · '+r.visits+' ziyaret</div>'
+      +'</div>';
+  }).join('')
+  +(total>rows.length?'<div style="padding:8px 6px;color:var(--muted);font-size:0.82rem;">… ve '+(total-rows.length)+' müşteri daha — daraltmak için yazmaya devam edin ('+total+' eşleşme)</div>':'');
+}
+// Her card, in the order the call needs: next appointment(s) first, then last
+// visit, usual technician and service, what she owes, then the buttons. The
+// panel closes before handing over, so the edit / cancel / detail windows
+// open on a clean screen; nothing here saves anything itself.
+function rdFindCard(id){
+  const box=document.getElementById('find-results'); if(!box) return;
+  const ctx=rdFindCtx();
+  const c=ctx.clients.find(x=>String(x.id)===String(id)); if(!c) return;
+  const r=rdFindRow(c, ctx);
+  window._rdFindCard=String(c.id);
+  const hi=s=>rdFindEsc(s);
+  const sid=String(c.id).replace(/['"\\]/g,'');
+  const tel=String(c.phone||'').replace(/[^\d+]/g,'');
+  const apptBtns=a=>'<div style="display:flex;gap:6px;margin:4px 0 8px 18px;">'
+    +'<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="rdFindClose();dashEditAppt('+rdIdArg(a.id)+')">✏️ Saati değiştir</button>'
+    +'<button class="btn btn-red btn-sm" onclick="rdFindClose();cancelAppt('+rdIdArg(a.id)+')">❌ İptal</button>'
+    +'</div>';
+  const nxt=r.future.length
+    ? r.future.map((a,i)=>'<div style="font-weight:'+(i===0?'800':'700')+';font-size:'+(i===0?'1.1rem':'0.95rem')+';">▸ '+hi(rdFindApptLine(a))+'</div>'+apptBtns(a)).join('')
+    : '<div style="font-weight:800;font-size:1.05rem;color:#d9a441;margin-bottom:8px;">Yaklaşan randevusu yok</div>'
+      +'<div style="margin:0 0 8px 18px;"><button class="btn btn-mint btn-sm" onclick="rdFindClose();quickBook('+rdIdArg(c.id)+')">➕ Saat ver</button></div>';
+  const debt=r.debts.length?r.debts.map(p=>'<div style="color:#e34948;font-weight:800;font-size:0.92rem;margin-top:4px;">'+hi(rdFindDebtLine(p))+'</div>').join(''):'';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+      +'<button class="btn btn-ghost btn-sm" onclick="rdFindRender()" title="Listeye dön">←</button>'
+      +'<div style="font-weight:800;font-size:1.15rem;">'+hi(c.name)+'</div>'
+      +'<div style="color:var(--muted);">'+hi(c.phone||'telefon yok')+'</div>'
+    +'</div>'
+    +nxt
+    +'<div style="font-size:0.88rem;color:var(--muted);margin-top:6px;">Son ziyaret: <b style="color:var(--text);">'+hi(rdFindDay(r.last))+'</b> · '+r.visits+' ziyaret'
+      +(r.staff?' · genelde <b style="color:var(--text);">'+hi(r.staff)+'</b>':'')+(r.service?' · '+hi(r.service):'')+'</div>'
+    +debt
+    +(c.notes?'<div style="font-size:0.8rem;color:var(--gold);margin-top:6px;">📝 '+hi(c.notes)+'</div>':'')
+    +'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">'
+      +(tel?'<a class="btn btn-sm" style="background:rgba(196,134,58,0.18);border:1px solid rgba(196,134,58,0.5);color:#c4863a;text-decoration:none;" href="tel:'+hi(tel)+'">📞 Ara</a>':'')
+      +'<button class="btn btn-ghost btn-sm" onclick="rdFindClose();showClientDetail(\''+sid+'\')">👁 Tüm geçmiş</button>'
+    +'</div>';
+}
+// "/" opens it from anywhere, unless she is typing somewhere; Esc closes it.
+document.addEventListener('keydown', function(e){
+  const t=e.target, tag=(t&&t.tagName||'').toLowerCase();
+  const typing=tag==='input'||tag==='textarea'||tag==='select'||(t&&t.isContentEditable);
+  if(e.key==='Escape'&&rdFindIsOpen()){ e.preventDefault(); rdFindClose(); return; }
+  if(e.key==='/'&&!typing&&!e.ctrlKey&&!e.metaKey&&!e.altKey){ e.preventDefault(); rdFindOpen(); }
+});
 </script>
 
 </html>
