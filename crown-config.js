@@ -316,11 +316,33 @@ var CROWN = {
                  is used only when no due customer is left for the slot:
                  moving her up relocates a booking and opens a gap where
                  she was, so on its own it adds nothing.
-     Every customer also needs a usable phone, no booking within
-     fillMinDaysAhead days of the gap, no offer in the last cooldownDays and
-     no offer for that same day, ever; the KAPALI blocker and anyone opted
-     out (waOptOut on her record, "STOP" or "mesaj istemiyor" in her notes,
-     or the panel's 🚫) are never offered anything. */
+     cancelledWindowDays — THE SECOND WAY IN. A woman who CANCELLED a
+                 booking she still wanted — the appointment was ahead of
+                 her when she cancelled it — and has nothing in the diary
+                 now is the best person to offer an empty hour to: she has
+                 already said she wants one. The due window cannot see her
+                 (she may have been in last week), so the gap-filler also
+                 reads the app's cancel log and offers her, if the
+                 cancellation is within this many days. Her phone is found
+                 through the cancelled appointment's client record, never
+                 guessed from a name two customers share. THE CANCELLED
+                 COME FIRST, before the due; the Gap Report's "neden"
+                 column says "12 Eyl iptal" for her, not "son ziyaret".
+                 A row closing off an hour that had already passed does
+                 not count, and neither does the 24 Ağustos "toplu
+                 kapatma" sweep, ever.
+     offerNoShows — false: a woman whose row says "gelmedi" is NOT offered
+                 anything on that route. Holding an hour for somebody with
+                 a record of not turning up costs a real slot, so this is
+                 off by default; set it to true and deploy to include
+                 her — Bülent's decision, not the program's.
+     Every customer, on either route, also needs a usable phone, no
+     booking within fillMinDaysAhead days of the gap, no offer in the last
+     cooldownDays and no offer for that same day, ever; the daily cap, one
+     offer per phone per run and the serviceSkill check all apply to her
+     alike; the KAPALI blocker and anyone opted out (waOptOut on her
+     record, "STOP" or "mesaj istemiyor" in her notes, or the panel's 🚫)
+     are never offered anything. */
   gapFill: {
     enabled: true,
     dryRun: false,
@@ -330,7 +352,9 @@ var CROWN = {
     cooldownDays: 7,
     noticeMinutes: 60,
     dueAfterDays: 10,
-    dueUntilDays: 120
+    dueUntilDays: 120,
+    cancelledWindowDays: 30,
+    offerNoShows: false
   },
 
   /* Which GROUP a service name belongs to — the headings of the service list:

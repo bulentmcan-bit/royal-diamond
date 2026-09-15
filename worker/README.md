@@ -320,6 +320,8 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | `gapFill.dailyCap` | hard ceiling of real messages a day (25; it was 5 on the first live day, 14 Eylül 2026, as a safety limit), counted against the day's log so a re-run cannot leak past it |
 | `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (45 — it clears before the next hourly run, so a silent customer's slot is re-offered at the top of the next hour; 120 on the first live day) and offered to nobody else; released automatically after |
 | `gapFill.cooldownDays` | one offer per customer per this many days (7) |
+| `gapFill.cancelledWindowDays` | the cancelled route: how far back a cancellation counts (30) |
+| `gapFill.offerNoShows` | `false` — a "gelmedi" row does not qualify on the cancelled route. `true` and deploy to include no-shows; Bülent's call |
 
 **A change to any of those is `wrangler deploy` from this folder** — the
 pages pick the file up on a push, the cron only on a deploy.
@@ -328,12 +330,33 @@ pages pick the file up on a push, the cron only on a deploy.
 on the client, "STOP" / "mesaj istemiyor" in her notes, or her number under
 `rdns_gapfill_v1/optout`); no booking of hers within `fillMinDaysAhead` (3)
 days of the gap either side; no offer to her in the last 7 days; no offer to
-her for that same day, ever. Then, in this order: the ones who are DUE — no
-booking ahead, last visit 10–120 days ago (14 on the first live day), most recent first — and only when
-no due customer is left for a slot, the pull-forwards (she holds a booking
-further out, soonest first). A due customer is a visit the till would not
-otherwise have had; a pull-forward only relocates one and opens a gap where
-she was. One customer gets at most one offer per run.
+her for that same day, ever. Then she must qualify on ONE OF TWO ROUTES:
+
+1. **She CANCELLED a booking she still wanted.** The app's cancel log
+   (`rdns_cancel_log_v1`, one row per cancellation) holds a row for her
+   inside `cancelledWindowDays` (30) whose `apptTime` was still in the
+   FUTURE when she cancelled — she gave up an hour ahead of her, not one
+   already gone — and she has NOTHING booked ahead now, on any record with
+   her phone. A row whose reason contains "gelmedi" (a no-show) does not
+   count unless `offerNoShows` is `true`; a row whose reason starts "toplu
+   kapatma" (the 24 Ağustos bulk sweep) never counts. Her phone is found
+   properly — `apptId` → the appointment → `clientId` → the client record —
+   and only if that fails by her name, and only when exactly one client
+   carries it; two clients with that name, or none, and the row is skipped
+   with a note in the run. Nothing is guessed. She is the best person there
+   is to offer an empty hour to: she has already said she wants one.
+2. **She is DUE** — no booking ahead, last visit 10–120 days ago (14 on the
+   first live day) — or she HOLDS a booking further out (the pull-forward).
+
+In this order: the cancelled first (most recent cancellation first), then
+the due (most recent visit first), and only when no due customer is left for
+a slot the pull-forwards (soonest booking first). A due customer is a visit
+the till would not otherwise have had; a pull-forward only relocates one and
+opens a gap where she was. One customer gets at most one offer per run, and
+the offer's `why` names the route — "12 Eyl iptal (17 Eyl randevusu)",
+"son ziyaret 21 gün önce" or "randevusu 2026-09-19 — öne alınabilir" — so the
+Gap Report says WHY each woman was chosen. The cancelled route only adds
+candidates: every rule above bites on her exactly as on the due.
 
 **What it writes**, all under `rdns_gapfill_v1` in Firebase, as admin
 (`FB_SECRET` — without it the run aborts and says so):

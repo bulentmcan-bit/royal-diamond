@@ -888,14 +888,20 @@ async function handleWa(req, env, ctx, url) {
    number under rdns_gapfill_v1/optout — the panel's 🚫 button writes
    that). No booking of hers within fillMinDaysAhead days of the gap, either
    side. No offer to her in the last cooldownDays. No offer to her for that
-   same day, ever. And either she is DUE — no booking ahead, last visit
-   dueAfterDays … dueUntilDays ago — or she HOLDS a booking further out
-   (the pull-forward). THE DUE COME FIRST, most recent visit first: a due
+   same day, ever. And one of three things: she CANCELLED — inside
+   cancelledWindowDays she gave up a booking that was still ahead of her,
+   not a no-show (unless offerNoShows), never the bulk sweep, and has
+   nothing booked now (the cancel log, rdns_cancel_log_v1 — see
+   gfCancelled); or she is DUE — no booking ahead, last visit dueAfterDays …
+   dueUntilDays ago; or she HOLDS a booking further out (the pull-forward).
+   THE CANCELLED COME FIRST, most recent cancellation first: she has already
+   said she wants an hour. THEN THE DUE, most recent visit first: a due
    customer in the chair is a visit the till would not otherwise have had.
    A pull-forward is used only when no due customer is left for the slot —
    moving her up relocates a booking and opens a gap where she was, so it
-   adds nothing by itself. Somebody who visited last week is not due;
-   somebody gone half a year belongs to the win-back template, not to a gap.
+   adds nothing by itself. Somebody who visited last week is not due (but
+   she may have cancelled); somebody gone half a year belongs to the
+   win-back template, not to a gap. The offer's `why` names the route.
    notBefore is judged against the SLOT's date, never the run's: on the
    11th a slot of Hannah's on the 14th is offered, one on the 12th is not.
 
@@ -970,7 +976,13 @@ function gfConfig(C) {
     cooldownDays: num(raw.cooldownDays, 7),
     noticeMinutes: num(raw.noticeMinutes, 60),
     dueAfterDays: num(raw.dueAfterDays, 14),
-    dueUntilDays: num(raw.dueUntilDays, 120)
+    dueUntilDays: num(raw.dueUntilDays, 120),
+    // The cancelled route (gfCancelled below): how far back a cancellation
+    // counts, and whether a woman marked "gelmedi" is offered at all. The
+    // safe way round: no-shows are NOT offered unless the config says
+    // exactly `true`.
+    cancelledWindowDays: num(raw.cancelledWindowDays, 30),
+    offerNoShows: raw.offerNoShows === true
   };
   const min = Number(C.fillMinDaysAhead);
   return {
@@ -1010,10 +1022,95 @@ function gfSpans(appts, tech, ymd) {
   return out;
 }
 
+// A Nicosia-clock 'YYYY-MM-DDTHH:MM' for an instant — the same shape the
+// diary writes appointment times in, so the two can be compared as strings.
+const gfLocalStamp = ms => { const d = new Date(ms); return nicosiaYmd(d) + 'T' + gfHm(nicosiaMinutes(d)); };
+const GF_MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+const gfDayLabel = ymd => String(+String(ymd).slice(8, 10)) + ' ' + (GF_MONTHS[+String(ymd).slice(5, 7) - 1] || '');
+// The cancel log as the app syncs it (rdns_cancel_log_v1: {items:[…]}) or
+// as Firebase may hand it back (an object of items, or a bare list).
+function gfCancelItems(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : (raw.items && typeof raw.items === 'object' ? Object.values(raw.items) : []));
+  return items.filter(x => x && typeof x === 'object');
+}
+
+/* THE CANCELLED ROUTE. A woman who gave up a booking she still wanted — she
+   cancelled it while it was still ahead of her — and has nothing in the
+   diary now is the best person there is to offer an empty hour to: she has
+   already said she wants one. The due window cannot see her (she may have
+   been in last week), so this second route reads the app's cancel log
+   (rdns_cancel_log_v1, one row per cancellation: apptId, client NAME,
+   apptTime, cancelledAt, reason) and adds her as a candidate.
+
+   She qualifies here when: the cancellation is inside cancelledWindowDays;
+   apptTime was still in the FUTURE at the moment she cancelled (a row that
+   closed off an hour already gone is not a wanted appointment given up);
+   she has NOTHING booked ahead now, on any record with her phone; and the
+   reason is not a no-show — "gelmedi" anywhere in it — unless offerNoShows
+   is on, and never a "toplu kapatma" row (the bulk historic sweep of 24
+   Ağustos closed hundreds of hours as gelmedi; those women never said
+   anything). Her phone is found PROPERLY: apptId → the appointment →
+   clientId → the client record. Only when that fails, her name — and only
+   when exactly one client carries it. A name two clients share is no
+   answer; nothing is guessed, the row is skipped and the run's notes say
+   so. Everything else still bites exactly as it does for the due:
+   the blocker, a bad phone, the opt-outs, the distance rule, the
+   cooldown, the same-day rule, the cap, one offer per phone per run, the
+   skill check. This route only ADDS candidates. Returns phone → her
+   cancellation (most recent first wins), plus the notes. Pure. */
+function gfCancelled(items, ctx) {
+  const { g, appts, clients, byClient, cidsOfPhone, daysOf, todayYmd, nowMs, optout } = ctx;
+  const out = {}, notes = [];
+  const since = nowMs - g.cancelledWindowDays * 86400e3;
+  const byName = {};
+  for (const c of clients) {
+    if (!c || c.id == null) continue;
+    const n = String(c.name || '').trim().toLowerCase();
+    if (n) (byName[n] = byName[n] || []).push(c);
+  }
+  const apptById = {};
+  for (const a of appts) if (a && a.id != null) apptById[String(a.id)] = a;
+  for (const it of items) {
+    const at = Date.parse(String(it.cancelledAt || ''));
+    if (!at || at < since || at > nowMs + 3600e3) continue;
+    const apptTime = String(it.apptTime || '');
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(apptTime)) continue;
+    if (!(apptTime.slice(0, 16) > gfLocalStamp(at))) continue;          // she gave up an hour still ahead of her
+    const reason = String(it.reason || '').trim().toLowerCase();
+    if (/^toplu kapatma/.test(reason)) continue;                          // the bulk sweep — never
+    const noShow = /gelmedi/.test(reason);
+    if (noShow && !g.offerNoShows) continue;
+    // Her phone, properly: the appointment's client record first.
+    let c = null;
+    const a = apptById[String(it.apptId)];
+    if (a && a.clientId != null) c = byClient[String(a.clientId)] || null;
+    if (!c) {
+      const same = byName[String(it.client || '').trim().toLowerCase()] || [];
+      if (same.length === 1) c = same[0];
+      else { notes.push('iptal kaydı atlandı: ' + String(it.client || '?') + ' — ' + (same.length ? same.length + ' müşteri aynı isimde' : 'müşteri bulunamadı') + ', telefon tahmin edilmez'); continue; }
+    }
+    if (waBlockedName(c.name)) continue;
+    const phone = waPhone(c.phone);
+    if (!phone || gfOptedOut(c, phone, optout)) continue;
+    // Nothing booked ahead now — on any record with her phone.
+    const cids = [String(c.id)].concat(cidsOfPhone[phone] || []);
+    if (cids.some(cid => (daysOf[cid] || []).some(x => String(x.datetime).slice(0, 10) >= todayYmd))) continue;
+    const prev = out[phone];
+    if (prev && prev.at >= at) continue;
+    out[phone] = {
+      cid: String(c.id), name: String(c.name || ''), phone, at, noShow,
+      service: String(it.service || (a && a.service) || ''),
+      why: gfDayLabel(nicosiaYmd(new Date(at))) + (noShow ? ' gelmedi' : ' iptal') + ' (' + gfDayLabel(apptTime.slice(0, 10)) + ' randevusu)'
+    };
+  }
+  return { byPhone: out, notes };
+}
+
 // The plan for one run. Pure: everything it needs comes in, and the answer
 // is a list of offers plus the housekeeping — never a send.
 function gfPlan(input) {
-  const { data, offers, optout, cfg, nowMs, todayYmd, nowMin } = input;
+  const { data, offers, optout, cfg, nowMs, todayYmd, nowMin, cancels } = input;
   const g = cfg.gap;
   const appts = (data && Array.isArray(data.appointments)) ? data.appointments : [];
   const clients = (data && Array.isArray(data.clients)) ? data.clients : [];
@@ -1104,12 +1201,28 @@ function gfPlan(input) {
       m.daysSince = x.daysSince; m.cid = x.cid; m.name = x.name; m.service = x.service;
     }
   }
+  // THE CANCELLED ROUTE (gfCancelled above): a woman who gave up a future
+  // booking inside the window and has nothing ahead now. She may already be
+  // in the pool (past visits) or be nobody the pool knows (her only booking
+  // was the one she cancelled) — either way she carries her cancellation,
+  // and her `why` says so.
+  const cancelled = gfCancelled(gfCancelItems(cancels), { g, appts, clients, byClient, cidsOfPhone, daysOf, todayYmd, nowMs, optout });
+  for (const n of cancelled.notes) out.notes.push(n);
+  for (const phone of Object.keys(cancelled.byPhone)) {
+    const cx = cancelled.byPhone[phone];
+    const m = byPhone[phone];
+    if (m) { m.cancel = cx; if (!m.service) m.service = cx.service; continue; }
+    byPhone[phone] = { cid: cx.cid, name: cx.name, phone, service: cx.service, bookings: [], nextBooking: null, daysSince: null, cancel: cx };
+  }
   const cands = Object.values(byPhone);
-  // The due ones first, most recent visit first — a visit the till would
-  // not otherwise have. The pull-forwards after them, soonest booking
-  // first: moving a customer up adds no booking, it only relocates one, so
-  // she is used when nobody due is left for the slot.
+  // The cancelled first, most recent cancellation first — she has already
+  // said she wants an hour. Then the due ones, most recent visit first — a
+  // visit the till would not otherwise have. The pull-forwards after them,
+  // soonest booking first: moving a customer up adds no booking, it only
+  // relocates one, so she is used when nobody due is left for the slot.
   cands.sort((x, y) => {
+    if (!!x.cancel !== !!y.cancel) return x.cancel ? -1 : 1;
+    if (x.cancel) return (y.cancel.at - x.cancel.at) || x.cid.localeCompare(y.cid);
     if (!!x.nextBooking !== !!y.nextBooking) return x.nextBooking ? 1 : -1;
     if (x.nextBooking) return x.nextBooking.localeCompare(y.nextBooking) || x.cid.localeCompare(y.cid);
     return (x.daysSince - y.daysSince) || x.cid.localeCompare(y.cid);
@@ -1120,7 +1233,9 @@ function gfPlan(input) {
     // it (she comes earlier); a customer already booked before the gap is
     // engaged, not due, and is left alone.
     if (x.nextBooking && !(x.nextBooking > ymd)) return false;
-    if (!x.nextBooking && !(x.daysSince >= g.dueAfterDays && x.daysSince <= g.dueUntilDays)) return false;
+    // The due window is the FIRST route's test; the cancelled route has its
+    // own (gfCancelled) and is not asked it — she may have been in last week.
+    if (!x.nextBooking && !x.cancel && !(x.daysSince >= g.dueAfterDays && x.daysSince <= g.dueUntilDays)) return false;
     // The cooldown and the same-day rule by her record OR her phone, so an
     // offer to her twin record is an offer to her.
     for (const k of [x.cid, x.phone]) {
@@ -1155,7 +1270,10 @@ function gfPlan(input) {
         out.offers.push({
           d: ymd, t: gfHm(start), tech: tech.name, techKey: tech.key,
           cid: pick.cid, name: pick.name, phone: pick.phone, service: pick.service, group: cfg.group(pick.service),
-          why: pick.nextBooking ? 'randevusu ' + pick.nextBooking + ' — öne alınabilir' : 'son ziyaret ' + pick.daysSince + ' gün önce'
+          // WHY she was chosen — the Gap Report shows it, and the three
+          // routes are three different arguments: "12 Eyl iptal" is not
+          // "son ziyaret 14 gün önce".
+          why: pick.cancel ? pick.cancel.why : pick.nextBooking ? 'randevusu ' + pick.nextBooking + ' — öne alınabilir' : 'son ziyaret ' + pick.daysSince + ' gün önce'
         });
       }
     }
@@ -1179,7 +1297,7 @@ async function runGapFiller(env, now, opts) {
   if (!g.enabled) { log(todayYmd, gfHm(nowMin), '— switched OFF (crown-config gapFill.enabled=false); nothing read, nothing sent'); return { ok: true, skipped: 'disabled', mode }; }
   if (!env.FB_SECRET) { log('ABORT: FB_SECRET not set — cannot read the appointment book'); return { ok: false, error: 'NO_FB_SECRET', mode }; }
 
-  let control, raw, offers, optout;
+  let control, raw, offers, optout, cancels;
   try {
     control = await fbRead(env, GF + '/control');
     if (control && control.paused) {
@@ -1189,10 +1307,14 @@ async function runGapFiller(env, now, opts) {
     raw = await fbRead(env, 'rdns_main_v1');
     offers = (await fbRead(env, GF + '/offers')) || {};
     optout = (await fbRead(env, GF + '/optout')) || {};
+    // The app's cancel log, for the cancelled route. A missing log is an
+    // empty one — the due route runs as before.
+    cancels = (await fbRead(env, 'rdns_cancel_log_v1')) || null;
   } catch (e) { log('ABORT:', String(e)); return { ok: false, error: String(e), mode }; }
   const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+  if (typeof cancels === 'string') { try { cancels = JSON.parse(cancels); } catch (e) { cancels = null; } }
 
-  const plan = gfPlan({ data, offers, optout, cfg, nowMs: now.getTime(), todayYmd, nowMin });
+  const plan = gfPlan({ data, offers, optout, cfg, cancels, nowMs: now.getTime(), todayYmd, nowMin });
   if (opts.preview) return { ok: true, mode, todayYmd, plan };
 
   // Housekeeping first: released holds and spotted bookings, so the log

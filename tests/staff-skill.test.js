@@ -285,10 +285,16 @@ console.log('5. booking.html: a time is free only if someone who does the servic
   if (!m1 || !m2 || !m3) { fail++; console.log('  ✗ booking page functions not found'); }
   else {
     const day = new Date(2026, 8, 15, 12);   // a Tuesday
+    // slotState calls a start "past" within 30 minutes of NOW, so the clock
+    // is frozen at 08:00 on the fixture's day — the test fixture is 15 Eylül
+    // 2026, and on that very morning, at 09:30, the wall clock walked past
+    // the 10:00 slot and the assertions below went red for no reason.
+    const FROZEN = new Date(2026, 8, 15, 8, 0).getTime();
+    class FrozenDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FROZEN); } static now() { return FROZEN; } }
     const avail = { '2026-09-15': { '10:00': { a: { Helen: 1, Lissa: 0, Hannah: 0 } }, '11:00': { a: { Helen: 0, Lissa: 1, Hannah: 0 } }, '12:00': { a: { Helen: 0, Lissa: 0, Hannah: 0 } } } };
     const run = (svc, slot, crown) => {
       const c = {
-        window: { CROWN: crown === undefined ? C : crown }, CROWN: crown === undefined ? C : crown, Date, Number, Object, String,
+        window: { CROWN: crown === undefined ? C : crown }, CROWN: crown === undefined ? C : crown, Date: FrozenDate, Number, Object, String,
         document: { getElementById: () => ({ value: svc }) },
         avail, bkClosed: () => false, dKey: d => '2026-09-15', CAP: 3
       };

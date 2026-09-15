@@ -144,6 +144,9 @@ console.log('1. the settings');
   is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes, cfg.gap.dueAfterDays, cfg.gap.dueUntilDays], [25, 45, 5, 7, 60, 10, 120], 'cap 25, hold 45 (clears before the next hourly run), 5 days, 7-day cooldown, 60-minute notice, due 10–120 days (tuned 14 Eylül evening after the first live day)');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
+  is([cfg.gap.cancelledWindowDays, cfg.gap.offerNoShows], [30, false], 'the cancelled route: 30-day window, no-shows NOT offered (Bülent\'s switch, off by default)');
+  is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { offerNoShows: 'yes', cancelledWindowDays: 'x' }) })).gap.offerNoShows, false, "offerNoShows: 'yes' is not true — no-shows stay out");
+  is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { cancelledWindowDays: undefined }) })).gap.cancelledWindowDays, 30, 'a missing window is 30');
   is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'beyhan'], 'fill order on a Tuesday: Hannah, Lissa, Helen, then Beyhan (not in fillOrder, appended); Zara is off Tuesdays');
   is(cfg.fillOrderOn('2026-09-14').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'on a Monday: Hannah, Lissa, Helen, then Zara; Beyhan is off Mondays');
   is(cfg.fillOrderOn('2026-09-17').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara', 'beyhan'], 'on a Thursday: all five');
@@ -234,6 +237,91 @@ console.log('3b. one phone is one customer (the "Berin Avunduk" / "BERİN AVUNDU
   const booked = { 'z': { d: TODAY, t: '17:00', tech: 'Helen', cid: '21', phone: '905488364040', ts: NOW - 30 * 60e3, day: TODAY, st: 'offered' } };
   const t = api.gfPlan({ data: only([A(204, 22, 'Helen', TODAY + 'T17:00', 'Dolgu (Infill)')]), offers: booked, optout: {}, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
   is(t.booked, ['z'], 'she booked under the twin record: the offer is marked booked all the same');
+}
+
+console.log('3c. the cancelled route — she gave up a booking she wanted and has nothing now');
+{
+  const { api } = makeWorker({});
+  const cfg = api.gfConfig();
+  // Nur (id 31): came in Saturday the 12th (3 days ago), and on the 10th
+  // cancelled the booking she held for the 20th. Nothing in the diary now.
+  // The due window cannot see her — 3 days is not 10 — but she has said
+  // she wants an hour.
+  const nur = { id: 31, name: 'Nur', phone: '0533 313 1313' };
+  const visit = A(901, 31, 'Helen', daysAgo(3) + 'T10:00', 'Klasik Manikür');
+  const gaveUp = Object.assign(A(902, 31, 'Helen', '2026-09-20T10:00', 'Klasik Manikür'), { status: 'cancelled' });
+  const row = (over) => Object.assign({ id: 'c1', apptId: 902, client: 'Nur', staff: 'Helen', service: 'Klasik Manikür', price: 900, apptTime: '2026-09-20T10:00', cancelledAt: new Date(NOW - 5 * 86400e3).toISOString(), by: 'Resepsiyon', reason: '' }, over || {});
+  const run = (o) => {
+    o = o || {};
+    const d = { appointments: [visit, gaveUp].concat(o.appts || []), clients: [nur].concat(o.clients || []) };
+    const c = o.cfg || cfg;
+    return api.gfPlan({ data: d, offers: o.offers || {}, optout: o.optout || {}, cfg: c, cancels: o.cancels === undefined ? { items: [row(o.row)] } : o.cancels, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  };
+  const her = p => p.offers.filter(o => o.name === 'Nur');
+  const noShows = Object.assign({}, cfg, { gap: Object.assign({}, cfg.gap, { offerNoShows: true }) });
+
+  is(her(run({ cancels: { items: [] } })), [], 'without the cancel log she is invisible: visited 3 days ago is not due, and she holds nothing');
+  const p = run();
+  is(her(p).length, 1, 'with it she QUALIFIES — one offer');
+  is(her(p)[0] && [her(p)[0].d, her(p)[0].t, her(p)[0].tech, her(p)[0].service], ['2026-09-15', '11:00', 'Hannah', 'Klasik Manikür'], 'the first free hour of the walk, her usual service');
+  is(/iptal/.test(her(p)[0].why), true, 'and her why says iptal');
+  is(her(p)[0].why, '10 Eyl iptal (20 Eyl randevusu)', 'in full: the day she cancelled and the appointment she gave up');
+  is(her(p)[0].phone, '905333131313', 'her phone came through the appointment → clientId → client record');
+  is(her(run({ cancels: [row()] })).length, 1, 'the log as a bare list reads the same');
+  is(her(run({ cancels: { items: { k1: row() } } })).length, 1, '…and as an object of items, as Firebase may hand it back');
+  is(her(run({ appts: [A(903, 31, 'Helen', '2026-09-25T10:00', 'Klasik Manikür')] })).filter(o => /iptal/.test(o.why)), [], 'the same woman with something booked ahead does NOT qualify on this route');
+  is(her(run({ appts: [A(903, 31, 'Helen', '2026-09-25T10:00', 'Klasik Manikür')] })).map(o => o.why), ['randevusu 2026-09-25 — öne alınabilir'], '…she is only what she always was, a pull-forward for the 25th');
+  is(her(run({ row: { cancelledAt: new Date(NOW - 40 * 86400e3).toISOString() } })), [], 'a cancellation older than cancelledWindowDays (40 > 30 days) does not');
+  is(her(run({ row: { cancelledAt: new Date(NOW - 29 * 86400e3).toISOString() } })).length, 1, '…29 days ago still does');
+  is(her(run({ row: { apptTime: '2026-09-08T10:00' } })), [], 'a row whose apptTime was already past when she cancelled does not — that hour was not wanted, it was gone');
+  is(her(run({ row: { apptTime: '2026-09-10T12:00', cancelledAt: '2026-09-10T08:00:00.000Z' } })).length, 1, 'cancelled 08:00Z = 11:00 at the salon for a 12:00 the same day: still ahead of her — qualifies');
+  is(her(run({ row: { apptTime: '2026-09-10T10:30', cancelledAt: '2026-09-10T08:00:00.000Z' } })), [], 'cancelled 11:00 salon time for a 10:30 that day: already past — judged on the salon clock, not UTC');
+  is(her(run({ row: { reason: 'gelmedi' } })), [], 'reason "gelmedi": NOT offered while offerNoShows is false');
+  is(her(run({ row: { reason: 'Müşteri gelmedi, aramadı' } })), [], '…"gelmedi" anywhere in the reason');
+  const ns = her(run({ row: { reason: 'gelmedi' }, cfg: noShows }));
+  is(ns.length, 1, '…and IS offered when offerNoShows is true');
+  is(ns[0].why, '10 Eyl gelmedi (20 Eyl randevusu)', '…with her why saying gelmedi, so the Gap Report is honest about it');
+  is(her(run({ row: { reason: 'toplu kapatma — gelmedi' } })), [], 'a "toplu kapatma" row: never');
+  is(her(run({ row: { reason: 'toplu kapatma — gelmedi' }, cfg: noShows })), [], '…whatever offerNoShows says');
+  is(her(run({ row: { reason: 'Toplu Kapatma: eski randevular' }, cfg: noShows })), [], '…in any case, with anything after it');
+  is(her(run({ row: { reason: 'müşteri vazgeçti' } })).length, 1, 'a plain reason is fine');
+  // Everything else still bites.
+  const offered3 = { 'x': { d: '2026-09-13', t: '10:00', tech: 'Lissa', cid: '31', phone: '905333131313', ts: NOW - 3 * 86400e3, day: daysAgo(3), st: 'expired' } };
+  is(her(run({ offers: offered3 })), [], 'offered 3 days ago: the 7-day cooldown holds on this route too');
+  is(her(run({ offers: { 'x': Object.assign({}, offered3.x, { ts: NOW - 8 * 86400e3, day: daysAgo(8) }) } })).length, 1, '…8 days ago: free again');
+  is(her(run({ optout: { '905333131313': { ts: 1 } } })), [], 'her number in the opt-out map: nothing');
+  is(her(run({ clients: [], appts: [], cancels: { items: [row({ client: 'KAPALI — Personel', apptId: 5555 })] } })), [], 'the blocker name never qualifies');
+  is(her(run({ row: { service: 'Klasik Kirpik Uygulaması' } })).every(o => o.tech !== 'Helen'), true, 'the skill check: a lash cancellation never goes to Helen');
+  is(her(run({ row: { service: 'Klasik Kirpik Uygulaması' } })).map(o => o.tech), ['Hannah'], '…Hannah takes her');
+  is(her(run({ appts: [A(904, 31, 'Helen', daysAgo(1) + 'T10:00', 'Klasik Manikür')] })).map(o => o.d), ['2026-09-17'], 'she was in yesterday: the 3-day distance rule pushes her offer to Thursday');
+  // Her phone is found PROPERLY, never guessed.
+  const twin = { id: 32, name: 'Nur', phone: '0533 323 2323' };
+  const q = run({ clients: [twin], row: { apptId: 999 } });
+  is(her(q), [], 'apptId no longer resolves and two clients are called Nur: NO offer rather than a guessed phone');
+  is(q.notes.some(n => /iptal kaydı atlandı: Nur — 2 müşteri aynı isimde/.test(n)), true, '…and the run says so');
+  is(her(run({ row: { apptId: 999 } })).length, 1, 'apptId gone but exactly ONE client called Nur: resolved by name');
+  is(her(run({ clients: [], appts: [], row: { apptId: 999, client: 'Kimse' } })), [], 'a name nobody carries: nothing');
+  is(her(run({ clients: [twin], row: { apptId: 902 } })).map(o => o.phone), ['905333131313'], 'two Nurs but the apptId resolves: HER record, her phone, no ambiguity');
+  // One phone is one customer here too, and the same-day rule holds.
+  const sameDay = { 'y': { d: TODAY, t: '17:00', tech: 'Lissa', cid: '31', phone: '905333131313', ts: NOW - 10 * 86400e3, day: daysAgo(10), st: 'expired' } };
+  is(her(run({ offers: sameDay })).map(o => o.d), ['2026-09-16'], 'offered something for today ten days ago: tomorrow, never the same day twice');
+  // She comes FIRST — before the due.
+  const full = api.gfPlan({ data: { appointments: appointments.concat([visit, gaveUp]), clients: clients.concat([nur]) }, offers: baseOffers, optout, cfg, cancels: { items: [row()] }, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(full.offers[0] && [full.offers[0].name, full.offers[0].why], ['Nur', '10 Eyl iptal (20 Eyl randevusu)'], 'in the full diary she takes the first slot, ahead of Ayşe who is merely due');
+  is(full.offers.slice(1).map(o => o.name), ['Ayşe', 'Bella', 'Kübra', 'Ceyda', 'Hale'], '…and the due and the pull-forward follow as before');
+  // A woman whose ONLY booking was the one she cancelled — the pool has never heard of her.
+  const only = api.gfPlan({ data: { appointments: [gaveUp], clients: [nur] }, offers: {}, optout: {}, cfg, cancels: { items: [row()] }, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
+  is(only.offers.map(o => [o.name, o.why]), [['Nur', '10 Eyl iptal (20 Eyl randevusu)']], 'no visit ever, one cancelled booking: she still qualifies');
+  // Two cancellations: the most recent one names the row.
+  const two = run({ cancels: { items: [row(), row({ id: 'c2', apptId: 999, apptTime: '2026-09-22T10:00', cancelledAt: new Date(NOW - 2 * 86400e3).toISOString() })] } });
+  is(her(two).map(o => o.why), ['13 Eyl iptal (22 Eyl randevusu)'], 'two rows for her: one offer, the most recent cancellation says why');
+  // The runner passes the log through, and the dry run records the why.
+  (async () => {
+    const s = { 'rdns_gapfill_v1/control': null, 'rdns_main_v1': { appointments: [visit, gaveUp], clients: [nur] }, 'rdns_gapfill_v1/offers': {}, 'rdns_gapfill_v1/optout': {}, 'rdns_cancel_log_v1': { items: [row()] }, 'rdns_gapfill_v1/runs': {} };
+    const w = makeWorker(s);
+    const r = await w.api.runGapFiller({ FB_SECRET: 'sek', PIYZI_API_KEY: 'key', WA_GAPFILL: '' }, new Date(NOW), { preview: true });
+    is(r.plan.offers.map(o => [o.name, o.why]), [['Nur', '10 Eyl iptal (20 Eyl randevusu)']], 'the runner reads rdns_cancel_log_v1 and the preview carries her why');
+  })().catch(e => { fail++; console.log('  ✗ cancelled-route runner crashed: ' + e); });
 }
 
 console.log('4. the soft hold');
@@ -395,7 +483,7 @@ console.log('8. the runner');
       is(!!rec, true, 'the run is recorded');
       is([rec.body.mode, rec.body.offers.length, rec.body.sent, rec.body.result], ['dry', 5, 0, 'dry-run — nothing sent'], 'with what it WOULD have sent');
       is(rec.body.offers[0], { d: '2026-09-15', t: '12:00', tech: 'Hannah', cid: '1', name: 'Ayşe', phone: '905331111111', service: 'Klasik Manikür', why: 'son ziyaret 21 gün önce' }, 'each would-be offer in full');
-      is(w.calls.filter(c => c.method === 'GET').map(c => c.url.replace(/^.*firebaseio\.com\//, '').replace(/\?.*$/, '')), ['rdns_gapfill_v1/control.json', 'rdns_main_v1.json', 'rdns_gapfill_v1/offers.json', 'rdns_gapfill_v1/optout.json', 'rdns_gapfill_v1/runs.json'], 'reads: the pause flag, the diary, the offers, the opt-outs, then the run list to prune');
+      is(w.calls.filter(c => c.method === 'GET').map(c => c.url.replace(/^.*firebaseio\.com\//, '').replace(/\?.*$/, '')), ['rdns_gapfill_v1/control.json', 'rdns_main_v1.json', 'rdns_gapfill_v1/offers.json', 'rdns_gapfill_v1/optout.json', 'rdns_cancel_log_v1.json', 'rdns_gapfill_v1/runs.json'], 'reads: the pause flag, the diary, the offers, the opt-outs, the cancel log, then the run list to prune');
       is(w.calls.every(c => !c.url.includes('firebaseio') || /auth=sek/.test(c.url)), true, 'every Firebase call carries the secret');
       is(w.logs.filter(l => /WOULD SEND/.test(l)).length, 5, 'and wrangler tail shows the five WOULD SEND lines');
       const pv = makeWorker(store());
