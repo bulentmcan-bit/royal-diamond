@@ -981,7 +981,7 @@ function gfConfig(C) {
     // counts, and whether a woman marked "gelmedi" is offered at all. The
     // safe way round: no-shows are NOT offered unless the config says
     // exactly `true`.
-    cancelledWindowDays: num(raw.cancelledWindowDays, 30),
+    cancelledWindowDays: num(raw.cancelledWindowDays, 14),
     offerNoShows: raw.offerNoShows === true
   };
   const min = Number(C.fillMinDaysAhead);

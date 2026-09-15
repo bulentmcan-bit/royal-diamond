@@ -331,6 +331,14 @@ var CROWN = {
                  A row closing off an hour that had already passed does
                  not count, and neither does the 24 Ağustos "toplu
                  kapatma" sweep, ever.
+                 WHY 14 AND NOT 30: the first preview on 15 Eylül 2026
+                 found about 74 women with a cancellation in the last 30
+                 days. At a cap of 25 a day that pool would crowd the
+                 due-route customers out for three days, and would put an
+                 unusual burst of marketing messages through the one
+                 number whose quality rating the appointment reminders
+                 depend on. Fourteen days is the fresher half of that
+                 pool, and the half likelier to book.
      offerNoShows — false: a woman whose row says "gelmedi" is NOT offered
                  anything on that route. Holding an hour for somebody with
                  a record of not turning up costs a real slot, so this is
@@ -353,7 +361,7 @@ var CROWN = {
     noticeMinutes: 60,
     dueAfterDays: 10,
     dueUntilDays: 120,
-    cancelledWindowDays: 30,
+    cancelledWindowDays: 14,
     offerNoShows: false
   },
 

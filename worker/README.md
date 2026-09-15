@@ -320,7 +320,7 @@ is bundled into this worker at deploy (`import '../../crown-config.js'` in
 | `gapFill.dailyCap` | hard ceiling of real messages a day (25; it was 5 on the first live day, 14 Eylül 2026, as a safety limit), counted against the day's log so a re-run cannot leak past it |
 | `gapFill.holdMinutes` | an offered slot is "teklif edildi" for this long (45 — it clears before the next hourly run, so a silent customer's slot is re-offered at the top of the next hour; 120 on the first live day) and offered to nobody else; released automatically after |
 | `gapFill.cooldownDays` | one offer per customer per this many days (7) |
-| `gapFill.cancelledWindowDays` | the cancelled route: how far back a cancellation counts (30) |
+| `gapFill.cancelledWindowDays` | the cancelled route: how far back a cancellation counts (14; 30 on the first day found ~74 women, which at a cap of 25 would crowd the due out for three days and push a burst of marketing through the reminders' number) |
 | `gapFill.offerNoShows` | `false` — a "gelmedi" row does not qualify on the cancelled route. `true` and deploy to include no-shows; Bülent's call |
 
 **A change to any of those is `wrangler deploy` from this folder** — the
@@ -334,7 +334,7 @@ her for that same day, ever. Then she must qualify on ONE OF TWO ROUTES:
 
 1. **She CANCELLED a booking she still wanted.** The app's cancel log
    (`rdns_cancel_log_v1`, one row per cancellation) holds a row for her
-   inside `cancelledWindowDays` (30) whose `apptTime` was still in the
+   inside `cancelledWindowDays` (14) whose `apptTime` was still in the
    FUTURE when she cancelled — she gave up an hour ahead of her, not one
    already gone — and she has NOTHING booked ahead now, on any record with
    her phone. A row whose reason contains "gelmedi" (a no-show) does not
