@@ -982,6 +982,7 @@ function gfConfig(C) {
     // safe way round: no-shows are NOT offered unless the config says
     // exactly `true`.
     cancelledWindowDays: num(raw.cancelledWindowDays, 14),
+    cancelMinNoticeHours: num(raw.cancelMinNoticeHours, 24),
     offerNoShows: raw.offerNoShows === true
   };
   const min = Number(C.fillMinDaysAhead);
@@ -1025,6 +1026,15 @@ function gfSpans(appts, tech, ymd) {
 // A Nicosia-clock 'YYYY-MM-DDTHH:MM' for an instant — the same shape the
 // diary writes appointment times in, so the two can be compared as strings.
 const gfLocalStamp = ms => { const d = new Date(ms); return nicosiaYmd(d) + 'T' + gfHm(nicosiaMinutes(d)); };
+// The instant a salon-clock 'YYYY-MM-DDTHH:MM' names, in ms — the diary's
+// appointment times carry no zone, they are Nicosia wall-clock times.
+const gfLocalMs = stamp => {
+  const s = String(stamp);
+  const guess = Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10), +s.slice(11, 13), +s.slice(14, 16));
+  const back = gfLocalStamp(guess);   // what Nicosia calls that UTC instant
+  const backUtc = Date.UTC(+back.slice(0, 4), +back.slice(5, 7) - 1, +back.slice(8, 10), +back.slice(11, 13), +back.slice(14, 16));
+  return guess - (backUtc - guess);    // shift by the zone's offset at that time
+};
 const GF_MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 const gfDayLabel = ymd => String(+String(ymd).slice(8, 10)) + ' ' + (GF_MONTHS[+String(ymd).slice(5, 7) - 1] || '');
 // The cancel log as the app syncs it (rdns_cancel_log_v1: {items:[…]}) or
@@ -1044,8 +1054,11 @@ function gfCancelItems(raw) {
    apptTime, cancelledAt, reason) and adds her as a candidate.
 
    She qualifies here when: the cancellation is inside cancelledWindowDays;
-   apptTime was still in the FUTURE at the moment she cancelled (a row that
-   closed off an hour already gone is not a wanted appointment given up);
+   she gave REAL NOTICE — apptTime was at least cancelMinNoticeHours after
+   the moment she cancelled (24: a woman who cancels on the morning of her
+   appointment is not chased, by Bülent's decision; a row that closed off
+   an hour already gone is out by the same test; 0 brings same-day
+   cancellers back in, see crown-config.js);
    she has NOTHING booked ahead now, on any record with her phone; and the
    reason is not a no-show — "gelmedi" anywhere in it — unless offerNoShows
    is on, and never a "toplu kapatma" row (the bulk historic sweep of 24
@@ -1076,7 +1089,7 @@ function gfCancelled(items, ctx) {
     if (!at || at < since || at > nowMs + 3600e3) continue;
     const apptTime = String(it.apptTime || '');
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(apptTime)) continue;
-    if (!(apptTime.slice(0, 16) > gfLocalStamp(at))) continue;          // she gave up an hour still ahead of her
+    if (!(gfLocalMs(apptTime.slice(0, 16)) - at >= g.cancelMinNoticeHours * 3600e3)) continue;   // real notice, on the salon clock
     const reason = String(it.reason || '').trim().toLowerCase();
     if (/^toplu kapatma/.test(reason)) continue;                          // the bulk sweep — never
     const noShow = /gelmedi/.test(reason);

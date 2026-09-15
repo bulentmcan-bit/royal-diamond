@@ -339,6 +339,18 @@ var CROWN = {
                  number whose quality rating the appointment reminders
                  depend on. Fourteen days is the fresher half of that
                  pool, and the half likelier to book.
+     cancelMinNoticeHours — how much NOTICE she gave: a cancel-log row
+                 counts on this route only when the appointment was at
+                 least this many hours after the moment she cancelled.
+                 24 means a woman who cancels on the morning of her
+                 appointment is NOT chased — that is Bülent's decision,
+                 not a rounding choice, so do not "tidy" this number. The
+                 argument runs the other way too, and it is not wrong:
+                 she wanted the hour, and she still needs her nails
+                 done. Set this to 0 and deploy, and same-day cancellers
+                 are back in (any row whose hour was still ahead of her
+                 when she cancelled then counts). This is also what keeps
+                 out a row that merely closed off an hour already gone.
      offerNoShows — false: a woman whose row says "gelmedi" is NOT offered
                  anything on that route. Holding an hour for somebody with
                  a record of not turning up costs a real slot, so this is
@@ -362,6 +374,7 @@ var CROWN = {
     dueAfterDays: 10,
     dueUntilDays: 120,
     cancelledWindowDays: 14,
+    cancelMinNoticeHours: 24,
     offerNoShows: false
   },
 

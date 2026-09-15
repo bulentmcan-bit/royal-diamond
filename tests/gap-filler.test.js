@@ -147,6 +147,8 @@ console.log('1. the settings');
   is([cfg.gap.cancelledWindowDays, cfg.gap.offerNoShows], [14, false], 'the cancelled route: 14-day window (30 on the first day: ~74 women would have crowded the due out for three days), no-shows NOT offered (Bülent\'s switch, off by default)');
   is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { offerNoShows: 'yes', cancelledWindowDays: 'x' }) })).gap.offerNoShows, false, "offerNoShows: 'yes' is not true — no-shows stay out");
   is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { cancelledWindowDays: undefined }) })).gap.cancelledWindowDays, 14, 'a missing window is 14');
+  is(cfg.gap.cancelMinNoticeHours, 24, 'the cancelled route wants 24 hours\' notice — a same-day canceller is not chased (Bülent\'s decision)');
+  is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { cancelMinNoticeHours: undefined }) })).gap.cancelMinNoticeHours, 24, 'a missing notice setting is 24 as well');
   is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'beyhan'], 'fill order on a Tuesday: Hannah, Lissa, Helen, then Beyhan (not in fillOrder, appended); Zara is off Tuesdays');
   is(cfg.fillOrderOn('2026-09-14').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'on a Monday: Hannah, Lissa, Helen, then Zara; Beyhan is off Mondays');
   is(cfg.fillOrderOn('2026-09-17').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara', 'beyhan'], 'on a Thursday: all five');
@@ -274,8 +276,16 @@ console.log('3c. the cancelled route — she gave up a booking she wanted and ha
   is(her(run({ row: { cancelledAt: new Date(NOW - 20 * 86400e3).toISOString() } })), [], 'a cancellation older than cancelledWindowDays (20 > 14 days) does not');
   is(her(run({ row: { cancelledAt: new Date(NOW - 13 * 86400e3).toISOString() } })).length, 1, '…13 days ago still does');
   is(her(run({ row: { apptTime: '2026-09-08T10:00' } })), [], 'a row whose apptTime was already past when she cancelled does not — that hour was not wanted, it was gone');
-  is(her(run({ row: { apptTime: '2026-09-10T12:00', cancelledAt: '2026-09-10T08:00:00.000Z' } })).length, 1, 'cancelled 08:00Z = 11:00 at the salon for a 12:00 the same day: still ahead of her — qualifies');
-  is(her(run({ row: { apptTime: '2026-09-10T10:30', cancelledAt: '2026-09-10T08:00:00.000Z' } })), [], 'cancelled 11:00 salon time for a 10:30 that day: already past — judged on the salon clock, not UTC');
+  // REAL NOTICE: cancelMinNoticeHours (24). The salon clock is +3 in
+  // September, so 07:00Z is 10:00 at the desk.
+  is(her(run({ row: { apptTime: '2026-09-12T12:00', cancelledAt: '2026-09-11T07:00:00.000Z' } })).length, 1, 'cancelled 26 hours before the appointment — QUALIFIES');
+  is(her(run({ row: { apptTime: '2026-09-12T09:00', cancelledAt: '2026-09-11T07:00:00.000Z' } })), [], 'cancelled 23 hours before — does NOT');
+  is(her(run({ row: { apptTime: '2026-09-11T14:00', cancelledAt: '2026-09-11T07:00:00.000Z' } })), [], 'cancelled the same morning, 10:00 for a 14:00 — does NOT: she is not chased');
+  is(her(run({ row: { apptTime: '2026-09-12T10:00', cancelledAt: '2026-09-11T07:00:00.000Z' } })).length, 1, 'exactly 24 hours — qualifies (the test is >=)');
+  is(her(run({ row: { apptTime: '2026-09-12T09:59', cancelledAt: '2026-09-11T07:00:00.000Z' } })), [], 'a minute short of 24 hours — does not');
+  const sameDayOk = Object.assign({}, cfg, { gap: Object.assign({}, cfg.gap, { cancelMinNoticeHours: 0 }) });
+  is(her(run({ row: { apptTime: '2026-09-11T14:00', cancelledAt: '2026-09-11T07:00:00.000Z' }, cfg: sameDayOk })).length, 1, 'cancelMinNoticeHours 0 brings the same-morning canceller back in');
+  is(her(run({ row: { apptTime: '2026-09-11T09:30', cancelledAt: '2026-09-11T07:00:00.000Z' }, cfg: sameDayOk })), [], '…but even at 0 an hour already gone (09:30 cancelled at 10:00) never counts — judged on the salon clock, not UTC');
   is(her(run({ row: { reason: 'gelmedi' } })), [], 'reason "gelmedi": NOT offered while offerNoShows is false');
   is(her(run({ row: { reason: 'Müşteri gelmedi, aramadı' } })), [], '…"gelmedi" anywhere in the reason');
   const ns = her(run({ row: { reason: 'gelmedi' }, cfg: noShows }));
