@@ -144,7 +144,10 @@ console.log('1. the settings');
   is([cfg.gap.dailyCap, cfg.gap.holdMinutes, cfg.gap.daysAhead, cfg.gap.cooldownDays, cfg.gap.noticeMinutes, cfg.gap.dueAfterDays, cfg.gap.dueUntilDays], [25, 45, 5, 7, 60, 10, 120], 'cap 25, hold 45 (clears before the next hourly run), 5 days, 7-day cooldown, 60-minute notice, due 10–120 days (tuned 14 Eylül evening after the first live day)');
   is(cfg.fillMinDaysAhead, 3, 'the distance rule is the fill-call list\'s 3');
   is(cfg.notBefore, { hannah: '2026-09-14' }, 'Hannah not before 14 Eylül');
-  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fill order Hannah, Lissa, Helen, then Zara (not in fillOrder, appended)');
+  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'beyhan'], 'fill order on a Tuesday: Hannah, Lissa, Helen, then Beyhan (not in fillOrder, appended); Zara is off Tuesdays');
+  is(cfg.fillOrderOn('2026-09-14').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'on a Monday: Hannah, Lissa, Helen, then Zara; Beyhan is off Mondays');
+  is(cfg.fillOrderOn('2026-09-17').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara', 'beyhan'], 'on a Thursday: all five');
+  is(cfg.fillOrderOn('2026-09-16').map(o => o.key), ['hannah', 'lissa', 'helen'], 'on a Wednesday: the three');
   is(cfg.ladder[0] + '-' + cfg.ladder[cfg.ladder.length - 1] + '/' + cfg.ladder.length, '480-1080/12', 'the start ladder: 08:00 … 18:00, 12 rungs');
   // the safe way round for a broken config
   const bad = api.gfConfig(Object.assign({}, C, { gapFill: { dryRun: 'no', enabled: 'yes', dailyCap: 'lots' } }));
@@ -287,6 +290,75 @@ console.log('6. notBefore');
   is(mon.offers.map(o => o.t).slice(0, 3), ['08:00', '09:00', '10:00'], 'from her first hour on Monday');
   const later = api.gfPlan({ data, offers: {}, optout, cfg, nowMs: NOW, todayYmd: TODAY, nowMin: 600 });
   is(later.offers[0].tech, 'Hannah', 'from the 14th on she is first, as fillOrder says');
+}
+
+console.log('6b. workdays: never Zara on a Tuesday, never Beyhan on a Monday');
+{
+  // Run on Monday 14 Eylül at 10:00 — the window is Pzt 14 … Cum 18, which
+  // holds one of each: Zara's days are Pzt and Perş, Beyhan's Salı and Perş.
+  // Enough due customers that every free hour of hers could be sold, so an
+  // empty day is a day the roster refused, not a day nobody was due.
+  const { api } = makeWorker({});
+  const cfg = api.gfConfig();
+  const monMs = Date.UTC(2026, 8, 14, 7, 0), MON = '2026-09-14';
+  const ago = n => { const d = new Date(Date.UTC(2026, 8, 14) - n * 86400e3); return d.toISOString().slice(0, 10); };
+  const pool = (from, svc, tech, count) => {
+    const cl = [], ap = [];
+    for (let i = 0; i < (count || 40); i++) {
+      cl.push({ id: from + i, name: svc.slice(0, 4) + i, phone: '0533 ' + String(from + i).padStart(3, '0') + ' ' + String(1000 + i) });
+      ap.push(A(from * 10 + i, from + i, tech, ago(20 + (i % 5)) + 'T10:00', svc));
+    }
+    return { clients: cl, appointments: ap };
+  };
+  const nails = pool(300, 'Klasik Manikür', 'Helen');
+  const lashes = pool(400, 'Klasik Kirpik Uygulaması', 'Lissa');
+  const both = { clients: nails.clients.concat(lashes.clients), appointments: nails.appointments.concat(lashes.appointments) };
+  const only = key => Object.assign({}, cfg, { fillOrderOn: ymd => cfg.fillOrderOn(ymd).filter(o => o.key === key) });
+  const dates = offers => [...new Set(offers.map(o => o.d))].sort();
+  const wd = ymd => new Date(ymd + 'T12:00:00').getDay();
+
+  const z = api.gfPlan({ data: both, offers: {}, optout: {}, cfg: only('zara'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is(z.offers.length > 0 && z.offers.every(o => o.tech === 'Zara'), true, 'Zara alone on the roster: she gets offers (' + z.offers.length + ')');
+  is(dates(z.offers), ['2026-09-14', '2026-09-17'], 'her offers fall on Pazartesi the 14th and Perşembe the 17th, no other day');
+  is(z.offers.some(o => o.d === '2026-09-15'), false, 'Zara is NEVER offered a Tuesday');
+  is(z.offers.every(o => [1, 4].includes(wd(o.d))), true, 'every one of her slots is on a weekday in her workdays [1, 4]');
+  is(z.offers.every(o => o.service === 'Klasik Manikür'), true, 'and they are all manicure customers — no lash customer goes to Zara');
+
+  const b = api.gfPlan({ data: both, offers: {}, optout: {}, cfg: only('beyhan'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is(b.offers.length > 0 && b.offers.every(o => o.tech === 'Beyhan'), true, 'Beyhan alone on the roster: she gets offers (' + b.offers.length + ')');
+  is(dates(b.offers), ['2026-09-15', '2026-09-17'], 'her offers fall on Salı the 15th and Perşembe the 17th, no other day');
+  is(b.offers.some(o => o.d === MON), false, 'Beyhan is NEVER offered a Monday — not even the day the run happens');
+  is(b.offers.every(o => [2, 4].includes(wd(o.d))), true, 'every one of her slots is on a weekday in her workdays [2, 4]');
+  is(b.offers.every(o => o.service === 'Klasik Kirpik Uygulaması'), true, 'and they are all lash customers');
+  const bn = api.gfPlan({ data: nails, offers: {}, optout: {}, cfg: only('beyhan'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is(bn.offers, [], 'forty due manicure customers and only Beyhan free: NOBODY is offered — she is not a nail technician and nobody is substituted');
+
+  // The full roster, the real fillOrder: the two rules hold inside a normal
+  // run too. The cap is lifted to 200 for this one and the pool widened to
+  // 120 of each, so the walk reaches Beyhan's Tuesday (Hannah and Lissa take
+  // the lash customers first, as fillOrder says) — under the live cap of 25
+  // the first three technicians' Monday would use every offer up.
+  const wide = { clients: pool(300, 'Klasik Manikür', 'Helen', 120).clients.concat(pool(500, 'Klasik Kirpik Uygulaması', 'Lissa', 120).clients), appointments: pool(300, 'Klasik Manikür', 'Helen', 120).appointments.concat(pool(500, 'Klasik Kirpik Uygulaması', 'Lissa', 120).appointments) };
+  const uncapped = c => Object.assign({}, c, { gap: Object.assign({}, c.gap, { dailyCap: 200 }) });
+  const all = api.gfPlan({ data: wide, offers: {}, optout: {}, cfg: uncapped(cfg), nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is(all.offers.filter(o => o.tech === 'Zara' && ![1, 4].includes(wd(o.d))), [], 'a full run never puts Zara on a day off');
+  is(all.offers.filter(o => o.tech === 'Beyhan' && ![2, 4].includes(wd(o.d))), [], 'a full run never puts Beyhan on a day off');
+  is(all.offers.filter(o => o.tech === 'Beyhan' && o.service !== 'Klasik Kirpik Uygulaması'), [], 'a full run never sends Beyhan a nail customer');
+  is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-15'), true, 'and she does get lash customers on her Tuesday (' + all.offers.filter(o => o.tech === 'Beyhan').length + ' in all)');
+  is(all.offers.some(o => o.tech === 'Zara' && o.d === MON), true, 'and Zara gets manicure customers on her Monday (' + all.offers.filter(o => o.tech === 'Zara').length + ' in all)');
+  // Under the LIVE cap the rules are the same, only fewer offers.
+  const capped = api.gfPlan({ data: both, offers: {}, optout: {}, cfg, nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is([capped.offers.length, capped.offers.filter(o => (o.tech === 'Zara' && ![1, 4].includes(wd(o.d))) || (o.tech === 'Beyhan' && ![2, 4].includes(wd(o.d)))).length], [25, 0], 'the live run: 25 offers, none of them Zara or Beyhan on a day off');
+
+  // FAIL OPEN: a malformed workdays value on Zara's line puts her on every
+  // day, Tuesday included — a typo widens her, never deletes her.
+  const typo = loadCrown(); typo.operators.find(o => o.key === 'zara').workdays = 'Salı';
+  const tcfg = uncapped(api.gfConfig(typo));
+  const tz = api.gfPlan({ data: wide, offers: {}, optout: {}, cfg: Object.assign({}, tcfg, { fillOrderOn: ymd => tcfg.fillOrderOn(ymd).filter(o => o.key === 'zara') }), nowMs: monMs, todayYmd: MON, nowMin: 600 });
+  is(dates(tz.offers), ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18'], "workdays: 'Salı' (a typo) — she is offered every day of the window, the rule failed open");
+  is(['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18'].map(d => tcfg.fillOrderOn(d).some(o => o.key === 'zara')), [true, true, true, true, true], '…and fillOrderOn lists her every day');
+  const typo2 = loadCrown(); typo2.operators.find(o => o.key === 'beyhan').workdays = [];
+  is(['2026-09-14', '2026-09-15', '2026-09-16'].map(d => api.gfConfig(typo2).fillOrderOn(d).some(o => o.key === 'beyhan')), [true, true, true], 'workdays: [] on Beyhan — every day, she is never silently deleted');
 }
 
 console.log('7. the distance rule and the same-day rule');

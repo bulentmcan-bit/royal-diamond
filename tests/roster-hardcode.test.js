@@ -10,10 +10,11 @@
 //   · the two "window.CROWN is absent" fallbacks (the online-booking handler's
 //     and rdStaffOn's) — reached only if crown-config.js failed to load
 //   · the money screens Bülent keeps by hand — avans (ADV_STAFF), the salary
-//     page's commission rows and the Aylık page's commission cards. Zara's
-//     pay arrangement is his to decide; nothing puts her on a money screen by
-//     side effect. (DI_STAFF and the takings seed are object arrays with
-//     names inside them, not lists of names, and are not matched.)
+//     page's commission rows, the Aylık page's commission cards and the
+//     Daily Takings "active" list. Zara's and Beyhan's pay arrangements are
+//     his to decide; nothing puts a technician on a money screen by side
+//     effect. (DI_STAFF and the takings seed are object arrays with names
+//     inside them, not lists of names, and are not matched.)
 //   · the historical takings seed data (JUNE_SEED)
 // Anything else is a bug. Add a name to crown-config.js, not to a page.
 //
@@ -50,9 +51,10 @@ const STR_ARRAY = /\[\s*(?:(?:'[^'\n]*'|"[^"\n]*")\s*,\s*)*(?:'[^'\n]*'|"[^"\n]*
 const ALLOWED = [
   { file: 'index.html', text: "const RD_OB_FALLBACK_TECHS=['Helen','Lissa'];", why: 'online-booking fallback, CROWN absent only' },
   { file: 'index.html', text: "return ['Helen','Lissa'];", why: "rdStaffOn's fallback, CROWN absent only" },
-  { file: 'index.html', text: "const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Zebo','Nihal'];", why: 'avans money screen — Bülent\'s list' },
-  { file: 'index.html', text: "['Hannah','Lissa','Zara','Saeideh'].forEach(function(n){", why: 'salary page commission rows — Bülent\'s list' },
-  { file: 'index.html', text: "const commOrder=['Lissa','Hannah','Zara','Saeideh'];", why: 'Aylık page commission cards — Bülent\'s list' },
+  { file: 'index.html', text: "const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Zebo','Nihal'];", why: 'avans money screen — Bülent\'s list' },
+  { file: 'index.html', text: "['Hannah','Lissa','Zara','Saeideh','Beyhan'].forEach(function(n){", why: 'salary page commission rows — Bülent\'s list' },
+  { file: 'index.html', text: "const commOrder=['Lissa','Hannah','Zara','Saeideh','Beyhan'];", why: 'Aylık page commission cards — Bülent\'s list' },
+  { file: 'index.html', text: "['Zara','Saeideh','Beyhan'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });", why: 'Daily Takings keeps the commission-only technicians active — Bülent\'s list' },
 ];
 
 console.log('1. the roster this test reads');

@@ -5478,7 +5478,7 @@ p, span, div, label, h1, h2, h3, h4 {
     var raw = localStorage.getItem('rdns_takings_v3');
     if(raw){
       var d = JSON.parse(raw);
-      var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
+      var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80};
       // Remove duplicate dates — keep only first occurrence
       var seen={};
       d.history = (d.history||[]).filter(function(h){
@@ -6223,7 +6223,7 @@ function rdSkilledOn(service, date){
 }
 const STAFF_COLORS = {
   Helen:'var(--gold)', Hannah:'var(--mint)', Lissa:'var(--rose)',
-  Zara:'var(--lavender)', Saeideh:'var(--orange)'
+  Zara:'var(--lavender)', Saeideh:'var(--orange)', Beyhan:'var(--blue)'
 };
 const GRID_START = 7.5;   // 07:30
 const GRID_END   = 20.0;  // 20:00
@@ -6249,7 +6249,7 @@ function renderDashGrid(){
   if(!el) return;
 
   const staffList = rdStaffOn(dashGridDate);   // who works on the day shown
-  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a'};
+  const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a',Beyhan:'#7aaae8'};
   // How many starts the day holds for her — the ladder's rungs — so "free" is
   // starts she could still be given, not boxes on a half-hour grid.
   const BOXES = rdStartLadder().length;
@@ -6762,7 +6762,7 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       // operators array only represents today, so update the historical
       // rollup for that date directly.
       if(!dtState.history) dtState.history=[];
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day){
@@ -6830,7 +6830,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       if(typeof dtRender==='function') dtRender();
     } else {
       if(!dtState.history) return;
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day) return;
@@ -7018,7 +7018,7 @@ function quickBookStaff(staffName, slotH){
 // ✂️ DEDUCTIONS — commission rules & salary cuts
 // overtime / dissatisfied → that customer's commission is cancelled
 // unpaid redo → full service amount deducted from technician
-// Applies to: Hannah 12%, Lissa 12%, Zara 25%
+// Applies to: Hannah 12%, Lissa 12%, Zara 25%, Beyhan 80%
 // ══════════════════════════════════════════════
 const DED_RATES = {Hannah:0.12, Lissa:0.12};
 const DED_TYPES = {
@@ -7028,8 +7028,10 @@ const DED_TYPES = {
 };
 // Every rate the salon pays commission at, in one place. The Kesintiler form
 // only offers the two technicians on the scheme, but the commission maths has
-// to know about all of them.
-const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50};
+// to know about all of them. "Commission" means what the salon OWES her on
+// her own client income — Beyhan is on 80% (no salary, paid monthly; the
+// salon keeps the other 20%), so her rate is 0.80, not 0.20.
+const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
 // A rate in the table is not the whole answer any more: a technician can have
 // her commission STOPPED from a date (crown-config.js — commissionPaused on
 // her operator line; Hannah, from 1 Aug 2026). This asks that flag for one
@@ -7983,7 +7985,7 @@ function dedMonthShift(dir){
 // amount (₺) is deducted from that month's salary.
 // Mirrors the Kesintiler (deductions) store & page.
 // ══════════════════════════════════════════════
-const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Zebo','Nihal'];
+const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Zebo','Nihal'];
 // Para birimleri — birbirine ÇEVRİLMEZ, TOPLANMAZ. Her tutar kendi sembolüyle gösterilir.
 const ADV_CURRENCIES = ['TRY','USD','EUR','GBP'];
 const ADV_CUR_SYMBOL = {TRY:'₺', USD:'$', EUR:'€', GBP:'£'};
@@ -8217,6 +8219,7 @@ function renderSalaryPage(){
       {name:'Lissa',   role:'Nail Technician',    color:'#e8847a', salary:1300, cur:'USD', commLabel:'12% of own client income',   comm:commTotals['Lissa']||0},
       {name:'Zara',    role:'Nail Technician',    color:'#b8a0d8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Zara']||0},
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
+      {name:'Beyhan',  role:'Kaş & Kirpik Uzmanı', color:'#7aaae8', salary:0,   cur:'TL',  commLabel:'80% of own client income (salon keeps 20%) — no salary, paid monthly', comm:commTotals['Beyhan']||0},
       {name:'Zebo',    role:'Receptionist',       color:'#8fd1a8', salary:52000,cur:'TL',  commLabel:'Fixed salary only',comm:0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:50000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
@@ -8460,8 +8463,8 @@ function renderHelenBreakdown(c, total){
 
   // Tech commissions
   html += divider('Technician Commissions');
-  ['Hannah','Lissa','Zara','Saeideh'].forEach(function(n){
-    const rates = {Hannah:'12%',Lissa:'12%',Zara:'25%',Saeideh:'50%'};
+  ['Hannah','Lissa','Zara','Saeideh','Beyhan'].forEach(function(n){
+    const rates = {Hannah:'12%',Lissa:'12%',Zara:'25%',Saeideh:'50%',Beyhan:'80%'};
     const amt = commTotals[n]||0;
     if(amt>0) html += row(n+' Commission ('+rates[n]+')', amt, rates[n]+' of own income', 'var(--purple)');
   });
@@ -8507,6 +8510,9 @@ const DI_STAFF = [
   {name:'Lissa',   color:'#e8847a', commRate:0.12, commExtra:0},
   {name:'Zara',    color:'#b8a0d8', commRate:0.25, commExtra:0,   extraOnWorkDay:400},
   {name:'Saeideh', color:'#f5c27a', commRate:0.50, commExtra:0},
+  // Beyhan: 80% of her own client income is HERS (the salon keeps 20%), no
+  // salary, paid monthly — so commRate is 0.80, the share owed to her.
+  {name:'Beyhan',  color:'#7aaae8', commRate:0.80, commExtra:0},
 ];
 
 let diCurrentDate = '';
@@ -14809,7 +14815,7 @@ function rdKasaRepairScan(d){
   return out;
 }
 function rdKasaRepairApply(d, now){
-  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
+  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80};
   const changes=rdKasaRepairScan(d);
   changes.forEach(c=>{
     const h=(d.history||[]).find(x=>x&&x.date===c.date);
@@ -14966,6 +14972,7 @@ function dtDefaultState(){
       {id:2,name:'Lissa',entries:[],active:true},
       {id:3,name:'Zara',entries:[],active:true},
       {id:5,name:'Saeideh',entries:[],active:true},
+      {id:6,name:'Beyhan',entries:[],active:true},
     ],
     currency:'₺', mgmtPhone:'', studioName:'Royal Diamond Nail Studio',
     history:[...JUNE_SEED], sentToday:false,
@@ -15012,8 +15019,9 @@ function dtLoadState(){
       syncPush('rdns_takings_v3', JSON.parse(localStorage.getItem('rdns_takings_v3')||'{}'));
     }
     dtMergeSeed(d);
-    ['Zara','Saeideh'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
+    ['Zara','Saeideh','Beyhan'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
     if(!d.operators.find(function(x){return x.name==='Saeideh';})) d.operators.push({id:5,name:'Saeideh',entries:[],active:true});
+    if(!d.operators.find(function(x){return x.name==='Beyhan';})) d.operators.push({id:6,name:'Beyhan',entries:[],active:true});
     // Deduplicate history - if same date appears twice, keep only the first (newest save)
     var seen={};
     d.history = (d.history||[]).filter(function(h){ if(seen[h.date]) return false; seen[h.date]=true; return true; });
@@ -15051,7 +15059,7 @@ let dtState = dtLoadState();
       {date:'2026-06-24', ops:[{name:'Helen',total:13600,count:1,commission:0},{name:'Lissa',total:12000,count:1,commission:1440},{name:'Hannah',total:9200,count:1,commission:1104}], total:34800, sent:false},
       {date:'2026-06-25', ops:[{name:'Helen',total:9500,count:1,commission:0},{name:'Hannah',total:8700,count:1,commission:1044},{name:'Lissa',total:5800,count:1,commission:696},{name:'Zara',total:5800,count:1,commission:1450},{name:'Lilly',total:7100,count:1,commission:1775}], total:36900, sent:false}
     ];
-    var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
+    var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80};
     if(!dtState.history) dtState.history=[];
     var changed=false;
     extraDays.forEach(function(day){
@@ -15091,7 +15099,7 @@ let dtState = dtLoadState();
 // Fix commission values in history immediately after loading
 (function(){
   try {
-    var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50};
+    var rates={Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80};
     var changed = false;
     (dtState.history||[]).forEach(function(h){
       (h.ops||[]).forEach(function(op){
@@ -16736,8 +16744,8 @@ function renderMonthly(){
     ];
 
     // Individual commission cards from actual monthly income
-    const commOrder=['Lissa','Hannah','Zara','Saeideh'];
-    const commRateLabels={Lissa:'12%',Hannah:'12%',Zara:'25%',Saeideh:'50%'};
+    const commOrder=['Lissa','Hannah','Zara','Saeideh','Beyhan'];
+    const commRateLabels={Lissa:'12%',Hannah:'12%',Zara:'25%',Saeideh:'50%',Beyhan:'80%'};
     const commCards = commOrder
       .filter(name=>techComms[name]>0)
       .map(name=>({
@@ -16769,7 +16777,8 @@ function renderMonthly(){
       'Lilly': (techComms['Lilly']||0),
       'Nihal': nihalSalTRY,
       'Zebo': zeboSalTRY,
-      'Saeideh': (techComms['Saeideh']||0)
+      'Saeideh': (techComms['Saeideh']||0),
+      'Beyhan': (techComms['Beyhan']||0)
     };
     function plAdv(staff, baseTotalTRY){
       var adv = mAdvTRY[staff]||0;
@@ -16854,6 +16863,20 @@ function renderMonthly(){
       html += mkGroup('💜 Zara',
         mkCard('Zara — '+_('m_tech_commission')+' (25%)', mFmtTRY(techComms['Zara']||0)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">25% × '+mFmtTRY(techTotals['Zara']||0)+'</div>', 'var(--purple)', true) +
         mkCard('Zara — TOPLAM', mFmtTRY(techComms['Zara']||0), 'var(--coral)', true)
+      );
+    }
+
+    // ── BEYHAN ── 80% of her own client income is hers, the salon keeps 20%;
+    // no salary, paid monthly. The split is on the GROSS — no KDV or vergi is
+    // taken off it — and the salon's 20% is shown as its own card because it
+    // is money that simply never left the till, and Bülent needs to see it.
+    if(techTotals['Beyhan']>0){
+      const beyhanGross = techTotals['Beyhan']||0;
+      const beyhanSalon = Math.round(beyhanGross*0.20);
+      html += mkGroup('🔷 Beyhan',
+        mkCard('Beyhan — '+_('m_tech_commission')+' (80%)', mFmtTRY(techComms['Beyhan']||0)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">80% × '+mFmtTRY(beyhanGross)+' · brüt üzerinden, KDV/vergi düşülmeden</div>', 'var(--purple)', true) +
+        mkCard('Salona kalan (%20)', mFmtTRY(beyhanSalon)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">20% × '+mFmtTRY(beyhanGross)+' · kasadan hiç çıkmayan pay</div>', 'var(--blue)', false) +
+        mkCard('Beyhan — TOPLAM', mFmtTRY(techComms['Beyhan']||0)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">maaş yok · aylık ödenir</div>', 'var(--coral)', true)
       );
     }
 

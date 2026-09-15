@@ -41,6 +41,25 @@
    Aylık, kesinti, avans, komisyon, kasa) never asks rosterOn at all, so she
    stays on all of those in full.
 
+   A technician who works only SOME DAYS OF THE WEEK gets `workdays`, an
+   array of weekday numbers, 0 = Pazar … 6 = Cumartesi:
+
+       { key:'zara', name:'Zara', hiddenOnBoard: true, workdays: [1, 4] }
+
+   is Pazartesi and Perşembe. `rosterOn(date)` leaves her out on every other
+   weekday, so the diary's columns, the booking page, Uygun Saat Bul, the
+   fill-call list and the worker's gap-filler all stop offering her the days
+   she is not here — that one function is the gate they all ask. Leave
+   `workdays` out and she works every open day, which is how Helen, Lissa
+   and Hannah are written. The `leftOn` test still comes first: a technician
+   who has left is out whatever her workdays say.
+   THE RULE FAILS OPEN. A `workdays` that is missing, not an array, empty, or
+   holds anything that is not a number 0–6 counts as "every day". A typo must
+   never silently delete a technician's column — a wrong column is noticed
+   in a minute, a missing one is noticed when a customer arrives.
+   The money screens never ask rosterOn, so `workdays` changes nothing about
+   what she is paid.
+
    ONE FILE, TWO RUNTIMES. The browser pages read it as window.CROWN, as they
    always have. The Cloudflare worker (worker/src/index.js) imports this same
    file — wrangler bundles it in at deploy — so the automatic gap-filler asks
@@ -53,18 +72,35 @@
 var CROWN = {
 
   operators: [
-    /* The ORDER of this array is the order of the board columns, left to
-       right: Helen, Lissa, Zara, Hannah — the wall shows whoever is not
-       hiddenOnBoard, in this order. Zara is off the wall for now; take the
-       flag off her line and she appears third, between Lissa and Hannah,
-       without any other line changing. */
+    /* The ORDER of this array is the order of the columns, left to right:
+       Helen, Lissa, Zara, Beyhan, Hannah. The wall shows whoever is not
+       hiddenOnBoard, in this order — today that is Helen, Lissa, Hannah,
+       with Zara and Beyhan off the wall. The diary's columns for a day are
+       the same order minus anyone not working that day (leftOn, workdays —
+       see rosterOn), so the day-to-day picture is:
+         Pazartesi          Helen, Lissa, Zara, Hannah
+         Salı               Helen, Lissa, Beyhan, Hannah
+         Çarşamba/Cuma/Cmt  Helen, Lissa, Hannah
+         Perşembe           Helen, Lissa, Zara, Beyhan, Hannah
+       Take the hiddenOnBoard flag off a line and she appears on the wall in
+       this position without any other line changing. */
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
     { key:'lissa',  name:'Lissa',  photo:'op-lissa.png'  },
     /* Zara is temporary staff — no photo on purpose, her tile shows none.
        hiddenOnBoard keeps her OFF THE WALL BOARD and nothing else: her key,
        her manikur/pedikur skills, her diary column, her online booking
-       availability and every salary screen still see her. */
-    { key:'zara',   name:'Zara',   hiddenOnBoard: true },
+       availability and every salary screen still see her. workdays: she is
+       here Pazartesi and Perşembe only, so on the other days the diary
+       shows no column for her and nothing automatic offers her. */
+    { key:'zara',   name:'Zara',   hiddenOnBoard: true, workdays: [1, 4] },
+    /* Beyhan — brows and lashes, NOT nails: kas and kirpik in serviceSkill
+       below, never manikur, pedikur or agda, so the diary warns, and the
+       booking page and the gap-filler refuse, a manicure with her. Salı and
+       Perşembe only. No photo, and off the wall board for now, like Zara.
+       She is on commission only (80% of her own client income, no salary,
+       paid monthly) — that is written on the money screens in index.html,
+       not here. */
+    { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [2, 4] },
     /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
        included) her jobs earn no commission on any screen that counts money;
        everything she earned BEFORE that date stays exactly as it was, and her
@@ -232,9 +268,9 @@ var CROWN = {
     serviceSkill: {
       manikur: ['helen', 'lissa', 'zara', 'hannah'],
       pedikur: ['helen', 'lissa', 'zara', 'hannah'],
-      kirpik:  ['lissa', 'hannah'],     // Helen does not do lashes
-      kas:     ['helen'],               // Helen only — Altın Oran, Kaş Boyama, Laminasyon, Microblading
-      agda:    ['helen']                // Helen only — every wax, the lip/chin wax included
+      kirpik:  ['lissa', 'hannah', 'beyhan'],   // Helen does not do lashes; Beyhan does (Salı/Perşembe)
+      kas:     ['helen', 'beyhan'],             // Altın Oran, Kaş Boyama, Laminasyon, Microblading — Helen, and Beyhan on her days
+      agda:    ['helen']                        // Helen only — every wax, the lip/chin wax included
     },
     fillOrder: ['hannah', 'lissa', 'helen'],
     notBefore: { hannah: '2026-09-14' }
@@ -561,15 +597,33 @@ var CROWN = {
       return o.key === k || o.name.toLowerCase() === k;
     })[0] || null;
   },
+  // Does this operator line carry a USABLE workdays rule? Only an array of
+  // one or more whole numbers 0–6, nothing else in it. Anything else — the
+  // field missing, a string, an empty array, a 7, 'Salı', null in the list —
+  // is NOT a rule, and rosterOn treats her as working every day: the rule
+  // fails open, because a typo here must never delete a column.
+  workdaysOf: function(o){
+    var w = o && o.workdays;
+    if (!Array.isArray(w) || !w.length) return null;
+    for (var i = 0; i < w.length; i++) {
+      if (typeof w[i] !== 'number' || !isFinite(w[i]) || w[i] % 1 !== 0 || w[i] < 0 || w[i] > 6) return null;
+    }
+    return w;
+  },
   // Who is WORKING on the day given — the roster minus anyone whose leftOn is
-  // on or before that day. `date` is 'YYYY-MM-DD' (a Date is accepted and read
-  // in local time); asked without one it answers for today. An operator with
-  // no leftOn is always in; one with leftOn is in for every day BEFORE it and
+  // on or before that day, minus anyone whose workdays do not include that
+  // weekday. `date` is 'YYYY-MM-DD' (a Date is accepted and read in local
+  // time); asked without one it answers for today. An operator with no
+  // leftOn is always in; one with leftOn is in for every day BEFORE it and
   // out from that day on, so a past date keeps her column and a future one
-  // does not. This is the ONLY question the diary asks about who works; the
-  // money screens read `operators` whole and never come through here.
+  // does not. The leftOn test comes first; then, for a line with a usable
+  // workdays list (workdaysOf above — a malformed one fails open to every
+  // day), the day's weekday must be in it. This is the ONLY question the
+  // diary, the booking page, Uygun Saat Bul, the fill-call list and the
+  // worker's gap-filler ask about who works; the money screens read
+  // `operators` whole and never come through here.
   rosterOn: function(date){
-    var d;
+    var d, self = this;
     if (date instanceof Date && !isNaN(date)) {
       var p = function(n){ return (n < 10 ? '0' : '') + n; };
       d = date.getFullYear() + '-' + p(date.getMonth() + 1) + '-' + p(date.getDate());
@@ -580,9 +634,13 @@ var CROWN = {
       var t = new Date(), q = function(n){ return (n < 10 ? '0' : '') + n; };
       d = t.getFullYear() + '-' + q(t.getMonth() + 1) + '-' + q(t.getDate());
     }
+    // The weekday of d, read at local noon so no timezone edge moves the day.
+    var wd = new Date(d + 'T12:00:00').getDay();
     return this.operators.filter(function(o){
       var left = String(o.leftOn || '').slice(0, 10);
-      return !left || d < left;
+      if (left && d >= left) return false;
+      var days = self.workdaysOf(o);
+      return !days || days.indexOf(wd) !== -1;
     });
   },
   // Does `who` earn NO commission on the day given? True only while her
