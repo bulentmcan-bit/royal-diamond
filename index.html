@@ -4207,7 +4207,7 @@ p, span, div, label, h1, h2, h3, h4 {
           <button class="btn btn-gold btn-sm" id="dash-rv-send-all" style="display:none;" onclick="rvSendAll()">⭐ Hepsini Gönder</button>
         </div>
         <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;">Son 3 günde ✓ tamamlanan ve daha önce hiç yorum istenmemiş müşteriler. Sistem OTOMATİK GÖNDERMEZ — önce buradaki butona, sonra açılan WhatsApp'ta gönder tuşuna basın. Her müşteriye ömür boyu bir kez sorulur.</div>
-        <div id="dash-rv-list"><div class="r24-empty">Bugün gönderilecek yorum isteği yok.</div></div>
+        <div id="dash-rv-list"><div class="r24-empty">Gönderilecek yorum isteği yok — son 3 günde çıkışta 😊 Memnun işaretlenen her yeni müşteri burada belirir. ⭐</div></div>
       </div>
 
     </div>
@@ -17855,6 +17855,15 @@ function rvTodayList(){
     appointments.forEach(function(a){
       if(!a || a.status!=='completed' || !a.datetime) return;
       if(!okDays[String(a.datetime).slice(0,10)]) return;
+      // ONLY A SATISFIED CUSTOMER IS ASKED — Bülent's decision, 15 Eylül 2026.
+      // A review request invites a public star rating; sent to a customer who
+      // was not satisfied it invites a 1-star onto a profile just claimed and
+      // verified. The desk's 😊 Memnun at checkout (satPick → a.sat='happy')
+      // is the ticket. 'unhappy' and 'not_asked' are BOTH out, deliberately:
+      // if the desk did not ask, we do not ask for a review either — that is
+      // the incentive to ask. A record with no sat at all (from before the
+      // checkout gate) is out too: nobody is chased retroactively.
+      if(a.sat !== 'happy') return;
       var c = clients.find(function(x){return String(x.id)===String(a.clientId);});
       if(!c || !c.phone || seen[c.id]) return;
       if(rvClientAsked(c)) return;
@@ -17874,7 +17883,7 @@ function renderReviewCard(){
   cntEl.textContent = items.length;
   allBtn.style.display = items.length>1 ? '' : 'none';
   if(!items.length){
-    listEl.innerHTML = '<div class="r24-empty">Gönderilecek yorum isteği yok — son 3 günde tamamlanan her yeni müşteri burada belirir. ⭐</div>';
+    listEl.innerHTML = '<div class="r24-empty">Gönderilecek yorum isteği yok — son 3 günde çıkışta 😊 Memnun işaretlenen her yeni müşteri burada belirir. ⭐</div>';
     return;
   }
   listEl.innerHTML = items.map(function(it){
