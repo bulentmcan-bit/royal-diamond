@@ -859,6 +859,18 @@ async function handleWa(req, env, ctx, url) {
     const r = await runGapFiller(env, new Date());
     return waJson(r, r.ok ? 200 : 503);
   }
+  // ── POST /wa/review-preview — whom the evening review ask would reach ─────
+  // The plan only: the asks and every visit left out with its reason. Reads
+  // the diary and the sent log, writes nothing, sends nothing, in any mode.
+  if (route === '/wa/review-preview') {
+    const r = await runReviewAsk(env, new Date(), { preview: true });
+    return waJson(r, r.ok ? 200 : 503);
+  }
+  // ── POST /wa/review-run — one review-ask run now, as the 19:00 cron does it
+  if (route === '/wa/review-run') {
+    const r = await runReviewAsk(env, new Date());
+    return waJson(r, r.ok ? 200 : 503);
+  }
 
   return waJson({ ok: false, error: { code: 'NOT_FOUND', message: 'No such route' } }, 404);
 }
@@ -1383,6 +1395,220 @@ async function runGapFiller(env, now, opts) {
   return { ok: true, mode, run };
 }
 
+/* ── the automatic Google review request ───────────────────────────────────
+   Once a day, at reviewAsk.sendHourLocal on the salon clock (19:00 — the
+   evening of the visit, when the nails are still new), this reads the diary
+   out of Firebase and asks every customer who was in the chair in the last
+   lookbackDays days AND was marked 😊 Memnun at checkout to leave a Google
+   review — the MARKETING template pyz_google_yorum_istegi (no variables;
+   its URL button lands on the Royal Diamond review page, checked on the
+   owner's own phone 15 Eylül 2026). It runs with every laptop off, like the
+   gap-filler, and it is built like the gap-filler in every respect — read,
+   plan, record, send (or not) — because that is the proven pattern here.
+
+   WHO IS ASKED — ALL of these, or she is not: the appointment is
+   'completed'; a.sat === 'happy' — the whole point: 'unhappy', 'not_asked'
+   AND A MISSING sat are all out, so a record from before the checkout's
+   satisfaction gate is never chased retroactively; the appointment's day is
+   today or one of the lookbackDays-1 days before it, on the salon clock;
+   her client record has a usable phone and is not KAPALI; she is not opted
+   out (the waOptOut flag, "STOP" / "mesaj istemiyor" in her notes, or her
+   number under rdns_gapfill_v1/optout — the SAME list as the gap-filler,
+   because a woman who said STOP said it about everything); and no ask
+   reached her in the last cooldownDays, on any record carrying her phone —
+   neither an automatic one (rdns_review_v1/sent) nor a manual one from the
+   dashboard card (reviewAskedTs on her record). One message per phone per
+   run; the daily cap is counted against the day's log so a re-run cannot
+   leak past it. Every visit looked at and left out is in the run record
+   with its reason, so "why was she not asked?" has an answer.
+
+   SAFETY. reviewAsk.dryRun writes what it WOULD send to rdns_review_v1/runs
+   and sends nothing. enabled=false is the kill switch in config;
+   rdns_review_v1/control.paused stops it without a deploy. A send is
+   claimed under rdns_review_v1/sent BEFORE it goes out, so a run that dies
+   mid-way leaves a record that may not have gone — never a customer asked
+   twice. Until WA_REVIEW names the template, a live run refuses to send and
+   says TEMPLATES_NOT_CONFIGURED in the run record instead. */
+const RA = 'rdns_review_v1';
+const RA_RUNS_KEPT = 30;
+const RA_SENT_KEPT_EXTRA_DAYS = 30;   // sent records outlive the cooldown by this much, then go
+
+// The settings, read off CROWN (crown-config.js) the safe way round: a
+// missing or nonsense dryRun is ON, a missing enabled is on, a nonsense cap
+// is 0 — nothing sent — and a nonsense hour is 0, an hour no cron fires at.
+function raConfig(C) {
+  C = C || globalThis.CROWN;
+  if (!C) return null;
+  const raw = C.reviewAsk || {};
+  const num = (v, d) => { const n = Number(v); return v == null ? d : (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0); };
+  return {
+    enabled: raw.enabled !== false,
+    dryRun: raw.dryRun !== false,
+    dailyCap: num(raw.dailyCap, 15),
+    sendHourLocal: num(raw.sendHourLocal, 19),
+    lookbackDays: Math.max(1, num(raw.lookbackDays, 3)),
+    cooldownDays: num(raw.cooldownDays, 180)
+  };
+}
+
+// The plan, pure: the diary, the sent log and the opt-out map in, the asks
+// and the skips out. Nothing here touches the network.
+function raPlan(input) {
+  const { data, sent, optout, cfg, nowMs, todayYmd } = input;
+  const appts = (data && Array.isArray(data.appointments)) ? data.appointments : [];
+  const clients = (data && Array.isArray(data.clients)) ? data.clients : [];
+  const out = { asks: [], skipped: [], looked: 0, sentToday: 0, room: 0 };
+
+  // ONE PHONE IS ONE CUSTOMER, as in the gap-filler: the book holds the same
+  // woman twice with the one number, and she is asked once.
+  const byClient = {}, cidsOfPhone = {};
+  for (const c of clients) {
+    if (!c || c.id == null) continue;
+    byClient[String(c.id)] = c;
+    const ph = waPhone(c.phone);
+    if (ph) (cidsOfPhone[ph] = cidsOfPhone[ph] || []).push(String(c.id));
+  }
+
+  // The sent log → the cooldown, keyed by client id AND by phone, and
+  // today's count. A 'failed' record reached nobody and holds nobody back.
+  const lastAsk = {};
+  let sentToday = 0;
+  for (const id of Object.keys(sent || {})) {
+    const s = sent[id];
+    if (!s || !(s.st === 'sending' || s.st === 'sent')) continue;
+    if (s.day === todayYmd) sentToday++;
+    for (const k of [String(s.cid || ''), String(s.phone || '')]) {
+      if (k) lastAsk[k] = Math.max(lastAsk[k] || 0, Number(s.ts) || 0);
+    }
+  }
+  out.sentToday = sentToday;
+  out.room = Math.max(0, cfg.dailyCap - sentToday);
+  const cooldownMs = cfg.cooldownDays * 86400e3;
+  const firstDay = gfAddDays(todayYmd, -(cfg.lookbackDays - 1));
+
+  // The completed visits inside the window, oldest first, so a visit about
+  // to fall out of the window is asked before today's.
+  const visits = appts.filter(a => {
+    if (!a || a.status !== 'completed') return false;
+    const dt = String(a.datetime || '');
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return false;
+    const d = dt.slice(0, 10);
+    return d >= firstDay && d <= todayYmd;
+  }).sort((x, y) => String(x.datetime).localeCompare(String(y.datetime)));
+
+  const seenCid = new Set(), seenPhone = new Set();
+  for (const a of visits) {
+    out.looked++;
+    const cid = String(a.clientId);
+    const c = byClient[cid];
+    const d = String(a.datetime).slice(0, 10);
+    const name = String((c && c.name) || '');
+    const skip = why => out.skipped.push({ cid, name, d, why });
+    // The satisfaction answer is judged per VISIT: an unhappy visit yesterday
+    // and a happy one today asks her — the happy one is the ticket.
+    if (a.sat !== 'happy') { skip(a.sat === 'unhappy' ? 'memnun değil' : a.sat === 'not_asked' ? 'çıkışta sorulmadı' : 'memnuniyet kaydı yok'); continue; }
+    if (!c) { skip('müşteri kaydı yok'); continue; }
+    if (waBlockedName(c.name)) { skip('KAPALI'); continue; }
+    const phone = waPhone(c.phone);
+    if (!phone) { skip('geçerli telefon yok'); continue; }
+    // From here the decision is about HER, not the visit: a second happy
+    // visit in the window adds nothing, whichever way the first one went.
+    if (seenCid.has(cid) || seenPhone.has(phone)) continue;
+    seenCid.add(cid); seenPhone.add(phone);
+    if (gfOptedOut(c, phone, optout)) { skip('mesaj istemiyor'); continue; }
+    let last = 0;
+    for (const k of [cid, phone].concat(cidsOfPhone[phone] || [])) {
+      last = Math.max(last, lastAsk[k] || 0);
+      const cc = byClient[k];
+      if (cc && Number(cc.reviewAskedTs)) last = Math.max(last, Number(cc.reviewAskedTs));   // the dashboard card's own stamp
+    }
+    if (last && nowMs - last < cooldownMs) { skip('son ' + cfg.cooldownDays + ' günde zaten istendi'); continue; }
+    if (out.asks.length >= out.room) { skip('günlük sınır doldu'); continue; }
+    const ago = gfDayDiff(todayYmd, d);
+    out.asks.push({ cid, name, phone, service: String(a.service || ''), d, apptId: String(a.id == null ? '' : a.id),
+                    why: (ago === 0 ? 'bugün' : ago + ' gün önce') + ' çıkışta 😊 memnun' });
+  }
+  return out;
+}
+
+// One run: read, plan, send (or not), record. `opts.preview` returns the
+// plan and writes nothing; `opts.gapMs` is the pause between sends (the
+// tests pass 0).
+async function runReviewAsk(env, now, opts) {
+  opts = opts || {};
+  const log = (...a) => console.log('[review]', ...a);
+  const cfg = raConfig();
+  if (!cfg) { log('ABORT: crown-config.js is not bundled into this worker'); return { ok: false, error: 'NO_CONFIG' }; }
+  const mode = cfg.dryRun ? 'dry' : 'live';
+  const todayYmd = nicosiaYmd(now), nowMin = nicosiaMinutes(now);
+  if (!cfg.enabled) { log(todayYmd, gfHm(nowMin), '— switched OFF (crown-config reviewAsk.enabled=false); nothing read, nothing sent'); return { ok: true, skipped: 'disabled', mode }; }
+  if (!env.FB_SECRET) { log('ABORT: FB_SECRET not set — cannot read the appointment book'); return { ok: false, error: 'NO_FB_SECRET', mode }; }
+
+  let control, raw, sent, optout;
+  try {
+    control = await fbRead(env, RA + '/control');
+    if (control && control.paused) {
+      log(todayYmd, gfHm(nowMin), '— PAUSED (' + RA + '/control.paused); nothing sent');
+      return { ok: true, skipped: 'paused', mode };
+    }
+    raw = await fbRead(env, 'rdns_main_v1');
+    sent = (await fbRead(env, RA + '/sent')) || {};
+    optout = (await fbRead(env, GF + '/optout')) || {};   // the gap-filler's list: one STOP is a STOP for everything
+  } catch (e) { log('ABORT:', String(e)); return { ok: false, error: String(e), mode }; }
+  const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+
+  const plan = raPlan({ data, sent, optout, cfg, nowMs: now.getTime(), todayYmd });
+  if (opts.preview) return { ok: true, mode, todayYmd, plan };
+
+  const run = {
+    ts: now.getTime(), day: todayYmd, at: gfHm(nowMin), mode,
+    asks: plan.asks.map(o => ({ cid: o.cid, name: o.name, phone: o.phone, service: o.service, d: o.d, apptId: o.apptId, why: o.why })),
+    skipped: plan.skipped, looked: plan.looked, sentToday: plan.sentToday, room: plan.room,
+    sent: 0, failed: 0, result: ''
+  };
+  log(todayYmd, gfHm(nowMin), mode.toUpperCase(), '—', plan.looked, 'visit(s) in the window,', plan.asks.length, 'ask(s) planned,', plan.skipped.length, 'left out');
+  for (const o of plan.asks) log(mode === 'dry' ? 'WOULD SEND' : 'SEND', o.d, '→', o.name, o.phone, '(' + o.why + ')');
+
+  if (mode === 'dry') run.result = 'dry-run — nothing sent';
+  else {
+    const spec = waSpec(env.WA_REVIEW);
+    if (!spec) { run.result = 'TEMPLATES_NOT_CONFIGURED — fill WA_REVIEW in wrangler.toml; nothing sent'; log(run.result); }
+    else if (!env.PIYZI_API_KEY) { run.result = 'PIYZI_KEY_NOT_SET — nothing sent'; log(run.result); }
+    else {
+      let i = 0;
+      for (const o of plan.asks) {
+        const id = (now.getTime() + '-' + o.cid).replace(/[.#$\/\[\]:]/g, '');
+        const rec = { cid: o.cid, name: o.name, phone: o.phone, service: o.service, d: o.d, apptId: o.apptId, why: o.why, ts: now.getTime(), day: todayYmd, st: 'sending' };
+        // Claimed BEFORE the send — a run that dies mid-way leaves a record
+        // that may not have gone, never a customer asked twice.
+        try { await fbWrite(env, 'PUT', RA + '/sent/' + id, rec); }
+        catch (e) { log('claim', id, 'refused — skipped:', String(e)); run.failed++; continue; }
+        let r = null, uid = null, err = '';
+        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: o.phone, ...waFill(spec, {}) }); } catch (e) { err = 'PIYZI_UNREACHABLE'; }
+        if (r && r.body && r.body.success) uid = (r.body.data && r.body.data.messageUid) || null;
+        else if (r) err = piyziErr(r).code;
+        const ok = !!(r && r.body && r.body.success);
+        if (ok) run.sent++; else run.failed++;
+        await fbWrite(env, 'PATCH', RA + '/sent/' + id, ok ? { st: 'sent', uid } : { st: 'failed', err: String(err).slice(0, 120) }).catch(e => log('mark', id, 'failed:', String(e)));
+        waLog(env, null, { op: 'review', apptId: o.apptId || ('rv-' + id), to: o.phone, uid, outcome: ok ? 'sent' : 'failed:' + err });
+        if (++i < plan.asks.length) await gfSleep(opts.gapMs == null ? GF_SEND_GAP_MS : opts.gapMs);
+      }
+      run.result = run.sent + ' sent, ' + run.failed + ' failed';
+    }
+  }
+
+  // The run record, and the pruning that keeps the two lists small — sent
+  // records must outlive the cooldown, or the cooldown forgets.
+  try { await fbWrite(env, 'PUT', RA + '/runs/' + now.getTime(), run); } catch (e) { log('run record failed:', String(e)); }
+  try {
+    const keys = Object.keys((await fbRead(env, RA + '/runs', { shallow: 'true' })) || {}).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - RA_RUNS_KEPT))) await fbWrite(env, 'DELETE', RA + '/runs/' + k);
+    const cutoff = now.getTime() - (cfg.cooldownDays + RA_SENT_KEPT_EXTRA_DAYS) * 86400e3;
+    for (const k of Object.keys(sent)) { const ts = Number(sent[k] && sent[k].ts); if (ts && ts < cutoff) await fbWrite(env, 'DELETE', RA + '/sent/' + k); }
+  } catch (e) { log('prune failed:', String(e)); }
+  return { ok: true, mode, run };
+}
+
 /* ── the Piyzi webhook — /wa/hook ──────────────────────────────────────────
    Piyzi delivers its WhatsApp events to ONE https address as signed POSTs
    (their docs: app.piyzi.com → Geliştirici Araçları → Dokümantasyon →
@@ -1528,6 +1754,7 @@ async function handleHook(req, env, ctx, url) {
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes,
+         raConfig, raPlan, runReviewAsk,
          hookSign, hookVerify, hookParse, hookMatchOffer, handleHook };
 
 export default {
@@ -1536,7 +1763,9 @@ export default {
     // 06:00 → the morning reminders (two UTC crons, one of them is six);
     // 09:00–18:00 → the gap-filler (the hourly Mon–Sat cron, which also
     // fires once an hour on either side of that range across the seasons);
-    // anything else leaves quietly.
+    // reviewAsk.sendHourLocal (19:00) → the Google review ask, on the same
+    // cron's last tick — 16:00Z in summer, 17:00Z in winter, which is why
+    // that cron runs to 17; anything else leaves quietly.
     const when = new Date(event.scheduledTime);
     const h = nicosiaHour(when);
     if (h === 6) {
@@ -1547,6 +1776,8 @@ export default {
       return;
     }
     if (h >= 9 && h <= 18) await runGapFiller(env, when);
+    const ra = raConfig();
+    if (ra && h === ra.sendHourLocal) await runReviewAsk(env, when);
   },
 
   async fetch(req, env, ctx) {

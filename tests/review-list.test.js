@@ -15,6 +15,8 @@
 //   5. a client already carrying reviewAskedTs → still not
 //   6. a completed appointment older than 3 days → still not
 //   7. the two empty-state strings say why a short list is right
+//   8. a client the worker's automatic ask reached (rdns_review_v1/sent,
+//      mirrored into _rvSent) inside cooldownDays → not; outside it → yes
 //
 // Run:  node tests/review-list.test.js
 // ═══════════════════════════════════════════════════════════════════════════
@@ -31,7 +33,7 @@ function is(got, want, label) {
 }
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const fn = name => { const at = html.indexOf('function ' + name + '('); if (at < 0) throw new Error(name + ' not found'); return html.slice(at, html.indexOf('\n}', at) + 2); };
-const src = fn('rvClientAsked') + '\n' + fn('rvTodayList');
+const src = fn('rvCooldownDays') + '\n' + fn('rvAutoAsked') + '\n' + fn('rvClientAsked') + '\n' + fn('rvTodayList');
 
 // The clock is frozen at Tuesday 15 Eylül 2026, 14:00, so "the last 3 days"
 // is the 13th, 14th and 15th whatever day this test is run on.
@@ -39,8 +41,9 @@ const FROZEN = new Date(2026, 8, 15, 14, 0).getTime();
 class FrozenDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FROZEN); } static now() { return FROZEN; } }
 
 // One list for one diary: the fixture is built per case so each case stands alone.
-function listFor(appointments, clients) {
-  const ctx = { appointments, clients, Date: FrozenDate, String, console };
+function listFor(appointments, clients, rvSent) {
+  const ctx = { appointments, clients, Date: FrozenDate, String, Number, console, _rvSent: rvSent || {}, window: { CROWN: { reviewAsk: { cooldownDays: 180 } } } };
+  ctx.CROWN = ctx.window.CROWN;
   vm.createContext(ctx);
   return vm.runInContext(src + '\nrvTodayList()', ctx).map(it => it.client.name);
 }
@@ -82,6 +85,19 @@ console.log('3. the code and the words');
   is(html.includes('Bugün gönderilecek yorum isteği yok.'), false, '…and so is the old placeholder');
   // The satisfaction gate itself is untouched: satPick still writes the three values and rdCheckoutDone still needs one.
   is(fn('satPick').includes('a.sat=val; a.satAt=new Date().toISOString();'), true, 'satPick still writes a.sat and a.satAt exactly as before — the checkout gate is untouched by this commit');
+}
+
+console.log('4. the automatic ask counts as asked');
+{
+  const D = 86400e3;
+  is(listFor([appt()], [client()], { '1': FROZEN - 2 * D }), [], 'the worker asked her (by client id) 2 days ago → NOT on the list');
+  is(listFor([appt()], [client()], { 'p5331234567': FROZEN - 100 * D }), [], '…asked by her PHONE (last ten digits) 100 days ago → still not: the cooldown is 180 days');
+  is(listFor([appt()], [client()], { '1': FROZEN - 181 * D }), ['AYŞE KAYA'], '…asked 181 days ago → on the list again: the cooldown has passed');
+  is(listFor([appt()], [client()], { '2': FROZEN - 2 * D, 'p5339999999': FROZEN - 2 * D }), ['AYŞE KAYA'], 'someone ELSE asked 2 days ago → she is on the list');
+  is(fn('rvClientAsked').includes("if(typeof rvAutoAsked==='function' && rvAutoAsked(c)) return true;"), true, 'rvClientAsked defers to rvAutoAsked, guarded so a page without the mirror still works');
+  is(html.includes("_fbDb.ref('rdns_review_v1/sent').orderByChild('ts').startAt(Date.now()-rvCooldownDays()*86400e3).on('value'"), true, 'the page mirrors rdns_review_v1/sent inside the cooldown, read-only');
+  const rvBlock = html.slice(html.indexOf('var _rvSent = {};'), html.indexOf('</script>', html.indexOf('var _rvSent = {};')));
+  is(/\.ref\([^\n]*\.(set|update|push|remove)\(/.test(rvBlock), false, '…and never writes there (no ref(…).set/update/push/remove in the block)');
 }
 
 console.log('');

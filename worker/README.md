@@ -222,6 +222,8 @@ too, and the two rotate independently):
 | `POST /wa/send` | `{phone, templateName, params}` → immediate send (the Google-review ask after checkout). |
 | `POST /wa/gapfill-preview` | `{}` → what the gap-filler would do this minute: the planned offers, the slots nobody could be offered, the holds it would release. Reads the diary, writes nothing, sends nothing. The panel's "Şimdi dene". |
 | `POST /wa/gapfill-run` | `{}` → one gap-filler run now, exactly as the hourly cron does it (dry run honoured, cap honoured, run recorded). |
+| `POST /wa/review-preview` | `{}` → whom the evening Google review ask would reach right now, and every visit it would leave out with the reason. Reads the diary and the sent log, writes nothing, sends nothing. |
+| `POST /wa/review-run` | `{}` → one review-ask run now, exactly as the 19:00 cron does it (dry run honoured, cap honoured, run recorded). |
 | `GET/POST /wa/hook` | **Piyzi's webhook — no shared key, the signature is the door.** GET echoes `?challenge=` (registration); POST takes Piyzi's signed events and keeps a customer's reply. See "The Piyzi webhook" below. |
 
 Phone numbers are normalised to `90XXXXXXXXXX`; anything that does not
@@ -383,6 +385,62 @@ in `crown-config.js` → `wrangler deploy`. Watch `wrangler tail` for the
 `[gapfill]` lines on the next hour.
 
 ---
+
+# The automatic Google review request (cron, 19:00 Mon–Sat)
+
+Reception touches nothing. Every evening at 19:00 on the salon clock — the
+last tick of the gap-filler's cron line, which runs to 17:00Z so that hour
+exists in winter too — the worker reads the diary out of Firebase and asks
+every customer who was in the chair in the last 3 days AND was marked
+😊 Memnun at checkout to leave a Google review: the approved MARKETING
+template `pyz_google_yorum_istegi` (tr, no variables), whose URL button
+lands on the Royal Diamond review page (placeid `ChIJwZZ4AFQR3hQR-zTpGrHZMdk`).
+Bülent checked the button on his own phone on 15 Eylül 2026 before this went
+live. It runs with every laptop off, like the gap-filler, and is built like
+it in every respect: `runReviewAsk` / pure `raPlan` in `src/index.js`.
+
+**Where the rules are.** `crown-config.js` `reviewAsk`, bundled into the
+worker at deploy — **a change is `wrangler deploy` from this folder** as well
+as a push:
+
+| Setting | Means |
+|---|---|
+| `reviewAsk.enabled` | the kill switch |
+| `reviewAsk.dryRun` | **off since 15 Eylül 2026** — live. `true` and deploy to rehearse: the run then writes what it would send and sends nothing |
+| `reviewAsk.dailyCap` | the most review requests a day (15). Every MARKETING template is billed by Meta per conversation, so this is a money cap, not just a politeness cap; counted against the day's sent log so a re-run cannot leak past it |
+| `reviewAsk.sendHourLocal` | the hour of the run, salon clock (19) |
+| `reviewAsk.lookbackDays` | a visit this many days back, today included, still qualifies (3) — a run the cron missed is caught up |
+| `reviewAsk.cooldownDays` | no second ask to the same customer within this many days, on any record carrying her phone (180: a customer on a 3-week rhythm would otherwise be asked seventeen times a year) |
+
+**Who is asked — ALL of these, or she is not.** The appointment is
+`completed`; `a.sat === 'happy'` — `'unhappy'`, `'not_asked'` and a MISSING
+`sat` are all out, so a record from before the checkout's satisfaction gate
+is never chased; the visit's day is inside the window; her client record has
+a usable phone and is not KAPALI; she is not opted out (`waOptOut`, "STOP" /
+"mesaj istemiyor" in her notes, or her number under
+`rdns_gapfill_v1/optout` — the gap-filler's list, shared on purpose: a woman
+who said STOP said it about everything); and nothing asked her inside the
+cooldown — neither the worker (`rdns_review_v1/sent`) nor the dashboard
+card's manual button (`reviewAskedTs` on her record). One message per phone
+per run. The satisfaction answer is judged per visit: an unhappy visit
+yesterday and a happy one today asks her.
+
+**What it writes.** `rdns_review_v1/sent/<ts-cid>` — claimed as `sending`
+BEFORE the send goes out, then `sent` (with Piyzi's uid) or `failed`; a run
+that dies mid-way leaves a record that may not have gone, never a customer
+asked twice. `rdns_review_v1/runs/<ts>` (last 30) — mode, the asks, and
+every visit looked at and left out with its reason (`memnun değil`,
+`çıkışta sorulmadı`, `memnuniyet kaydı yok`, `geçerli telefon yok`,
+`mesaj istemiyor`, `son 180 günde zaten istendi`, `günlük sınır doldu`).
+`rdns_review_v1/control.paused` stops it without a deploy. Sent records are
+pruned 30 days after the cooldown would have let them go. The app mirrors
+the sent log inside the cooldown (read-only) so the dashboard's ⭐ card and
+the checkout toast say "already asked" for those customers too.
+
+**Rehearse or run by hand:** `POST /wa/review-preview` `{}` shows the plan
+and sends nothing; `POST /wa/review-run` `{}` is one run exactly as the
+cron does it. Until `WA_REVIEW` in `wrangler.toml` names the template a
+live run refuses to send and records `TEMPLATES_NOT_CONFIGURED`.
 
 # The Piyzi webhook (`/wa/hook`) — what customers write back
 

@@ -63,7 +63,8 @@
    ONE FILE, TWO RUNTIMES. The browser pages read it as window.CROWN, as they
    always have. The Cloudflare worker (worker/src/index.js) imports this same
    file — wrangler bundles it in at deploy — so the automatic gap-filler asks
-   the very same serviceSkill, fillOrder, notBefore and gapFill written here.
+   the very same serviceSkill, fillOrder, notBefore, gapFill and reviewAsk
+   written here.
    That is why the file sets a plain `var CROWN` and exposes it at the bottom:
    a change to any of those settings needs a git push for the pages AND a
    `wrangler deploy` from the worker folder for the cron. Nothing in this file
@@ -376,6 +377,45 @@ var CROWN = {
     cancelledWindowDays: 14,
     cancelMinNoticeHours: 24,
     offerNoShows: false
+  },
+
+  /* THE AUTOMATIC GOOGLE REVIEW REQUEST — the worker's evening run
+     (runReviewAsk in worker/src/index.js, the last tick of the gap-filler's
+     cron, at sendHourLocal on the salon clock). It asks a customer who was
+     in the chair in the last lookbackDays days AND was marked 😊 Memnun at
+     checkout to leave a Google review; the message is the approved
+     MARKETING template pyz_google_yorum_istegi, whose button lands on the
+     Royal Diamond review page. 'Memnun değil', 'sorulmadı' and a record
+     with no satisfaction answer at all are never asked — Bülent's decision,
+     15 Eylül 2026: a review request is an invitation to a public star
+     rating. Bundled into the worker like gapFill: a change here is a push
+     AND a wrangler deploy.
+       enabled        the kill switch.
+       dryRun         true = the run records what it WOULD send under
+                      rdns_review_v1/runs and sends nothing. false since
+                      15 Eylül 2026, after Bülent checked the template on his
+                      own phone: the button appears and lands on the review
+                      page.
+       dailyCap       the most review requests in one day. Every MARKETING
+                      template is billed by Meta per conversation, so this is
+                      a MONEY cap, not just a politeness cap: a busy Saturday
+                      cannot turn into an unbounded bill. Counted against the
+                      day's sent log, so a re-run cannot leak past it.
+       sendHourLocal  the hour of the run on the salon clock (19 — the
+                      evening of the visit, when the nails are still new).
+       lookbackDays   a visit this many days back (today included) still
+                      qualifies, so a run the cron missed is caught up.
+       cooldownDays   no second ask to the same customer within this many
+                      days, on any record carrying her phone. A customer on a
+                      3-week rhythm would otherwise be asked seventeen times
+                      a year — and Google takes one review per person anyway. */
+  reviewAsk: {
+    enabled: true,
+    dryRun: false,
+    dailyCap: 15,
+    sendHourLocal: 19,
+    lookbackDays: 3,
+    cooldownDays: 180
   },
 
   /* Which GROUP a service name belongs to — the headings of the service list:

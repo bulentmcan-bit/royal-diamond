@@ -18,11 +18,18 @@ workers_dev = true
 # salon, Monday to Saturday. 06:00–16:00 UTC covers that range in both
 # seasons (09:00 salon is 06:00Z in summer and 07:00Z in winter; 18:00 salon
 # is 15:00Z / 16:00Z), and the worker again asks the salon clock — a firing
-# that lands on 08:00 or 19:00 there leaves without doing anything. Its
+# that lands on 08:00 or 20:00 there leaves without doing anything. Its
 # rules and switches (dry run, cap, kill switch) live in crown-config.js
 # `gapFill`, bundled into the worker at deploy — see the note there.
+#
+# The same line's LAST tick is the automatic Google review request
+# (runReviewAsk), which runs once at reviewAsk.sendHourLocal — 19:00 at the
+# salon, the evening of the visit. 19:00 there is 16:00Z in summer and
+# 17:00Z in winter, so the line runs to 17 (it was 6-16 until 15 Eylül
+# 2026); the extra summer firing at 20:00 salon time leaves quietly, like
+# the others. Its switches live in crown-config.js `reviewAsk`.
 [triggers]
-crons = ["0 3 * * *", "0 4 * * *", "0 6-16 * * 1-6"]
+crons = ["0 3 * * *", "0 4 * * *", "0 6-17 * * 1-6"]
 
 # The confirm-page store. Each key holds ONE appointment's public face — date,
 # time, service, and the customer's answer — and nothing else: no name, no
@@ -89,6 +96,15 @@ WA_CONF = '{"templateName":"pyz_appointment_booked_v2","languageCode":"tr","body
 # gapFill.dryRun=false) sends nothing and records TEMPLATES_NOT_CONFIGURED —
 # a dry run needs no template.
 WA_GAPFILL = '{"templateName":"bosluk_teklifi","languageCode":"tr","body":[]}'
+
+# The automatic Google review request — the MARKETING template
+# pyz_google_yorum_istegi (approved at Meta, tr, no variables; its URL
+# button lands on the Royal Diamond review page — checked on the owner's own
+# phone 15 Eylül 2026), sent by the 19:00 cron tick (runReviewAsk) to the
+# customers marked 😊 Memnun at checkout. Same contract as WA_GAPFILL:
+# emptied, a LIVE run (crown-config reviewAsk.dryRun=false) sends nothing
+# and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
+WA_REVIEW = '{"templateName":"pyz_google_yorum_istegi","languageCode":"tr","body":[]}'
 
 # The Piyzi webhook (/wa/hook) is signed with the whsec_… key Piyzi shows
 # ONCE when the webhook is registered. It is the wrangler secret

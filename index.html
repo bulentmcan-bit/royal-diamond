@@ -17839,6 +17839,10 @@ function rvMsg(name){
 function rvClientAsked(c){
   if(!c) return true;
   if(c.reviewAskedTs) return true;
+  // The automatic evening ask (worker runReviewAsk → rdns_review_v1/sent):
+  // a customer it reached inside reviewAsk.cooldownDays is asked by nobody
+  // else either — this card and the checkout toast both read this.
+  if(typeof rvAutoAsked==='function' && rvAutoAsked(c)) return true;
   // NOTE: legacy a.reviewAsked flags are ignored — the old auto-popup stamped
   // appointments even when the popup was blocked and nothing was ever sent.
   return false;
@@ -17911,6 +17915,45 @@ function rvSendAll(){
     setTimeout(function(){ rvSend(it.client.id); }, i*900);
   });
 }
+// ── the automatic ask's log, mirrored into the page ──────────────────────
+// rdns_review_v1/sent is written by the worker (runReviewAsk, 19:00 every
+// evening, customers marked 😊 Memnun at checkout). The records inside
+// reviewAsk.cooldownDays are kept here by client id and by phone (last ten
+// digits — the record holds 90533…, the card 0533…) so rvClientAsked can
+// say "already asked" for them too. Read-only: the page never writes here.
+var _rvSent = {};
+function rvCooldownDays(){ try{ var d=Number(window.CROWN && CROWN.reviewAsk && CROWN.reviewAsk.cooldownDays); return d>0 ? d : 180; }catch(e){ return 180; } }
+function rvAutoAsked(c){
+  try{
+    var cutoff = Date.now() - rvCooldownDays()*86400e3;
+    var keys = [String(c.id)];
+    var ph = String(c.phone||'').replace(/\D/g,'');
+    if(ph.length >= 10) keys.push('p'+ph.slice(-10));
+    for(var i=0;i<keys.length;i++){ var ts = _rvSent[keys[i]]; if(ts && ts >= cutoff) return true; }
+  }catch(e){}
+  return false;
+}
+(function(){
+  var _started=false, _timer=null;
+  function start(){
+    try{
+      if(_started) return;
+      if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled) return;
+      _started=true; clearInterval(_timer);
+      _fbDb.ref('rdns_review_v1/sent').orderByChild('ts').startAt(Date.now()-rvCooldownDays()*86400e3).on('value',function(s){
+        var v=s.val()||{}, m={};
+        Object.keys(v).forEach(function(k){
+          var r=v[k]; if(!r || !(r.st==='sent'||r.st==='sending')) return;
+          var ts=Number(r.ts)||0, ph=String(r.phone||'').replace(/\D/g,'');
+          [String(r.cid||''), ph.length>=10 ? 'p'+ph.slice(-10) : ''].forEach(function(key){ if(key && ts>(m[key]||0)) m[key]=ts; });
+        });
+        _rvSent=m;
+        try{ renderReviewCard(); }catch(e){}
+      },function(e){ console.warn('[rv] sent read denied:',e); });
+    }catch(e){ console.warn('[rv] start:',e); }
+  }
+  _timer=setInterval(start,3000);
+})();
 </script>
 
 <script>

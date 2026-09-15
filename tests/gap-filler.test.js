@@ -570,7 +570,7 @@ console.log('8. the runner');
     {
       const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
       const src = fs.readFileSync(path.join(__dirname, '..', 'worker', 'src', 'index.js'), 'utf8');
-      is(/crons = \["0 3 \* \* \*", "0 4 \* \* \*", "0 6-16 \* \* 1-6"\]/.test(toml), true, 'the hourly Mon–Sat cron sits beside the two morning ones');
+      is(/crons = \["0 3 \* \* \*", "0 4 \* \* \*", "0 6-17 \* \* 1-6"\]/.test(toml), true, 'the hourly Mon–Sat cron sits beside the two morning ones (to 17Z since 15 Eylül 2026: the 19:00 review ask needs the extra winter tick)');
       is(/^WA_GAPFILL = '\{"templateName":"bosluk_teklifi","languageCode":"tr","body":\[\]\}'$/m.test(toml), true, 'WA_GAPFILL names the approved template bosluk_teklifi, tr, no variables');
       is(/if \(h === 6\) \{[\s\S]*?await sendMorningReminders\(env\);[\s\S]*?\}\s*if \(h >= 9 && h <= 18\) await runGapFiller\(env, when\);/.test(src), true, 'the scheduled handler: six o\'clock → reminders, nine to six → the gap-filler, else nothing');
       is(/^import '\.\.\/\.\.\/crown-config\.js';/m.test(src), true, 'crown-config.js is imported into the worker');
