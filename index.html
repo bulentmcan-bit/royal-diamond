@@ -2665,7 +2665,13 @@
         cl={id:Date.now()+Math.floor(Math.random()*999),name:(req.name||'Online Müşteri').trim(),phone:cleanPhone,notes:'🌐 Online randevu sayfasından kayıt',visits:0};
         clients.push(cl);
       }
-      const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true};
+      const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true,
+        // Where she came from, carried over from the booking page. The page reads
+        // it off its own address -- booking.html?src=instagram -- so a link in an
+        // ad, a bio or a QR code can each be told apart. It used to stop at the
+        // request and never reach the appointment, which meant "an online booking
+        // arrived" was all anyone could ever know. 'web' is the plain link.
+        src:(req.src||'web')};
       appointments.push(a);
       try{ _rdLogApptCreate(a,'online-booking'); }catch(e){}
       _obMarkProcessed(id);
@@ -6306,7 +6312,22 @@ function renderDashGrid(){
 
   // Date label
   const dl = document.getElementById('dash-grid-datestr');
-  if(dl) dl.textContent = dashGridDate.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  if(dl){
+    dl.textContent = dashGridDate.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    // The booking page's own score, where it cannot be missed. Shown always,
+    // zeros included: "0 today" is the answer to "is it working?" just as much
+    // as "4 today" is, and a line that only appears on good days tells nobody
+    // anything.
+    try{
+      var _ot = rdOnlineTally();
+      dl.insertAdjacentHTML('beforeend',
+        '<span style="font-weight:700;font-size:0.78rem;color:#2f7fe0;' +
+        'background:rgba(47,127,224,0.10);border:1px solid rgba(47,127,224,0.30);' +
+        'border-radius:9px;padding:3px 10px;margin-left:12px;white-space:nowrap;" ' +
+        'title="Online randevu sayfasından gelen randevular">🌐 ONLINE · bugün ' +
+        _ot.today + '/' + _ot.todayAll + ' · bu hafta ' + _ot.week + '/' + _ot.weekAll + '</span>');
+    }catch(e){}
+  }
   const dp = document.getElementById('dash-grid-datepick');
   if(dp){
     const y=dashGridDate.getFullYear(), m=String(dashGridDate.getMonth()+1).padStart(2,'0'), d=String(dashGridDate.getDate()).padStart(2,'0');
@@ -6365,7 +6386,7 @@ function renderDashGrid(){
       const doneBorder = isMoneyOk ? 'rgba(232,132,122,0.4)' : 'rgba(230,168,80,0.45)';
       html += '<div style="background:'+(isDone?doneBg:isPast?'rgba(255,255,255,0.04)':'rgba(37,211,102,0.13)')+';border:1px solid '+(isDone?doneBorder:isPast?'rgba(255,255,255,0.1)':'rgba(37,211,102,0.25)')+';border-left:3px solid '+col+';border-radius:6px;padding:6px 7px;margin-bottom:5px;'+(isDone?'opacity:0.85;':'')+'">';
       const isBday = (a.birthday || (typeof isBirthdayAppt==='function' && isBirthdayAppt(a.clientId, a.datetime)));
-      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+((typeof rdWaPhoneMark==='function')?rdWaPhoneMark(a.clientId):'')+'</div>';
+      html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+((typeof rdWaPhoneMark==='function')?rdWaPhoneMark(a.clientId):'')+((typeof rdOnlineMark==='function')?rdOnlineMark(a,true):'')+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
       html += '<div style="font-size:0.63rem;color:#6b8c70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;">'+a.service+'</div>';
       // Unpaid old debt on this customer — one small line so reception knows
@@ -9430,6 +9451,52 @@ function gotoWAfor(cid){goto("whatsapp",null);waFocusClient=cid;}
 let apptFilter="all";
 function fAppt(f,el){apptFilter=f;document.querySelectorAll("#page-appointments .tab").forEach(t=>t.classList.remove("active"));if(el)el.classList.add("active");renderAppts();}
 
+/* ── online bookings, visible without a report ─────────────────────────────
+   Every appointment reception accepts from the booking page is stamped
+   online:true (and now src: where she came from). The stamp has been written
+   for months and shown nowhere, so nobody could tell what the booking page was
+   actually doing without digging through reports.
+
+   rdOnlineMark puts a small 🌐 on the appointment itself, and rdOnlineTally
+   counts them for today and for this week, for the line beside the date. Both
+   fail quiet: a missing field or a bad date is simply not counted, never an
+   error on the screen reception works from all day. ---------------------- */
+var RD_SRC_ICON = { web:'🌐', google:'🔍', instagram:'📷', facebook:'👍',
+                    tiktok:'🎵', tavsiye:'🗣', tabela:'🪧', otel:'🏨' };
+function rdOnlineMark(a, small){
+  try{
+    if(!a || !a.online) return '';
+    var src = String(a.src||'web').toLowerCase();
+    var ic  = RD_SRC_ICON[src] || '🌐';
+    var lbl = (src && src !== 'web') ? (' ' + src.toUpperCase()) : '';
+    var fs  = small ? '0.56rem' : '0.6rem';
+    return '<span title="Online randevu sayfasından geldi' + (lbl?' — '+src:'') + '" ' +
+      'style="background:#2f7fe0;color:#fff;font-size:'+fs+';font-weight:800;' +
+      'padding:1px 5px;border-radius:7px;margin-left:5px;white-space:nowrap;">' +
+      ic + lbl + '</span>';
+  }catch(e){ return ''; }
+}
+function rdOnlineTally(){
+  var out = { today:0, week:0, todayAll:0, weekAll:0 };
+  try{
+    var now = new Date();
+    var t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    var t1 = t0 + 86400000;
+    // The week the salon thinks in: Monday to Sunday, Monday being day 1.
+    var dow = (now.getDay() + 6) % 7;
+    var w0 = t0 - dow * 86400000;
+    var w1 = w0 + 7 * 86400000;
+    (appointments||[]).forEach(function(a){
+      if(!a || a.status === 'cancelled') return;
+      var t = new Date(a.datetime).getTime();
+      if(!t) return;
+      if(t >= t0 && t < t1){ out.todayAll++; if(a.online) out.today++; }
+      if(t >= w0 && t < w1){ out.weekAll++;  if(a.online) out.week++;  }
+    });
+  }catch(e){}
+  return out;
+}
+
 function renderAppts(){
   try{ applyPriceOverrides(appointments); }catch(e){}
   let list=[...appointments];
@@ -9443,7 +9510,7 @@ function renderAppts(){
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:7px">
         <div class="avatar" style="background:${avC(c?.name)};width:26px;height:26px;font-size:0.68rem">${avI(c?.name)}</div>
-        <strong>${c?.name}</strong>${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}${typeof rdWaPhoneMark==='function'?rdWaPhoneMark(a.clientId):''}${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
+        <strong>${c?.name}</strong>${typeof rdOnlineMark==='function'?rdOnlineMark(a):''}${typeof rdWaAnsMark==='function'?rdWaAnsMark(a):''}${typeof rdWaPhoneMark==='function'?rdWaPhoneMark(a.clientId):''}${(a.birthday||isBirthdayAppt(a.clientId,a.datetime))?' <span style="background:#c94040;color:#fff;font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:8px;">🎂 DOĞUM GÜNÜ · %25</span>':''}</div></td>
       <td>${a.service}</td>
       <td style="font-size:0.81rem">${fDT(a.datetime)}</td>
       <td style="color:var(--muted)">${a.duration}m</td>
