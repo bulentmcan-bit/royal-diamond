@@ -63,7 +63,7 @@ const CASES = [
       { at: 60,  data: '{"path":"/","data":null}' },
       { at: 360, data: '{"path":"/abc-123","data":{"g":"single","src":"shelly","ts":1,"who":"lissa"}}' },
     ],
-    want: { cls: 'ok on', txt: 'Onaylandı 👑' },
+    want: { cls: 'ok on', txt: 'Onaylandı 👑 · 60 dk' },
   },
   {
     name: "another girl's press was already queued — hers still confirms",
@@ -72,7 +72,7 @@ const CASES = [
       { at: 60,  data: '{"path":"/","data":{"old-1":{"g":"double","src":"shelly","ts":1,"who":"helen"}}}' },
       { at: 360, data: '{"path":"/new-9","data":{"g":"single","src":"shelly","ts":2,"who":"lissa"}}' },
     ],
-    want: { cls: 'ok on', txt: 'Onaylandı 👑' },
+    want: { cls: 'ok on', txt: 'Onaylandı 👑 · 60 dk' },
   },
   {
     name: "somebody else's press arrives, hers does not — no crown is claimed",
@@ -81,7 +81,7 @@ const CASES = [
       { at: 60,  data: '{"path":"/","data":null}' },
       { at: 360, data: '{"path":"/other","data":{"g":"single","src":"shelly","ts":1,"who":"hannah"}}' },
     ],
-    want: { cls: 'ok on', txt: 'Gönderildi — ekrana bak' },
+    want: { cls: 'ok on', txt: 'Gönderildi — ekrana bak · 60 dk' },
     slow: true,
   },
   {
@@ -95,7 +95,7 @@ const CASES = [
     net: 'ok',
     noES: true,
     puts: [],
-    want: { cls: 'ok on', txt: 'Gönderildi — ekrana bak' },
+    want: { cls: 'ok on', txt: 'Gönderildi — ekrana bak · 60 dk' },
     slow: true,
   },
 ];

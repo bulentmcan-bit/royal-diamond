@@ -27,17 +27,28 @@
 
   button.act{
     flex:1 1 0;min-height:0;width:100%;
-    border:1px solid #2a2a35;border-radius:18px;
+    border:1px solid #2a2a35;border-radius:15px;
     background:#16161f;color:#f5f2ea;
-    font:600 20px/1.2 inherit;
-    display:flex;align-items:center;gap:14px;padding:0 20px;
+    font:600 17px/1.15 inherit;
+    display:flex;align-items:center;gap:11px;padding:0 14px;
     transition:transform .08s ease,background .12s ease;
   }
-  button.act .ico{font-size:26px;width:34px;text-align:center;flex:0 0 auto}
-  button.act .lbl{text-align:left}
-  button.act .en{display:block;font-size:12px;font-weight:500;color:#8b8880;margin-top:3px;letter-spacing:.04em}
+  button.act .ico{font-size:21px;width:27px;text-align:center;flex:0 0 auto}
+  button.act .lbl{text-align:left;min-width:0}
+  button.act .en{display:block;font-size:10px;font-weight:500;color:#8b8880;margin-top:2px;letter-spacing:.05em}
   button.act:active{transform:scale(.975);background:#1e1e2a}
   button.act[disabled]{opacity:.45}
+
+  /* How long this one gets. A plain job shows its length; a job carrying an
+     add-on shows the minutes the add-on is worth, with the total underneath —
+     so the extra time reads as something earned, not as a longer job. */
+  button.act .mins{margin-left:auto;text-align:right;flex:0 0 auto;line-height:1.1}
+  button.act .mins b{display:block;font-size:15px;font-weight:800;color:#c9a227}
+  button.act .mins s{display:block;font-size:9px;font-weight:600;color:#4e4c46;
+                     text-decoration:none;letter-spacing:.06em;margin-top:2px}
+  /* the add-on rows, marked as a continuation of the row above them */
+  button.act.sub{border-left:3px solid #3d3417;background:#141420}
+  button.act.sub .mins b{color:#e8c76a}
 
   button.finish{background:#1b1410;border-color:#573a1c}
   button.finish .en{color:#a8845a}
@@ -93,11 +104,27 @@
     {id:"lissa",  name:"Lissa"}
   ];
 
+  // WHAT SHE MAY START, and how long each one gets.
+  //
+  //   g     the gesture the relay speaks — unchanged, and the same one the
+  //         three Shelly buttons on the wall send
+  //   lim   how long this job gets. Left out on "İşi bitir", which ends one.
+  //   d     the add-on that earned the extra minutes, when there is one
+  //   add   what that add-on is worth, for the phone to print
+  //
+  // These numbers are also written in crown-config.js (`designs`, `pressLimits`)
+  // and in the relay. This page is deliberately self-contained — a girl with a
+  // customer in the chair cannot wait for a second file to load — so the three
+  // copies are kept honest by tests/design-addon.test.js, which fails the moment
+  // they disagree.
   var ACTIONS = [
-    {g:"single", ico:"💅", tr:"Manikür başlat",   en:"START MANICURE"},
-    {g:"double", ico:"🦶", tr:"Pedikür başlat",   en:"START PEDICURE"},
-    {g:"triple", ico:"👁", tr:"Kirpik başlat",    en:"START EYELASHES"},
-    {g:"long",   ico:"✅", tr:"İşi bitir",        en:"FINISH THE JOB", cls:"finish"}
+    {g:"single", ico:"💅", tr:"Manikür",         en:"MANICURE",         lim:60},
+    {g:"single", ico:"✨", tr:"+ Desen A",       en:"DESIGN A",         lim:75, d:"a",   add:15, cls:"sub"},
+    {g:"single", ico:"💎", tr:"+ Desen B",       en:"DESIGN B",         lim:90, d:"b",   add:30, cls:"sub"},
+    {g:"double", ico:"🦶", tr:"Pedikür",         en:"PEDICURE",         lim:45},
+    {g:"triple", ico:"👁", tr:"Kirpik — Klasik", en:"LASHES · CLASSIC", lim:75},
+    {g:"triple", ico:"✨", tr:"Kirpik — Volume", en:"LASHES · VOLUME",  lim:90, d:"vol", add:15, cls:"sub"},
+    {g:"long",   ico:"✅", tr:"İşi bitir",       en:"FINISH THE JOB",   cls:"finish"}
   ];
 
   var main  = document.getElementById("main");
@@ -133,7 +160,8 @@
   // request, and wait to SEE a new one appear with her name and her gesture on
   // it. That is a truer confirmation than the reply would have been, and it
   // needs nothing changed on the server.
-  function send(who, g, btn){
+  function send(who, a, btn){
+    var g = a.g;
     if (busy) return;
     busy = true;
     var all = main.querySelectorAll("button");
@@ -148,11 +176,26 @@
       if (es) { try { es.close(); } catch(e){} }
       busy = false;
       for (var i=0;i<all.length;i++) all[i].disabled = false;
-      if (state) { buzz(35); say("ok", msg); }
+      if (state) { buzz(35); say("ok", msg + (a.lim ? " · " + a.lim + " dk" : "")); }
       else       { buzz([40,60,40]); say("bad", msg, 4200); }
     }
 
-    function isMine(rec){ return rec && rec.who === who && rec.g === g; }
+    // Three of the seven buttons send the same gesture, so the gesture alone no
+    // longer says which press was hers — the length has to match too, or a plain
+    // manicure would confirm a Desen B and she would be told the wrong number.
+    // A press carrying no length still matches one, which is what the three
+    // Shelly buttons on the wall send.
+    function isMine(rec){
+      if (!rec || rec.who !== who || rec.g !== g) return false;
+      // A press that names a DIFFERENT length is somebody else's — three of the
+      // seven buttons send the same gesture, so the gesture alone no longer
+      // tells them apart. A press naming NO length still matches: that is what
+      // the wall buttons send, and what this relay wrote before it learned
+      // about lengths. Being strict there would leave her watching
+      // "Gönderiliyor…" for a crown that had already landed.
+      if (rec.lim == null) return true;
+      return Number(rec.lim) === Number(a.lim || 0);
+    }
 
     function onPut(e){
       var m; try { m = JSON.parse(e.data); } catch(err){ return; }
@@ -172,6 +215,8 @@
       var url = ENDPOINT + "?k=" + encodeURIComponent(KEY)
               + "&who=" + encodeURIComponent(who)
               + "&g="   + encodeURIComponent(g)
+              + (a.lim ? "&lim=" + encodeURIComponent(a.lim) : "")
+              + (a.d   ? "&d="   + encodeURIComponent(a.d)   : "")
               + "&src=phone&t=" + Date.now();
       fetch(url, {mode:"no-cors", cache:"no-store"})
         .then(function(){ sent = true; })
@@ -211,13 +256,17 @@
     ACTIONS.forEach(function(a){
       var b = document.createElement("button");
       b.className = "act" + (a.cls ? " " + a.cls : "");
+      var mins = '';
+      if (a.add)      mins = '<span class="mins"><b>+' + a.add + ' dk</b><s>toplam ' + a.lim + '</s></span>';
+      else if (a.lim) mins = '<span class="mins"><b>' + a.lim + ' dk</b></span>';
       b.innerHTML = '<span class="ico">' + a.ico + '</span>'
-                  + '<span class="lbl">' + a.tr + '<span class="en">' + a.en + '</span></span>';
-      b.addEventListener("click", function(){ send(p.id, a.g, b); });
+                  + '<span class="lbl">' + a.tr + '<span class="en">' + a.en + '</span></span>'
+                  + mins;
+      b.addEventListener("click", function(){ send(p.id, a, b); });
       main.appendChild(b);
     });
     document.getElementById("foot").innerHTML =
-      'Basmazsan 👑 yok — 👑 yoksa prim yok &nbsp;·&nbsp; <a class="switch" href="?who=">kişi değiştir</a>';
+      '👑 yoksa prim yok &nbsp;·&nbsp; <a class="switch" href="?who=">kişi değiştir</a>';
   }
 
   function drawPicker(){

@@ -66,11 +66,68 @@ console.log('6. the relay and the config still agree');
      [null, null, null, null, null], 'anything else is refused');
   is(C.designFor('b', 'manicure').addMin, 30, 'Desen B is +30 on a manicure');
   is(C.designFor('a', 'manicure').addMin, 15, 'Desen A is +15 on a manicure');
-  is(C.designFor('vol', 'lash').addMin, 30, 'Volume is +30 on lashes');
+  is(C.designFor('vol', 'lash').addMin, 15, 'Volume is +15 on lashes');
   is(C.designFor('b', 'pedicure'), null, 'a design is refused on a pedicure');
   is(C.designFor('vol', 'manicure'), null, 'volume is refused on a manicure');
   is(C.designFor('nonsense', 'manicure'), null, 'an unknown add-on is refused');
   is(C.designFor(null, 'manicure'), null, 'no add-on is no add-on');
+}
+
+// ── 7. the phone's own copy of the numbers must match the config ───────────
+console.log("7. the phone page agrees with the config");
+{
+  require(path.join(ROOT, 'crown-config.js'));
+  const C = globalThis.CROWN;
+  const tap = fs.readFileSync(path.join(ROOT, 'tap.html'), 'utf8');
+
+  // pull the button table straight out of the page
+  const rows = [...tap.matchAll(/\{g:"(\w+)",[^}]*?tr:"([^"]+)"[^}]*?\}/g)].map(m => {
+    const line = m[0];
+    const num = k => { const r = new RegExp(k + ':(\\d+)').exec(line); return r ? Number(r[1]) : null; };
+    const str = k => { const r = new RegExp(k + ':"([^"]+)"').exec(line); return r ? r[1] : null; };
+    return { g: m[1], tr: m[2], lim: num('lim'), add: num('add'), d: str('d') };
+  });
+
+  is(rows.length, 7, 'seven buttons on the phone');
+  is(rows.map(r => r.lim), [60, 75, 90, 45, 75, 90, null], 'the lengths, in order down the screen');
+  is(rows.map(r => r.d),   [null, 'a', 'b', null, null, 'vol', null], 'and which add-on each one carries');
+
+  // every length the phone can send must be one the relay will accept
+  rows.filter(r => r.lim).forEach(r =>
+    is(C.pressLimit(r.lim), r.lim, `the relay accepts ${r.lim} min (${r.tr})`));
+
+  // every add-on must exist, belong on that kind of work, and the minutes it
+  // prints must be the minutes it actually adds
+  const TYPE = { single:'manicure', double:'pedicure', triple:'lash' };
+  rows.filter(r => r.d).forEach(r => {
+    const dsn = C.designFor(r.d, TYPE[r.g]);
+    is(!!dsn, true, `${r.tr}: the add-on belongs on a ${TYPE[r.g]}`);
+    if (dsn) {
+      is(dsn.addMin, r.add, `${r.tr}: printed +${r.add} matches the config`);
+      const base = rows.find(x => x.g === r.g && !x.d).lim;
+      is(base + dsn.addMin, r.lim, `${r.tr}: ${base} + ${dsn.addMin} really is ${r.lim}`);
+    }
+  });
+
+  // the finish button must never carry a length -- it ends a job, it does not
+  // start one
+  is(rows.find(r => r.g === 'long').lim, null, 'the finish button sends no length');
+
+  // and the press must only carry them when there is something to say, or a
+  // wall press stops looking like a wall press
+  is(/\(a\.lim \? "&lim=" \+ encodeURIComponent\(a\.lim\) : ""\)/.test(tap), true,
+     'the phone omits lim when the button has none');
+  is(/\(a\.d\s+\? "&d="\s+\+ encodeURIComponent\(a\.d\)\s+: ""\)/.test(tap), true,
+     'the phone omits d when the button has none');
+  // the confirmation has to tell the right press from the others
+  // A press naming a DIFFERENT length is not hers -- three buttons share a
+  // gesture. A press naming NO length still is: that is what the wall buttons
+  // send, and being strict there would leave her watching "Gönderiliyor..."
+  // for a crown that had already landed.
+  is(/if \(rec\.lim == null\) return true;/.test(tap), true,
+     'a press with no length still confirms — the wall buttons send none');
+  is(/Number\(rec\.lim\) === Number\(a\.lim \|\| 0\)/.test(tap), true,
+     'but a press naming a different length is somebody else\'s');
 }
 
 const CHROMIUM = [
@@ -135,8 +192,9 @@ if (!chromium) {
      'manicure + Desen B runs 90 minutes and says so');
   is((await press('single', 75, 'a')).limitMin, 75, 'manicure + Desen A runs 75');
   is((await press('double', 45)).limitMin,      45, 'a pedicure runs 45');
-  is((await press('triple', 105, 'vol')).design, 'vol', 'volume lashes are recorded as volume');
-  is((await press('triple', 105, 'vol')).limitMin, 105, 'volume lashes run 105');
+  is((await press('triple', 90, 'vol')).design, 'vol', 'volume lashes are recorded as volume');
+  is((await press('triple', 90, 'vol')).limitMin, 90, 'volume lashes run 90');
+  is((await press('triple', 75)).limitMin, 75, 'classic lashes run 75');
 
   console.log('3. a length off the list is dropped, the press still lands');
   is((await press('single', 61, 'b')).limitMin, 60, '61 minutes is refused and she keeps her 60');
@@ -185,7 +243,7 @@ if (!chromium) {
 
   is(await label(L({ type:'manicure', limitMin:90, design:'b',   limitOvr:true })),
      '💅 Manicure + Desen B', 'the tile names the design');
-  is(await label(L({ type:'lash',     limitMin:105, design:'vol', limitOvr:true })),
+  is(await label(L({ type:'lash',     limitMin:90, design:'vol', limitOvr:true })),
      '👁 Eyelashes + Volume', 'and names a volume set');
   is(await label(L({ type:'manicure', limitMin:60 })),
      '💅 Manicure', 'a plain job reads exactly as before');

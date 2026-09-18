@@ -539,7 +539,7 @@ var CROWN = {
   designs: {
     a:   { label: 'Desen A', addMin: 15, types: ['manicure'] },
     b:   { label: 'Desen B', addMin: 30, types: ['manicure'] },
-    vol: { label: 'Volume',  addMin: 30, types: ['lash']     }
+    vol: { label: 'Volume',  addMin: 15, types: ['lash']     }
   },
 
   /* The only job lengths a PRESS is allowed to ask for. A press is a tap on a
