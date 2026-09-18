@@ -4210,6 +4210,21 @@ p, span, div, label, h1, h2, h3, h4 {
         <div id="dash-rv-list"><div class="r24-empty">Gönderilecek yorum isteği yok — son 3 günde çıkışta 😊 Memnun işaretlenen her yeni müşteri burada belirir. ⭐</div></div>
       </div>
 
+      <!-- NEREDEN DUYDU — the only thing that makes ad spend measurable -->
+      <div class="r24-panel" id="src-panel" style="border-color:rgba(212,169,106,.35);margin-top:14px;">
+        <div class="r24-header">
+          <div class="r24-title">📣 Yeni Müşteriler Nereden Geliyor? <span class="r24-count" id="src-count" style="background:var(--gold);">0</span></div>
+          <select class="fctrl" id="src-range" style="width:auto;padding:4px 8px;font-size:.8rem;" onchange="rdSrcRender()">
+            <option value="30">Son 30 gün</option>
+            <option value="7">Son 7 gün</option>
+            <option value="90">Son 90 gün</option>
+            <option value="0">Tümü</option>
+          </select>
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);margin:-4px 0 8px 2px;">Yeni müşteri kaydederken sorulan “Bizi nereden duydunuz?” cevapları. <b>Sorulmadı</b> satırı yüksekse rakamlar güvenilmez — reklamın işe yarayıp yaramadığı buradan okunur.</div>
+        <div id="src-list"><div class="r24-empty">Henüz cevap kaydedilmedi.</div></div>
+      </div>
+
     </div>
 
     <!-- ════ AYARLAR PAGE — owner-only levers, PIN behind each ════ -->
@@ -5152,6 +5167,20 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="form-row fr2">
       <div class="fg"><label class="flabel" id="flabel-c-bday" data-i18n="lbl_birthday">Doğum Günü 🎂 <span style="color:var(--gold);font-weight:400;text-transform:none;">(kampanya için sorun!)</span></label><input class="fctrl" type="date" id="c-bday"></div>
       <div class="fg"><label class="flabel">🤝 Öneren Müşteri (Referans)</label><select class="fctrl" id="c-ref"><option value="">— Yok —</option></select></div>
+    </div>
+    <div class="form-row fr2">
+      <div class="fg"><label class="flabel">📣 Bizi nereden duydunuz? <span style="color:var(--gold);font-weight:400;text-transform:none;">(yeni müşteriye sorun!)</span></label><select class="fctrl" id="c-src">
+        <option value="">— Sorulmadı —</option>
+        <option value="google">Google / haritada buldum</option>
+        <option value="instagram">Instagram</option>
+        <option value="facebook">Facebook</option>
+        <option value="tiktok">TikTok</option>
+        <option value="tavsiye">Arkadaş tavsiyesi</option>
+        <option value="tabela">Önünden geçerken gördüm</option>
+        <option value="otel">Otel misafiri</option>
+        <option value="diger">Diğer</option>
+      </select></div>
+      <div class="fg"></div>
     </div>
     <div class="form-row fr2">
       <div class="fg"><label class="flabel">Loyalty Tier</label><select class="fctrl" id="c-tier"><option>Bronze</option><option>Silver</option><option>Gold</option><option>VIP</option></select></div>
@@ -8726,6 +8755,7 @@ function renderDash(){
   try{ rdDashActions(); }catch(e){}
   renderDashGrid();
   try{ renderReviewCard(); }catch(e){}
+  try{ rdSrcRender(); }catch(e){}
   // Birthday banner
   const bdayC=clients.filter(c=>isBday(c.birthday));
   const bb=document.getElementById("bday-banner");
@@ -10307,21 +10337,35 @@ function saveClient(){
       clients[idx].points  = parseInt(document.getElementById("c-points").value)||clients[idx].points;
       clients[idx].tier    = document.getElementById("c-tier").value;
       clients[idx].referredBy = parseInt(document.getElementById("c-ref")?.value)||null;
+      // Where she heard of us. Only stamp the date the FIRST time an answer is
+      // given — srcAt is when we learned it, and a later correction of a typo
+      // must not make an old customer look like this week's arrival.
+      var _newSrc = (document.getElementById("c-src")?.value)||"";
+      if(_newSrc !== (clients[idx].src||"")){
+        clients[idx].src = _newSrc;
+        if(_newSrc && !clients[idx].srcAt) clients[idx].srcAt = Date.now();
+        if(!_newSrc) clients[idx].srcAt = null;
+      }
     }
     _editClientId = null;
     document.getElementById("modal-client-title").textContent = "👤 New Client";
     document.getElementById("btn-save-client").textContent = "✓ Save Client";
-    ["c-name","c-phone","c-bday","c-notes","c-ref"].forEach(i=>{const el=document.getElementById(i);if(el)el.value="";});
+    ["c-name","c-phone","c-bday","c-notes","c-ref","c-src"].forEach(i=>{const el=document.getElementById(i);if(el)el.value="";});
     document.getElementById("c-points").value = "0";
     closeModal("mClient");
     toast("✅","Client Updated!",name+" has been updated.","g");
   } else {
     // ADD MODE — new client
     const c={id:Date.now(),name,phone,birthday:document.getElementById("c-bday").value,visits:0,points:parseInt(document.getElementById("c-points").value)||0,tier:document.getElementById("c-tier").value,lastVisit:"—",notes:document.getElementById("c-notes").value.trim(),referredBy:parseInt(document.getElementById("c-ref")?.value)||null};
+    // Ad spend is only measurable if someone asks. Blank is honest — it means
+    // nobody asked — and is counted separately from "Diğer", which is an answer.
+    c.src = (document.getElementById("c-src")?.value)||"";
+    c.srcAt = c.src ? Date.now() : null;
     clients.push(c);
+    if(!c.src)toast("📣","Nereden duydu?",`${c.name} için "Bizi nereden duydunuz?" boş kaldı. Sorup düzenleyin — reklamın işe yarayıp yaramadığını başka türlü ölçemeyiz.`,"");
     if(!c.birthday)toast("🎂","Doğum günü eksik!",`${c.name} için doğum gününü sorup kaydedin — otomatik kutlama ve %20 indirim mesajı için gerekli.`,"");
     if(c.referredBy&&uiOn('campaigns'))toast("🤝","Referans Kaydedildi",`İlk randevusu tamamlanınca ${cName(c.referredBy)}'e teşekkür + %15 indirim mesajı otomatik hazırlanacak.`,"g");
-    ["c-name","c-phone","c-bday","c-notes","c-points","c-ref"].forEach(i=>{const el=document.getElementById(i);if(el)el.value="";});
+    ["c-name","c-phone","c-bday","c-notes","c-points","c-ref","c-src"].forEach(i=>{const el=document.getElementById(i);if(el)el.value="";});
     closeModal("mClient");
     toast("✅","Client Added!",`${c.name} is now in the system.`,"g");
   }
@@ -10341,6 +10385,7 @@ function openEditClient(id){
   document.getElementById("c-notes").value  = c.notes||"";
   document.getElementById("c-points").value = c.points||0;
   document.getElementById("c-tier").value   = c.tier||"Bronze";
+  const _sr=document.getElementById("c-src");if(_sr)_sr.value=c.src||"";
   openModal("mClient");
   popRefSel();
   const _rf=document.getElementById("c-ref");if(_rf)_rf.value=c.referredBy||"";
@@ -17825,6 +17870,71 @@ function rcRecalc(){
   else{box.className='rc-comm rc-locked';val.textContent='Kilitli 🔒';why.textContent='Komisyon için '+remain+' müşteri daha gerekiyor.';}
 }
 
+// ══ 📣 NEREDEN DUYDU — where new customers actually come from ══
+// Without this, an advertising budget is a guess dressed up as a decision.
+var SRC_LABELS = {
+  google:   ['Google / harita','🔍'],
+  instagram:['Instagram','📸'],
+  facebook: ['Facebook','👍'],
+  tiktok:   ['TikTok','🎵'],
+  tavsiye:  ['Arkadaş tavsiyesi','🤝'],
+  tabela:   ['Önünden geçerken','🚶'],
+  otel:     ['Otel misafiri','🏨'],
+  diger:    ['Diğer','•']
+};
+// Pure so it can be tested: hand it the list and the clock, get back the tally.
+// A client counts in the window by srcAt — the moment we LEARNED where she came
+// from — because that is the only date we actually know. Clients recorded before
+// this field existed have no srcAt and no src; they land in "asked" as unasked
+// only when they fall inside the window by id (the id is Date.now() at creation).
+function rdSrcTally(list, days, now){
+  now = now || Date.now();
+  var cutoff = days>0 ? now - days*86400000 : 0;
+  var counts = {}, answered = 0, unasked = 0;
+  (list||[]).forEach(function(c){
+    if(!c) return;
+    var when = c.srcAt || c.id || 0;
+    if(cutoff && !(when >= cutoff)) return;
+    var s = c.src || '';
+    if(!s){ unasked++; return; }
+    if(!SRC_LABELS[s]) s = 'diger';
+    counts[s] = (counts[s]||0) + 1;
+    answered++;
+  });
+  var rows = Object.keys(counts).map(function(k){
+    return { key:k, n:counts[k], pct: answered ? Math.round(100*counts[k]/answered) : 0 };
+  }).sort(function(a,b){ return b.n - a.n; });
+  return { rows:rows, answered:answered, unasked:unasked, total:answered+unasked };
+}
+function rdSrcRender(){
+  var panel = document.getElementById('src-list');
+  if(!panel) return;
+  var sel = document.getElementById('src-range');
+  var days = sel ? (parseInt(sel.value,10)||0) : 30;
+  var t = rdSrcTally(typeof clients!=='undefined'?clients:[], days, Date.now());
+  var cnt = document.getElementById('src-count');
+  if(cnt) cnt.textContent = t.answered;
+  if(!t.total){ panel.innerHTML = '<div class="r24-empty">Bu dönemde yeni müşteri kaydı yok.</div>'; return; }
+  var html = '';
+  t.rows.forEach(function(r){
+    var lab = SRC_LABELS[r.key] || ['Diğer','•'];
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;">'
+         +    '<div style="width:150px;font-size:.85rem;">'+lab[1]+' '+lab[0]+'</div>'
+         +    '<div style="flex:1;height:9px;background:rgba(255,255,255,.07);border-radius:5px;overflow:hidden;">'
+         +      '<div style="height:100%;width:'+r.pct+'%;background:var(--gold);"></div></div>'
+         +    '<div style="width:74px;text-align:right;font-size:.82rem;color:var(--muted);">'+r.n+' · %'+r.pct+'</div>'
+         +  '</div>';
+  });
+  if(t.unasked){
+    html += '<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);font-size:.82rem;color:'
+         + (t.unasked > t.answered ? '#e87a7a' : 'var(--muted)') + ';">'
+         + '⚠️ <b>'+t.unasked+'</b> müşteriye sorulmadı'
+         + (t.unasked > t.answered ? ' — sorulmayan sayısı cevaplananı geçti, bu rakamlara güvenmeyin.' : '.')
+         + '</div>';
+  }
+  panel.innerHTML = html;
+}
+
 // ══ ⭐ Google Yorum İstekleri ══
 var RV_LINK = "https://search.google.com/local/writereview?placeid=ChIJwZZ4AFQR3hQR-zTpGrHZMdk";
 function rvMsg(name){
@@ -20292,6 +20402,23 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       (running?'cbmChangeLimit':'cbmCustom')+'(\''+o.key+'\')">⏱ Süre ayarla (Yönetici)</button>';
   }
 
+  // Who this panel is about. The wall boards show whoever is not hiddenOnBoard
+  // -- Helen, Lissa and Hannah today, with Zara and Beyhan off the wall -- and
+  // this panel is reception's copy of those boards, so it shows the same three.
+  // It used to walk C.operators and list all five, which put two technicians on
+  // reception's screen who are not on the wall, are not in most days' diary,
+  // and cannot be started from the phones either. Their pay, their history and
+  // their diary columns are untouched by this: those screens keep their own
+  // full lists and read C.operators directly, exactly as before.
+  //
+  // counts() below deliberately still walks everyone. The panel is the only
+  // thing in the building that can make a noise, so it watches EVERY running
+  // job and sounds the chime and the alarm whoever crosses -- being off the
+  // wall should not mean going over the hour in silence.
+  function cbmRoster(){
+    return C.operators.filter(function(o){ return !o.hiddenOnBoard; });
+  }
+
   // One row per technician: what she is on, and how long she has left on it.
   function row(o){
     var rec=_ops[o.key]||{}, cur=rec.current;
@@ -21728,7 +21855,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       return;
     }
     _pickHold=false;
-    body.innerHTML=C.operators.map(row).join('');
+    body.innerHTML=cbmRoster().map(row).join('');
   }
 
   // ── starting and finishing from reception ───────────────────────────────
@@ -21737,7 +21864,7 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
   window.cbmStart=function(){
     _pick=function(){
       return '<div class="cbm-pick"><div class="ttl">Kim başlıyor?</div>'+
-        C.operators.map(function(o){
+        cbmRoster().map(function(o){
           var cur=(_ops[o.key]||{}).current;
           return '<button onclick="'+(cur?'cbmFinish':'cbmType')+'(\''+o.key+'\')">'+esc(o.name)+
             (cur?' <span style="color:#8d8574;font-weight:600">— çalışıyor, bitir</span>':'')+'</button>';
