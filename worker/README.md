@@ -5,10 +5,21 @@ job on the Crown Board — no phone, no screen, nothing to log into.
 
 | Press | What happens |
 |---|---|
-| Double | Start a manicure |
-| Triple | Start a pedicure |
+| Single | Start a manicure |
+| Double | Start a pedicure |
+| Triple | Start the eyelashes |
 | Hold ~2 seconds | Finish the job she is on |
-| Single | **Nothing**, on purpose — a knock or a lean must not file a job |
+
+This table was wrong until 17 Sep 2026 — it still showed the mapping from
+before the 25 Aug remap (single empty, double manicure, triple pedicure). The
+live mapping is the one above, and it is what `timers.html` actually does:
+
+```js
+if (gesture === 'single') return startJob(who, 'manicure');
+if (gesture === 'double') return startJob(who, 'pedicure');
+if (gesture === 'triple') return startJob(who, 'lash');
+if (gesture === 'long')   return finishJob(who);
+```
 
 Two pieces make it work, and this folder is the first of them:
 
