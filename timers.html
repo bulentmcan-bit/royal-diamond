@@ -488,7 +488,10 @@ function paint(){
       if (state === 'over') late++;
       ui.el.classList.add(state);
       const cty = C.types[cur.type] || C.types[AREA];
-      ui.job.textContent = cty.icon + ' ' + cty.label;
+      // "💅 Manicure" normally; "💅 Manicure + Desen B" when the extra minutes
+      // were asked for, so the room can see what they were given for.
+      const cdsn = C.designFor(cur.design, cur.type);
+      ui.job.textContent = cty.icon + ' ' + cty.label + (cdsn ? ' + ' + cdsn.label : '');
       // A type with its own colour (eyelashes) wears it here too, so a glance
       // says what she is on without reading the word.
       ui.job.style.color = cty.color || '';
@@ -789,7 +792,7 @@ function fileJob(upd, o, cur){
 
 // customMin is the management override and is almost never passed: leave it out
 // and the job runs on her automatic limit, exactly as every start always has.
-function startJob(who, type, customMin){
+function startJob(who, type, customMin, designKey){
   closeSheet();
   const o = C.find(who);
   if (!db || !o || !C.types[type]) return;
@@ -806,6 +809,12 @@ function startJob(who, type, customMin){
   // Marked so the finished session says why it ran to an unusual length, rather
   // than looking like a limit somebody mistyped months later.
   if (ovr) job.limitOvr = true;
+  // The add-on she chose when she started — a nail design, a volume lash set.
+  // Filed with the job so the wall says what the extra minutes were for, and so
+  // the finished session can be checked against what the customer was charged.
+  // An add-on that does not belong on this kind of work is dropped here.
+  const dsn = C.designFor(designKey, type);
+  if (dsn) job.design = String(designKey).toLowerCase().trim();
   upd['ops/' + o.key + '/name'] = o.name;
   upd['ops/' + o.key + '/current'] = job;
   phase[o.key] = null;
@@ -1439,12 +1448,16 @@ window.CrownBoard = {
   cancel: cancelJob,
   noPress: noPress,
   state: who => { const o = C.find(who); return o ? (ops[o.key] || null) : null; },
-  onButton: (who, gesture) => {
+  onButton: (who, gesture, lim, design) => {
     // The wall-button mapping, remapped 25 Aug — no dead gesture any more:
     //   single → manicure · double → pedicure · triple → lash · long → finish
-    if (gesture === 'single') return startJob(who, 'manicure');
-    if (gesture === 'double') return startJob(who, 'pedicure');
-    if (gesture === 'triple') return startJob(who, 'lash');
+    // `lim` and `design` arrive only from a phone, and only the lengths on
+    // C.pressLimits are honoured — anything else falls through to her ordinary
+    // limit rather than losing her the press.
+    const m = C.pressLimit(lim);
+    if (gesture === 'single') return startJob(who, 'manicure', m, design);
+    if (gesture === 'double') return startJob(who, 'pedicure', m, design);
+    if (gesture === 'triple') return startJob(who, 'lash',     m, design);
     if (gesture === 'long')   return finishJob(who);
     // Anything else is ignored quietly — logged, never acted on, never an
     // error box on a wall screen.
@@ -1494,7 +1507,7 @@ if (db) db.ref('timers/press').on('child_added', snap => {
     },
     (err, committed) => {
       if (err || !committed) return; // somebody else owns this press
-      try { CrownBoard.onButton(p.who, p.g); }
+      try { CrownBoard.onButton(p.who, p.g, p.lim, p.d); }
       catch (e) { console.warn('button press failed:', e); }
       dropPress(snap.ref);
     }

@@ -521,6 +521,35 @@ var CROWN = {
   customLimitMin: 1,
   customLimitMax: 600,
 
+  /* ── ADD-ONS A PRESS MAY CARRY ──────────────────────────────────────────────
+     THIS IS THE ONE PLACE. A job normally runs on the length its type is worth.
+     Some jobs are longer because of what the customer asked for, and the phone
+     says so when the job is started: a nail design, or a volume lash set rather
+     than a classic one. The extra minutes are hers only because the work is
+     really there.
+
+         key     what the phone sends as `d`
+         label   what the wall board writes after the job name
+         addMin  what it adds to the ordinary length, in minutes
+         types   the kinds of work it may be asked for — a design on a pedicure
+                 is ignored, quietly, rather than argued with
+
+     Change a number here and the phone, the relay and both boards follow on the
+     next refresh. Nothing else names these. */
+  designs: {
+    a:   { label: 'Desen A', addMin: 15, types: ['manicure'] },
+    b:   { label: 'Desen B', addMin: 30, types: ['manicure'] },
+    vol: { label: 'Volume',  addMin: 30, types: ['lash']     }
+  },
+
+  /* The only job lengths a PRESS is allowed to ask for. A press is a tap on a
+     phone that anybody in the salon can pick up, so it may not name any number
+     it likes the way management can — it may only choose from this short list,
+     and anything else is dropped. The press still lands, on the ordinary
+     length: a crown is worth more than a minute, and a girl who has done the
+     work should never lose it to a typo in a web address. */
+  pressLimits: [45, 60, 75, 90, 105],
+
   /* The voice the screens announce in — one place, so reception and the wall
      boards always sound like the same person.
 
@@ -777,6 +806,22 @@ var CROWN = {
   // through here, and it is the only thing that decides what counts as one.
   // Nothing chosen, a stray word, a number outside the bounds above: all come
   // back null, and the caller carries on with her automatic limit untouched.
+  // A limit asked for by a press: only the short list above, or null.
+  pressLimit: function(min){
+    if (min == null || min === '') return null;
+    var m = Number(String(min).trim());
+    if (!isFinite(m)) return null;
+    m = Math.round(m);
+    return this.pressLimits.indexOf(m) !== -1 ? m : null;
+  },
+  // The add-on a press asked for, but only if it belongs on that kind of work.
+  // Anything unknown, or asked for on the wrong type, comes back null.
+  designFor: function(key, type){
+    var d = this.designs[String(key == null ? '' : key).toLowerCase().trim()];
+    if (!d) return null;
+    if (type && d.types.indexOf(type) === -1) return null;
+    return d;
+  },
   customLimit: function(min){
     if (min == null || min === '') return null;
     var m = Number(String(min).trim().replace(',', '.'));

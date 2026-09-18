@@ -50,6 +50,14 @@
 const PEOPLE = ['helen', 'hannah', 'lissa'];
 
 const GESTURES = ['single', 'double', 'triple', 'long'];
+// The only job lengths and add-ons a press may ask for. Kept in step with
+// `pressLimits` and `designs` in crown-config.js — the boards read that file,
+// this relay cannot, so the two lists are written out here as well. Change one
+// and change the other.
+const PRESS_LIMITS = [45, 60, 75, 90, 105];
+const DESIGNS = ['a', 'b', 'vol'];
+// Who pressed: the wall buttons, or a phone.
+const SOURCES = ['shelly', 'phone'];
 
 const DB = 'https://royal-diamond-1031c-default-rtdb.firebaseio.com';
 
@@ -1798,6 +1806,12 @@ export default {
     const who = (url.searchParams.get('who') || '').toLowerCase().trim();
     const g   = (url.searchParams.get('g')   || '').toLowerCase().trim();
     const k   =  url.searchParams.get('k')   || '';
+    // Only the phone sends these two, and neither is required. `lim` is how long
+    // this one job gets; `d` is the add-on that earned the extra minutes. A wall
+    // button sends neither and behaves exactly as it always has.
+    const lim = (url.searchParams.get('lim') || '').trim();
+    const d   = (url.searchParams.get('d')   || '').toLowerCase().trim();
+    const src = (url.searchParams.get('src') || '').toLowerCase().trim();
 
     // Checked in this order and before anything is written: a request without
     // the key never reaches the database at all.
@@ -1811,16 +1825,32 @@ export default {
       return reply('ignored', 200);
     }
 
+    // A length or an add-on that is not on the short list is DROPPED, and the
+    // press still lands on the ordinary limit. That is deliberate: the girl has
+    // done the work either way, and a crown is worth more than a minute. A
+    // rejection here would cost her the job on the strength of a typo.
+    const limOk = PRESS_LIMITS.includes(Number(lim)) ? Number(lim) : null;
+    const dOk   = DESIGNS.includes(d) ? d : null;
+    if (lim && limOk === null) console.log('[btn] limit ignored:', JSON.stringify(lim), 'who:', who);
+    if (d   && dOk   === null) console.log('[btn] add-on ignored:', JSON.stringify(d), 'who:', who);
+
     const id = crypto.randomUUID();
     const body = JSON.stringify({
       who, g,
+      // Left out entirely when there is nothing to say, so a wall press is
+      // written exactly as it was before any of this existed.
+      ...(limOk !== null ? { lim: limOk } : {}),
+      ...(dOk   !== null ? { d: dOk }     : {}),
       // The server's clock, not this worker's and definitely not the button's.
       // The boards drop a press older than two minutes, so a tablet that has
       // been asleep does not wake up and start hour-old jobs — and that check
       // is only honest if both ends are on the one clock the salon's devices
       // agree about.
       ts: { '.sv': 'timestamp' },
-      src: 'shelly'
+      // Which thing was pressed. It was always 'shelly' because the wall buttons
+      // were the only caller; the phone says so for itself now, and anything
+      // else is still filed as a wall press rather than believed.
+      src: SOURCES.includes(src) ? src : 'shelly'
     });
 
     // The auth token is sent only if there is one. The salon's rules currently

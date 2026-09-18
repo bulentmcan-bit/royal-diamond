@@ -20493,6 +20493,10 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       var left=cur.startAt+(cur.limitMin||60)*60000-now();
       var cls=left<=0?'cbm-over':(left<=C.warnMs?'cbm-warn':'cbm-run');
       var ty=C.types[cur.type]||{label:cur.type,icon:''};
+      // the add-on she started with, so reception sees what the extra minutes
+      // were for before the customer reaches the till
+      var tyd=(C.designFor?C.designFor(cur.design,cur.type):null);
+      if(tyd) ty={label:ty.label+' + '+tyd.label, icon:ty.icon};
       // The job line reads the SHORT name, Turkish-uppercased — "KİRPİK · 60
       // DK", "MANİ · 60 DK" — and a type with its own colour (eyelashes)
       // wears it here exactly as on the wall boards.
@@ -22064,7 +22068,8 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var left=cur.startAt+(cur.limitMin||60)*60000-now();
     _pick=function(){
       return '<div class="cbm-pick"><div class="ttl">'+esc(o.name)+' — '+
-        (C.types[cur.type]||{}).label+'</div>'+
+        (C.types[cur.type]||{}).label+
+        ((C.designFor&&C.designFor(cur.design,cur.type))?' + '+C.designFor(cur.design,cur.type).label:'')+'</div>'+
         '<div style="color:#8d8574;font-size:.72rem;padding:2px 2px 4px">'+
         (left>0? fmt(left)+' kaldı — bitirirse 👑' : fmt(-left)+' geçti — bitirirse 😢')+'</div>'+
         '<button onclick="cbmDoFinish(\''+o.key+'\')">✓ Bitir</button>'+
