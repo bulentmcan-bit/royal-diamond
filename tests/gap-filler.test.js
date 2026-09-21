@@ -86,7 +86,7 @@ function makeWorker(store, opts) {
   };
   vm.createContext(ctx);
   vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
-    '\n;__api = { gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes, waPhone };', ctx, { filename: 'worker-slice.js' });
+    '\n;__api = { gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes, waPhone, gfDayWord };', ctx, { filename: 'worker-slice.js' });
   return { api: ctx.__api, calls, logs };
 }
 
@@ -548,6 +548,20 @@ console.log('8. the runner');
       const rec = w.calls.find(c => c.method === 'PUT' && c.url.includes('/rdns_gapfill_v1/runs/'));
       is([rec.body.mode, rec.body.sent], ['live', 4], 'the run record says live, 4 sent');
       is(w.calls.some(c => c.url.includes('rdns_wa_log_v1')), true, 'each send also leaves a line in the WhatsApp log');
+    }
+    // live, the day-naming template: {day} becomes bugün / yarın / the weekday
+    {
+      const spec = '{"templateName":"bosluk_gun","languageCode":"tr","body":["{day}"]}';
+      const w = makeWorker(store(), { crown: LIVE });
+      await w.api.runGapFiller(Object.assign({}, env, { WA_GAPFILL: spec }), new Date(NOW), { gapMs: 0 });
+      const piyzi = w.calls.filter(c => c.url.includes('api.piyzi.com'));
+      const claims = w.calls.filter(c => c.method === 'PUT' && c.url.includes('/offers/'));
+      is(piyzi.length > 0, true, 'bosluk_gun: offers go out');
+      is(piyzi.every(c => c.body.templateName === 'bosluk_gun' && Array.isArray(c.body.parameters.body) && c.body.parameters.body.length === 1), true, 'bosluk_gun: exactly one body value each');
+      is(piyzi.map(c => c.body.parameters.body[0]), claims.map(c => w.api.gfDayWord(c.body.d, TODAY)), 'bosluk_gun: each names its own slot\'s day');
+      const wd = w.api.gfDayWord;
+      is([wd('2026-09-15','2026-09-15'), wd('2026-09-16','2026-09-15'), wd('2026-09-17','2026-09-15'), wd('2026-09-19','2026-09-15'), wd('2026-10-01','2026-09-30')],
+         ['bugün', 'yarın', 'Perşembe', 'Cumartesi', 'yarın'], 'gfDayWord: today, tomorrow, weekdays, across a month end');
     }
     // housekeeping on a live run: stale holds released, booked spotted
     {

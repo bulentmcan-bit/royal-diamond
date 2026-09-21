@@ -564,8 +564,23 @@ function waSpec(raw) {
 // the documented POST /whatsapp/messages parameters block. Fields the spec
 // leaves out are not sent at all — Piyzi rejects a parameters block whose
 // counts differ from the template's (TEMPLATE_PARAMS_MISMATCH).
+// The day an offer names, as the customer reads it on the day she gets it:
+// "bugün" for a slot today, "yarın" for tomorrow, the weekday after that
+// ("Perşembe"). It fills {day} in WA_GAPFILL's body — the bosluk_gun
+// template says "…{{1}} için birkaç boş saatimiz kaldı". A template with no
+// {day} in its spec (bosluk_teklifi, body []) never reads it. Both dates are
+// salon-calendar 'YYYY-MM-DD' strings, so no clock or zone is involved.
+const GF_TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+function gfDayWord(slotYmd, todayYmd) {
+  const ms = y => Date.UTC(+y.slice(0, 4), +y.slice(5, 7) - 1, +y.slice(8, 10));
+  const diff = Math.round((ms(String(slotYmd)) - ms(String(todayYmd))) / 86400e3);
+  if (diff === 0) return 'bugün';
+  if (diff === 1) return 'yarın';
+  return GF_TR_DAYS[new Date(ms(String(slotYmd))).getUTCDay()];
+}
+
 function waFill(spec, vals) {
-  const sub = s => String(s).replace(/\{(name|service|dateLong|date|time|when|apptId)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
+  const sub = s => String(s).replace(/\{(name|service|dateLong|date|time|when|apptId|day)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
   const parameters = {};
   if (Array.isArray(spec.header) && spec.header.length) parameters.header = spec.header.map(sub);
   if (Array.isArray(spec.body) && spec.body.length) parameters.body = spec.body.map(sub);
@@ -1379,7 +1394,7 @@ async function runGapFiller(env, now, opts) {
         try { await fbWrite(env, 'PUT', GF + '/offers/' + id, rec); }
         catch (e) { log('claim', id, 'refused — skipped:', String(e)); run.failed++; continue; }
         let r = null, uid = null, err = '';
-        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: o.phone, ...waFill(spec, {}) }); } catch (e) { err = 'PIYZI_UNREACHABLE'; }
+        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: o.phone, ...waFill(spec, { day: gfDayWord(o.d, todayYmd) }) }); } catch (e) { err = 'PIYZI_UNREACHABLE'; }
         if (r && r.body && r.body.success) uid = (r.body.data && r.body.data.messageUid) || null;
         else if (r) err = piyziErr(r).code;
         const ok = !!(r && r.body && r.body.success);
@@ -1761,7 +1776,7 @@ async function handleHook(req, env, ctx, url) {
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
-         waAnswersFromIndex, gfConfig, gfPlan, gfOptedOut, runGapFiller, nicosiaMinutes,
+         waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
          raConfig, raPlan, runReviewAsk,
          hookSign, hookVerify, hookParse, hookMatchOffer, handleHook };
 
