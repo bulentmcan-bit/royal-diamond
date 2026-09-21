@@ -4010,6 +4010,25 @@ p, span, div, label, h1, h2, h3, h4 {
            day is clean the screen is nearly empty, on purpose. -->
       <div id="dash-big-tiles" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;"></div>
       <div id="dash-actions" style="margin-bottom:16px;"></div>
+      <!-- Çağrı: reception calls a technician out loud — pick her name, then
+           the minutes, and the room hears Emel say "Helen, on dakika" (the
+           recordings are voice/cagri/<key>-<minutes>.mp3). It goes through the
+           Crown Board's own announce(), so it is queued behind a real alarm,
+           never on top of one, and the music is held down for it exactly as
+           for any other announcement. It plays on the device that taps it. -->
+      <div class="card" id="cagri-card" style="margin-bottom:16px;">
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">📣 Çağrı
+          <span id="cagri-said" style="margin-left:auto;font-size:0.8rem;font-weight:600;color:var(--muted)">İsim seç, sonra dakika</span></div>
+        <div id="cagri-names" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"></div>
+        <div id="cagri-mins" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;"></div>
+      </div>
+      <style>
+        .cagri-b{padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:'Nunito',sans-serif;font-size:0.95rem;font-weight:700;cursor:pointer;min-height:46px}
+        #cagri-names .cagri-b{flex:1 1 90px}
+        .cagri-b.on{background:var(--gold);border-color:var(--gold);color:#fff}
+        .cagri-b:disabled{opacity:.4;cursor:not-allowed}
+        .cagri-b:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+      </style>
       <!-- KESİNLEŞTİRİLECEK RANDEVULAR — pending rebooks that still need a time -->
       <div class="r24-panel" id="rbq-panel" style="border-color:rgba(217,164,65,.55);display:none;">
         <div class="r24-header">
@@ -21842,6 +21861,44 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
       el.textContent='🔊 Test';
     },400);
   };
+
+  /* Çağrı — the dashboard's call box (see #cagri-card). Same queue, same
+     music handling, same Emel as every other announcement; only the words
+     differ. The names come from crown-config.js like everywhere else, in its
+     order, so a new technician appears here with the rest (she needs her
+     four voice/cagri clips recorded; until then the speech engine says it). */
+  (function(){
+    var WORD={5:'beş',10:'on',15:'on beş',20:'yirmi'};
+    var MINS=[5,10,15,20];
+    var namesEl=document.getElementById('cagri-names');
+    var minsEl=document.getElementById('cagri-mins');
+    var saidEl=document.getElementById('cagri-said');
+    if(!namesEl||!minsEl) return;
+    var chosen=null;
+    (C.operators||[]).forEach(function(o){
+      var k=o.key;
+      var b=document.createElement('button');
+      b.type='button'; b.className='cagri-b'; b.id='cagri-n-'+k; b.textContent=o.name;
+      b.onclick=function(){
+        chosen=o;
+        Array.prototype.forEach.call(namesEl.children,function(c){ c.classList.toggle('on',c===b); });
+        Array.prototype.forEach.call(minsEl.children,function(c){ c.disabled=false; });
+      };
+      namesEl.appendChild(b);
+    });
+    MINS.forEach(function(m){
+      var b=document.createElement('button');
+      b.type='button'; b.className='cagri-b'; b.id='cagri-m-'+m; b.disabled=true;
+      b.textContent=m+' dk';
+      b.onclick=function(){
+        if(!chosen) return;
+        try{ unlockAudio(); }catch(e){}
+        announce({lead:'chime', text:chosen.name+', '+WORD[m]+' dakika', audio:'cagri/'+chosen.key+'-'+m, tail:null});
+        if(saidEl) saidEl.textContent='📣 '+chosen.name+' · '+m+' dakika';
+      };
+      minsEl.appendChild(b);
+    });
+  })();
 
   // Every technician, every kind of job, once a second. A job seen for the
   // first time only has its colour written down — a panel opened halfway
