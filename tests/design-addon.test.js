@@ -242,7 +242,7 @@ if (!chromium) {
   const L = j => ({ lissa: { name:'Lissa', current: j } });
 
   is(await label(L({ type:'manicure', limitMin:90, design:'b',   limitOvr:true })),
-     '💅 Manicure + Desen B', 'the tile names the design');
+     '💅 Manicure + Design B', 'the tile names the design');
   is(await label(L({ type:'lash',     limitMin:90, design:'vol', limitOvr:true })),
      '👁 Eyelashes + Volume', 'and names a volume set');
   is(await label(L({ type:'manicure', limitMin:60 })),

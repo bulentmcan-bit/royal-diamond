@@ -537,8 +537,8 @@ var CROWN = {
      Change a number here and the phone, the relay and both boards follow on the
      next refresh. Nothing else names these. */
   designs: {
-    a:   { label: 'Desen A', addMin: 15, types: ['manicure'] },
-    b:   { label: 'Desen B', addMin: 30, types: ['manicure'] },
+    a:   { label: 'Design A', addMin: 15, types: ['manicure'] },
+    b:   { label: 'Design B', addMin: 30, types: ['manicure'] },
     vol: { label: 'Volume',  addMin: 15, types: ['lash']     }
   },
 
