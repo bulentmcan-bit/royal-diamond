@@ -20190,6 +20190,7 @@ function rdWrCardHtml(r, cls, ix, total){
 // The cloud is still the authority — this is only what to believe until it speaks.
 try{ window.CROWN.setSlots(JSON.parse(localStorage.getItem('rdns_tech_slots')||'{}')); }
 catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
+try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
 </script>
 <style>
 #cbm-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9990;cursor:pointer;
