@@ -6320,7 +6320,12 @@ function renderDashGrid(){
   const el = document.getElementById('dash-daily-grid');
   if(!el) return;
 
-  const staffList = rdStaffOn(dashGridDate);   // who works on the day shown
+  // Who works on the day shown, minus anyone kept off the wall board
+  // (hiddenOnBoard in crown-config.js) — the dashboard shows the same
+  // technicians as the TV boards. Their bookings stay in the diary.
+  const _hidden = {};
+  try{ ((window.CROWN&&window.CROWN.operators)||[]).forEach(function(o){ if(o.hiddenOnBoard) _hidden[o.name]=1; }); }catch(e){}
+  const staffList = rdStaffOn(dashGridDate).filter(function(n){ return !_hidden[n]; });
   const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a',Beyhan:'#7aaae8'};
   // How many starts the day holds for her — the ladder's rungs — so "free" is
   // starts she could still be given, not boxes on a half-hour grid.
@@ -21875,7 +21880,9 @@ catch(e){ try{ window.CROWN.setSlots({}); }catch(_){} }
     var saidEl=document.getElementById('cagri-said');
     if(!namesEl||!minsEl) return;
     var chosen=null;
-    (C.operators||[]).forEach(function(o){
+    // Only the technicians on the wall board — hiddenOnBoard (Zara, Beyhan)
+    // are left off the call box as well.
+    (C.operators||[]).filter(function(o){ return !o.hiddenOnBoard; }).forEach(function(o){
       var k=o.key;
       var b=document.createElement('button');
       b.type='button'; b.className='cagri-b'; b.id='cagri-n-'+k; b.textContent=o.name;
