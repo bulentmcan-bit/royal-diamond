@@ -7536,6 +7536,52 @@ function noShowAppt(id){
   noShowClose(a, auth.role, 'gelmedi');
   saveAll(); renderDash(); renderAppts(); updateApptBadge();
   toast('🚫','Gelmedi','Randevu gelmedi olarak kapatıldı — ciro ve komisyon yazılmadı. ('+auth.role+')','r');
+  nsOffer(a);
+}
+
+/* ── 🚫 The no-show message ───────────────────────────────────────────────
+   A booking nobody cancelled costs the hour twice: the customer who did not
+   come, and the customer on the waiting list who would have taken it. The
+   wording is deliberately polite — it explains what an empty chair costs,
+   it does not tell anyone off — because the point is that she books again
+   AND tells us next time.
+
+   Reception decides whether it goes: nsOffer ASKS, and the send is the
+   ordinary WhatsApp hand-off (wa.me, the same road the ⭐ review ask takes),
+   so no Meta template and no API message fee. Some absences have reasons a
+   message would insult; that is why there is a confirm and not an automatic
+   send. a.noShowMsgTs records that it went, so the card can say so. */
+var NS_PHONE = '0548 893 33 33';
+function nsMsg(name, hhmm){
+  var t = hhmm ? ('saat ' + hhmm + ' ') : '';
+  var te = hhmm ? (hhmm + ' ') : '';
+  return "👑 ROYAL DIAMOND NAIL & BEAUTY 👑\n\n" +
+    "Merhaba " + (name||"değerli müşterimiz") + ",\n\n" +
+    "Bugün " + t + "randevunuz için sizi bekledik, ancak gelemediniz. Bir aksilik olduysa geçmiş olsun. 🤍\n\n" +
+    "Şunu bilmenizi isteriz: o saat yalnızca size ayrılır. Siz gelemediğinizde o saat boş kalır ve bekleme listemizdeki başka bir müşterimiz hizmet alamaz.\n\n" +
+    "Gelemeyeceğiniz bir gün olursa tek bir mesaj yeterli — kimse sorun etmez, biz de saati değerlendirebiliriz. 🤍\n\n" +
+    "Yeni randevunuz için bize yazmanız yeterli. Sizi tekrar ağırlamak isteriz. 💅\n\n" +
+    "— — —\n\n" +
+    "Hello " + (name||"") + ", we kept your " + te + "appointment open today but you weren't able to come. That hour is reserved for you alone — when it goes unused, another customer on our waiting list misses out. If you can't make it, one short message is all we need. Write to us any time to book again.\n\n" +
+    "📞 " + NS_PHONE + " · Royal Diamond Nail & Beauty · Gönyeli";
+}
+// Ask, then hand over to WhatsApp. Never sends by itself.
+function nsOffer(a){
+  try{
+    if(!a) return;
+    var c = clients.find(function(x){ return String(x.id)===String(a.clientId); });
+    if(!c || !c.phone){
+      toast('🚫','Mesaj gönderilemedi','Bu müşterinin kayıtlı telefonu yok — kartına numarasını ekleyin.','r');
+      return;
+    }
+    if(!confirm('Müşteriye "gelmedi" mesajı gönderilsin mi?\n\nWhatsApp açılır, göndere siz basarsınız.\nHastalık, ölüm gibi bir sebep olabilir — emin değilseniz İptal deyin ve önce arayın.')) return;
+    var p = (typeof normalizeWaPhone==='function') ? normalizeWaPhone(String(c.phone)) : String(c.phone).replace(/\D/g,'');
+    window.open('https://wa.me/'+p+'?text='+encodeURIComponent(nsMsg(c.name, String(a.datetime||'').slice(11,16))), '_blank');
+    a.noShowMsgTs = Date.now();
+    if(typeof apptTouch==='function') apptTouch(a);
+    if(typeof saveAll==='function') saveAll();
+    toast('🚫','Gelmedi mesajı hazır', (c.name||'')+' — WhatsApp\u2019ta göndere basmayı unutmayın','g');
+  }catch(e){ console.warn('nsOffer', e); }
 }
 
 // ── 🚫 Cleanup: past appointments still standing 'confirmed' ─────────────────
@@ -10836,6 +10882,7 @@ Details:
 - Location: Royal Palace Hotel, Büyük Fener Sokak, Gönyeli K.K.T.C.
 
 Remind them to arrive with clean, dry nails. Sound warm and excited to see them.
+Also include ONE short, polite line — not a telling-off — saying that the hour is reserved for them alone, asking them to arrive a few minutes early because a late start makes the next customer wait, and asking them to send a message if they cannot come.
 2 short paragraphs, 1-2 emojis.
 Sign off exactly as:
 Royal Diamond Nail Studio 👑
