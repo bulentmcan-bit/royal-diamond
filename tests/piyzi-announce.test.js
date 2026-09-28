@@ -1,4 +1,4 @@
-/* Saying a Piyzi message out loud.
+/* Telling reception a Piyzi message has landed.
 
    Every message a customer sends already reaches the page: the worker's
    /wa/hook writes it to rdns_wa_replies_v1 and the dashboard's replies
@@ -7,7 +7,7 @@
    somebody happened to open Piyzi. This is the announcement that stops that.
 
    Three things this pins:
-     the words, and that four messages at once are ONE line, not four;
+     that it sounds once per batch and only for genuinely new messages;
      the door (window.rdAnnounce) that lets the watcher reach the Crown
        Board's queue at all, since they are separate script blocks;
      the wiring — short chime not the alarm, after the toast, never on the
@@ -32,24 +32,16 @@ const slice = (name) => {
   return src.slice(src.indexOf('\n', a) + 1, b);
 };
 
-// ── 1. the words ─────────────────────────────────────────────────────────
+// ── 1. when it sounds ────────────────────────────────────────────────────
 const ctx = { console };
 vm.createContext(ctx);
 vm.runInContext(slice('WRSAY'), ctx);
 
-is(ctx.rdWrSayLine(0), null, 'nothing new: nothing is said');
-is(ctx.rdWrSayLine(-1), null, 'a nonsense count says nothing rather than talking rubbish');
-is(ctx.rdWrSayLine(null), null, 'a missing count says nothing');
-has(ctx.rdWrSayLine(1), 'Piyzi', 'one message names Piyzi, so reception knows where to look');
-has(ctx.rdWrSayLine(1), 'yeni mesaj geldi', 'and says a new message arrived');
-hasNot(ctx.rdWrSayLine(1), '1 yeni', 'one message is not read out as a number');
-has(ctx.rdWrSayLine(4), '4 yeni mesaj geldi', 'four at once are counted in a single line');
-is(typeof ctx.rdWrSayLine(9), 'string', 'a busy minute still produces one line');
-
-// It is spoken aloud in a room with customers in it: no names, no numbers,
-// no words of the message itself. Only that something arrived.
-const line = ctx.rdWrSayLine(3);
-['+90', '905', 'telefon'].forEach(bad => hasNot(line, bad, 'the spoken line carries no phone number'));
+is(ctx.rdWrShouldSound(0), false, 'nothing new: no sound');
+is(ctx.rdWrShouldSound(-1), false, 'a nonsense count makes no sound rather than a wrong one');
+is(ctx.rdWrShouldSound(null), false, 'a missing count makes no sound');
+is(ctx.rdWrShouldSound(1), true, 'one new message sounds');
+is(ctx.rdWrShouldSound(9), true, 'and so does a busy minute — once');
 
 // ── 2. the door into the Crown Board's queue ─────────────────────────────
 const door = slice('ANNOUNCE-DOOR');
@@ -71,16 +63,38 @@ const wire = src.slice(i, i + 1800);
 
 has(wire, 'var fresh=0', 'the batch counts what is genuinely new');
 has(wire, 'fresh++', 'and counts it where the unread ones are found');
-has(wire, 'rdWrSayLine(fresh)', 'the line is built from that count');
+has(wire, 'rdWrShouldSound(fresh)', 'the decision is made from that count');
 has(wire, "typeof window.rdAnnounce==='function'", 'the board is checked before it is called');
-has(wire, "lead:'chime'", 'the SHORT chime — a message is not an emergency');
-hasNot(wire.slice(wire.indexOf('rdWrSayLine(fresh)')), "lead:'alarm'", 'never the crossing alarm');
+has(wire, "lead:'message'", 'its own light three-note tone, not the fifteen-minute chime');
+hasNot(wire, "lead:'alarm'", 'never the crossing alarm');
 has(wire, 'tail:null', 'no tail chime after it');
+// A tone, not a voice. Nothing is spoken and nothing is read out in a room
+// full of customers.
+hasNot(wire, 'text:', 'no spoken line at all');
+hasNot(wire, 'audio:', 'and no recording either — the tone is the whole message');
+
+// ── 4. the tone itself ───────────────────────────────────────────────────
+n++;
+if (src.indexOf("if(which==='message') return chimeMsg();") < 0) {
+  fails++; console.log('FAIL: playSound must know the message tone');
+}
+const tone = src.slice(src.indexOf('function chimeMsg()'), src.indexOf('function chimeMsg()') + 400);
+has(tone, '1318.5', 'three rising notes, the motif the replies card already dings');
+has(tone, '2217.5', 'up to the top note');
+// Twice over: once was tried and lost under a dryer. The repeat is what makes
+// it carry without making it as long or as loud as the crossing alarm.
+has(tone, '[0, .53]', 'the motif is played twice, a short gap between');
+n++;
+if (!/return\s*1\.15/.test(tone)) { fails++; console.log('FAIL: the tone must report its real length, or the music comes back over it'); }
+n++;
+if (!/return\s*[01]?\.?\d+/.test(tone) || parseFloat((tone.match(/return\s*([\d.]+)/) || [])[1]) > 1.6) {
+  fails++; console.log('FAIL: still shorter than the crossing alarm — a message must never sound like one');
+}
 
 // Order: the toast is on the screen before the room is told to look up.
 n++;
-if (!(wire.indexOf('toast(') < wire.indexOf('rdWrSayLine(fresh)'))) {
-  fails++; console.log('FAIL: the announcement must come after the toasts, not before');
+if (!(wire.indexOf('toast(') < wire.indexOf('rdWrShouldSound(fresh)'))) {
+  fails++; console.log('FAIL: the sound must come after the toasts, not before');
 }
 // Only inside the "we have seen a batch before" guard, so opening the app in
 // the morning does not read out yesterday's unread messages.

@@ -19259,29 +19259,27 @@ function rdWrCardHtml(r, cls, ix, total){
         +'</div></div>';
     }).join('');
   }
-  /* ── saying it out loud ────────────────────────────────────────────────
+  /* ── the sound reception hears ──────────────────────────────────────────
      A corner toast is silent, and reception is not looking at the screen: a
      customer writes, nobody hears it, and the message sits there until
      somebody happens to open Piyzi. That is the whole reason this exists.
 
-     It goes through the Crown Board's announce() (window.rdAnnounce), so it
-     queues behind a real alarm instead of landing on top of one, the music is
-     held down for it, and a technician's crossing is never spoken over. The
-     chime is the short one, not the alarm — a message is not an emergency.
+     A TONE, and no words. The spoken announcements are for a technician who
+     must move now; a customer writing is a "look at the screen", and a voice
+     for that would be talked over, wear out its welcome, and be said in a room
+     full of customers besides. Three quick rising notes, twice over, say it in
+     a second, and the card says the rest.
 
-     ONE line per batch, however many messages arrived in it. Firebase sends
-     the whole list on every change, so a busy minute can bring four new
-     replies at once; four spoken lines would take the best part of a minute
-     and tell reception nothing the first one did not. The count is said
-     instead, and the names stay on the screen where they can be read.
+     It still goes through the Crown Board's announce(), so it queues behind a
+     real alarm instead of landing on top of one and the music is held down for
+     it — the same courtesy every other sound in the room gets.
 
-     The line below is fixture-tested — pure, no DOM, no speech. */
+     ONE sound per batch, however many messages arrived in it: Firebase sends
+     the whole list on every change, and a busy minute can bring four at once.
+
+     Pure, no DOM, no sound — fixture-tested. */
   // WRSAY-SLICE-START
-  function rdWrSayLine(n){
-    if(!(n>0)) return null;
-    return n===1 ? 'Piyzi\u2019ye yeni mesaj geldi'
-                 : 'Piyzi\u2019ye ' + n + ' yeni mesaj geldi';
-  }
+  function rdWrShouldSound(n){ return n>0; }
   // WRSAY-SLICE-END
 
   function onData(map){
@@ -19297,10 +19295,9 @@ function rdWrCardHtml(r, cls, ix, total){
     }
     // After the toasts, so the words are already on the screen by the time the
     // room looks up. Guarded: a page where the Crown Board never loaded still
-    // shows every message, it just cannot say them.
-    var _say=rdWrSayLine(fresh);
-    if(_say && typeof window.rdAnnounce==='function'){
-      try{ window.rdAnnounce({lead:'chime', text:_say, tail:null}); }catch(e){}
+    // shows every message, it just cannot make a sound about them.
+    if(rdWrShouldSound(fresh) && typeof window.rdAnnounce==='function'){
+      try{ window.rdAnnounce({lead:'message', tail:null}); }catch(e){}
     }
     _seen={}; list.forEach(function(r){ _seen[r.id]=1; });
     render();
@@ -20807,10 +20804,31 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
     [4186,5274,6272].forEach(function(f,i){ tone(f,t0+.30+i*.07,.5,.50); });
     return 1.0;
   }
+  /* A message is not a crossing. The fifteen-minute chime is two long notes
+     and the crossing alarm is a falling phrase — both mean DROP WHAT YOU ARE
+     DOING. A customer writing needs a lighter sound that still turns a head:
+     three quick rising notes, the motif the replies card already dings to
+     itself, so the ear that has heard it on the screen recognises it in the
+     room.
+
+     Said TWICE, a short gap between. Once was chosen first and rejected on the
+     floor: half a second of light notes is what a dryer eats, and a sound
+     nobody caught is the same as no sound. The repeat is what makes it survive
+     a working room without having to be loud or long enough to become the
+     alarm. Returns its length in seconds like the others. */
+  function chimeMsg(){
+    if(!audioReady()) return 0;
+    var t0=_ac.currentTime;
+    [0, .53].forEach(function(off){
+      [[1318.5,0],[1760,.13],[2217.5,.26]].forEach(function(n){ tone(n[0], t0+off+n[1], .30, .9); });
+    });
+    return 1.15;
+  }
   function playSound(which){
     if(which==='alarm')   return alarmOver(2);
     if(which==='fanfare') return fanfare();
     if(which==='chime')   return chimeWarn();
+    if(which==='message') return chimeMsg();
     return 0;
   }
 
