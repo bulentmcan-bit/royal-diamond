@@ -250,15 +250,30 @@ const store = () => ({ 'rdns_gapfill_v1/offers': offers });
     is(vm.runInContext('rdCallScan', ctx)([], ctx.clients, st, now + 301e3, replies).map(d => d.key), ['wr|2026-09-14|r2'], 'an expired snooze re-fires');
     is(vm.runInContext('rdCallScan', ctx)(appts, ctx.clients, {}, now).map(d => d.mode), ['change'], 'called the old way, without replies, nothing changes');
     const nameFor = vm.runInContext('rdWrNameFor', ctx);
-    is(nameFor(replies[0], ctx.clients), 'Ayşe Yılmaz', 'the name Piyzi sent');
+    is(nameFor(replies[0], ctx.clients), 'Ayşe Yılmaz', 'the name on her card, matched through a local-format number');
     is(nameFor(replies[1], ctx.clients), 'Bella', 'no name from Piyzi → the customer record with that number');
     is(nameFor({ phone: '905330000000' }, ctx.clients), '+905330000000', 'nobody known → the number, never blank');
+    // The salon's book beats the WhatsApp profile name. The profile name is
+    // whatever she typed into her own phone — "A", "Suz", an emoji — and
+    // showing it made reception ask a two-year regular who she was.
+    is(nameFor({ phone: '905321234567', name: 'Psychology ❤️' }, ctx.clients), 'Ayşe Yılmaz',
+       'the book wins over a WhatsApp nickname');
+    is(nameFor({ phone: '905330000000', name: 'Suz' }, ctx.clients), 'Suz',
+       'not in the book → her profile name is better than a bare number');
+    const stranger = vm.runInContext('rdWrIsStranger', ctx);
+    is(stranger({ phone: '905321234567', name: 'Psychology ❤️' }, ctx.clients), false,
+       'a number in the book is never a stranger, whatever WhatsApp calls her');
+    is(stranger({ phone: '905330000000', name: 'Suz' }, ctx.clients), true,
+       'a number the book has never seen is the one case worth asking about');
     const card = vm.runInContext('rdWrCardHtml', ctx)(replies[0], ctx.clients, 0, 2);
     for (const bit of ['WHATSAPP YANITI — ARAYIN', 'Ayşe Yılmaz', 'tel:+905321234567', '“Evet, isterim”', '15 Eyl', '12:00 · Hannah · Dolgu (Infill)', 'rdCallAns(\'ok\')', 'rdWrGoOffer(\'o-late\')', 'rdCallSnooze()', '1 / 2']) {
       is(card.includes(bit), true, 'the card carries: ' + bit);
     }
+    is(card.includes('KAYITSIZ'), false, 'a known customer is never labelled unregistered');
     const card2 = vm.runInContext('rdWrCardHtml', ctx)(replies[1], ctx.clients, 0, 1);
     is(card2.includes('rdWrGoOffer'), false, 'no offer → no "Teklife git" button');
+    const card3 = vm.runInContext('rdWrCardHtml', ctx)({ phone: '905330000000', name: 'Suz', text: 'x', ts: now }, ctx.clients, 0, 1);
+    is(card3.includes('KAYITSIZ'), true, 'an unknown number says so, so asking for a name is a decision');
     const unread = vm.runInContext('rdWrUnreadOf', ctx)({ a: replies[0], b: replies[2], c: replies[1] });
     is(unread.map(r => r.id), ['r2', 'r1'], 'rdWrUnreadOf: the unread ones, newest first');
     is(/txt:'WhatsApp yanıtı okunmadı — müşteriyi arayın', amber:true, act:"rdDashReveal\('dash-wa-replies-panel'\)"/.test(html), true, 'the dashboard carries the amber count line');

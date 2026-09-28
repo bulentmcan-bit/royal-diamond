@@ -19183,14 +19183,39 @@ function rdWrUnreadOf(map){ return rdWrList(map).filter(function(r){ return !r.r
 // Her name: what Piyzi's contact carried, else the customer record with
 // that number, else the number itself — never blank on a card that says
 // ARAYIN.
-function rdWrNameFor(r, cls){
-  if(r && r.name) return String(r.name);
-  var ph=String((r&&r.phone)||'');
-  var c=(cls||[]).find(function(x){
-    try{ return !!(x&&x.phone)&&(typeof normalizeWaPhone==='function'?normalizeWaPhone(String(x.phone)):String(x.phone).replace(/\D/g,''))===ph; }catch(e){ return false; }
-  });
-  return (c&&c.name)||('+'+ph);
+/* WHOSE name reception sees.
+
+   Piyzi sends the WhatsApp PROFILE name — whatever the customer typed into her
+   own phone. In this salon's inbox that is "A", "Suz", "Psychology", an emoji,
+   or nothing at all. It used to WIN over the salon's own book, so a customer of
+   two years showed up as a stranger and reception asked her for her name. One
+   of them was asked twice in a day and said so.
+
+   The book wins now. It holds the name she was booked under, which is the name
+   reception needs and the one on her card. Piyzi's profile name is the fallback
+   for a number the book does not have, and the number itself is the last resort
+   — this never comes back blank. */
+function rdWrPhoneKey(p){
+  try{ return (typeof normalizeWaPhone==='function') ? normalizeWaPhone(String(p||'')) : String(p||'').replace(/\D/g,''); }
+  catch(e){ return String(p||'').replace(/\D/g,''); }
 }
+function rdWrClientFor(r, cls){
+  var want=rdWrPhoneKey((r&&r.phone)||'');
+  if(!want) return null;
+  var hit=null;
+  (cls||[]).forEach(function(x){ if(!hit && x && x.phone && rdWrPhoneKey(x.phone)===want) hit=x; });
+  return hit;
+}
+function rdWrNameFor(r, cls){
+  var c=rdWrClientFor(r, cls);
+  if(c && c.name) return String(c.name);
+  if(r && r.name) return String(r.name);
+  return '+'+String((r&&r.phone)||'');
+}
+// The ONLY case where reception has to ask who this is: a number the salon's
+// book has never seen. Said out loud on the row, so that asking for a name is a
+// decision rather than a habit — and so nobody asks a regular twice.
+function rdWrIsStranger(r, cls){ return !rdWrClientFor(r, cls); }
 function rdWrDayTR(ymd){ try{ return new Date(String(ymd)+'T12:00:00').toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short'}); }catch(e){ return String(ymd||''); } }
 function rdWrWhen(ts){ if(!ts) return ''; var d=new Date(Number(ts)); var p=function(n){ return String(n).padStart(2,'0'); }; return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }
 // "Pzt 14 Eyl 09:00 · Helen · Dolgu (Infill)" — the slot she was offered.
@@ -19203,6 +19228,7 @@ function rdWrCardHtml(r, cls, ix, total){
   return '<div class="rdca-kicker chg"><span class="rdca-pulse"></span> WHATSAPP YANITI — ARAYIN</div>'
     +'<div class="rdca-lead">'+(r.offer?'Boşluk teklifine cevap verdi — arayıp saati deftere yazın':'WhatsApp\'tan yazdı — şimdi arayın')+'</div>'
     +'<div class="rdca-name">'+esc(nm)+'</div>'
+    +(rdWrIsStranger(r, cls)?'<div style="font-size:14px;font-weight:800;letter-spacing:.06em;color:#e8c579;margin-top:-4px;">KAYITSIZ NUMARA — İSMİNİ SORUN</div>':'')
     +'<div class="rdca-meta">'+(when?esc(when)+' &nbsp;·&nbsp; ':'')+'<b>“'+esc(r.text||'(metin yok)')+'”</b>'
     +(off?'<br><span style="font-size:15px;color:#e8c579;">Teklif edilen saat: <b>'+esc(off)+'</b></span>':'')+'</div>'
     +'<a class="rdca-tel" href="'+tel+'">+'+esc(ph)+'</a><div class="rdca-telnote"></div>'
@@ -19249,7 +19275,13 @@ function rdWrCardHtml(r, cls, ix, total){
       var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
       return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;'+(r.read?'opacity:0.6;':'border-left:4px solid #c4863a;background:rgba(196,134,58,0.08);')+'">'
         +'<div style="flex:1;min-width:220px;">'
-        +'<div style="font-weight:800;font-size:0.92rem;">'+esc(rdWrNameFor(r, cls()))+' <a href="'+tel+'" style="color:var(--wa);text-decoration:none;font-weight:700;font-size:0.82rem;margin-left:6px;">📞 +'+esc(ph)+'</a></div>'
+        +'<div style="font-weight:800;font-size:0.92rem;">'+esc(rdWrNameFor(r, cls()))
+        // The name is already known for everybody in the book. This badge marks
+        // the ONLY rows where reception still has to ask — so nobody asks a
+        // regular for her name, which is the way to look like a stranger to
+        // somebody who has been coming for two years.
+        +(rdWrIsStranger(r, cls())?' <span style="background:#c4863a;color:#fff;font-size:0.6rem;font-weight:800;letter-spacing:.06em;padding:2px 7px;border-radius:8px;vertical-align:middle;">KAYITSIZ · İSMİNİ SORUN</span>':'')
+        +' <a href="'+tel+'" style="color:var(--wa);text-decoration:none;font-weight:700;font-size:0.82rem;margin-left:6px;">📞 +'+esc(ph)+'</a></div>'
         +'<div style="font-size:0.9rem;margin-top:3px;">“'+esc(r.text||'(metin yok)')+'”</div>'
         +'<div style="font-size:0.74rem;color:var(--muted);margin-top:3px;">'+esc(rdWrWhen(r.ts))+(off?' · Teklif: <b>'+esc(off)+'</b>':' · teklifle eşleşmedi')+(r.read?' · okundu'+(r.readBy?' ('+esc(r.readBy)+')':''):'')+'</div>'
         +'</div>'
