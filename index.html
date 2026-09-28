@@ -19219,6 +19219,49 @@ function rdWrNameFor(r, cls){
 // book has never seen. Said out loud on the row, so that asking for a name is a
 // decision rather than a habit — and so nobody asks a regular twice.
 function rdWrIsStranger(r, cls){ return !rdWrClientFor(r, cls); }
+
+/* ── what she is answering ──────────────────────────────────────────────────
+   One reply on its own is not a sentence. "Başka saat" tells reception
+   nothing; the two messages before it, and the slot we offered her, are what
+   make it mean something. The row now opens to show that.
+
+   What the salon holds is HER side plus what the system sent. Free text typed
+   into Piyzi by whoever was on the desk lives in Piyzi and never reaches here,
+   so the panel says so rather than passing itself off as the whole
+   conversation — a half-thread presented as a whole one is worse than none. */
+function rdWrThread(map, phone){
+  var want=rdWrPhoneKey(phone);
+  if(!want) return [];
+  return rdWrList(map||{})
+    .filter(function(r){ return rdWrPhoneKey(r.phone)===want; })
+    .sort(function(a,b){ return (Number(a.ts)||0)-(Number(b.ts)||0); });
+}
+// The slots we offered this number, newest first, each one once however many
+// times she answered it. Empty means we genuinely do not know what she is
+// replying to — usually a reminder, or an offer older than the fortnight the
+// matcher looks back over.
+function rdWrSentTo(map, phone){
+  var seen={}, out=[];
+  rdWrThread(map, phone).slice().reverse().forEach(function(r){
+    if(!r.offer || !r.offerId || seen[r.offerId]) return;
+    seen[r.offerId]=1; out.push({ id:r.offerId, offer:r.offer, at:r.ts });
+  });
+  return out;
+}
+// Her appointments around now — the other thing "başka saat" can be about.
+// Nearest first, a couple either side of today; never the whole history.
+function rdWrApptsFor(appts, client, now){
+  if(!client) return [];
+  var t=Number(now)||Date.now();
+  return (appts||[])
+    .filter(function(a){ return a && String(a.clientId)===String(client.id) && a.status!=='cancelled'; })
+    .map(function(a){ return { a:a, t:new Date(String(a.datetime)).getTime()||0 }; })
+    .filter(function(x){ return Math.abs(x.t-t) < 45*86400000; })
+    .sort(function(x,y){ return Math.abs(x.t-t)-Math.abs(y.t-t); })
+    .slice(0,4)
+    .sort(function(x,y){ return x.t-y.t; })
+    .map(function(x){ return x.a; });
+}
 function rdWrDayTR(ymd){ try{ return new Date(String(ymd)+'T12:00:00').toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short'}); }catch(e){ return String(ymd||''); } }
 function rdWrWhen(ts){ if(!ts) return ''; var d=new Date(Number(ts)); var p=function(n){ return String(n).padStart(2,'0'); }; return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }
 // "Pzt 14 Eyl 09:00 · Helen · Dolgu (Infill)" — the slot she was offered.
@@ -19247,7 +19290,9 @@ function rdWrCardHtml(r, cls, ix, total){
 }
 // WAREPLY-SLICE-END
 (function(){
-  var _wr={}, _seen=null, _started=false, _timer=null;
+  var _wr={}, _seen=null, _started=false, _timer=null, _open=null;
+  // Opening a row is a local, per-device thing — nothing is written anywhere.
+  window.rdWrToggle=function(id){ _open=(_open===String(id)?null:String(id)); render(); };
   function cls(){ try{ return clients||[]; }catch(e){ return []; } }
   window.rdWrUnread=function(){ return rdWrUnreadOf(_wr); };
   window.rdWrMarkRead=function(id, v){
@@ -19267,6 +19312,46 @@ function rdWrCardHtml(r, cls, ix, total){
       setTimeout(function(){ el.style.background=''; }, 3500);
     }, 400);
   };
+  /* The opened row. Everything here is already on this device; nothing is
+     fetched. It answers one question — what is she replying to — and where the
+     salon genuinely cannot answer it, it says so. */
+  function rdWrPanel(r){
+    var esc=rdWrEsc, c=rdWrClientFor(r, cls()), ph=String(r.phone||'');
+    var thread=rdWrThread(_wr, ph), sent=rdWrSentTo(_wr, ph);
+    var appts=[]; try{ appts=rdWrApptsFor(appointments, c, Date.now()); }catch(e){}
+    var h='<div style="padding:12px 14px 14px 30px;background:rgba(127,127,127,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;">';
+
+    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">NEYE CEVAP VERİYOR</div>';
+    if(sent.length){
+      h+=sent.map(function(o){
+        return '<div style="margin-bottom:4px;">📤 Ona gönderdiğimiz boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b></div>';
+      }).join('');
+    }else{
+      h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya son 14 günde sistemden teklif gitmemiş. Muhtemelen bir hatırlatmaya ya da resepsiyonun kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
+    }
+
+    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">ONDAN GELEN TÜM MESAJLAR</div>';
+    h+=thread.map(function(m){
+      var mine=(String(m.id)===String(r.id));
+      return '<div style="margin-bottom:3px;'+(mine?'font-weight:700;':'')+'">'
+        +'<span style="color:var(--muted);font-variant-numeric:tabular-nums;">'+esc(rdWrWhen(m.ts))+'</span> &nbsp;“'+esc(m.text||'(metin yok)')+'”'
+        +(mine?' <span style="color:var(--gold);">← bu satır</span>':'')+'</div>';
+    }).join('');
+
+    if(appts.length){
+      h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">RANDEVULARI</div>';
+      h+=appts.map(function(a){
+        var d=String(a.datetime||''); 
+        return '<div style="margin-bottom:3px;">📆 '+esc(rdWrDayTR(d.slice(0,10)))+' '+esc(d.slice(11,16))+' · '+esc(a.staff||'—')+' · '+esc(a.service||'—')+'</div>';
+      }).join('');
+    }
+
+    h+='<div style="margin-top:11px;padding-top:9px;border-top:1px dashed var(--border);color:var(--muted);font-size:0.76rem;">'
+      +'Resepsiyonun Piyzi\'ye yazdığı cevaplar burada görünmez — onlar Piyzi\'de kalır. Tüm yazışmayı görmek için: '
+      +'<a href="https://app.piyzi.com/messaging/whatsapp" target="_blank" rel="noopener" style="color:var(--wa);font-weight:700;">Piyzi Gelen Kutusu ↗</a></div>';
+    return h+'</div>';
+  }
+
   function render(){
     var list=document.getElementById('dash-wa-replies-list'), count=document.getElementById('dash-wa-replies-count');
     var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read; });
@@ -19276,7 +19361,10 @@ function rdWrCardHtml(r, cls, ix, total){
     if(!rows.length){ list.innerHTML='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>'; return; }
     list.innerHTML=rows.map(function(r){
       var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
-      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;'+(r.read?'opacity:0.6;':'border-left:4px solid #c4863a;background:rgba(196,134,58,0.08);')+'">'
+      var isOpen=(String(_open)===String(r.id));
+      // The whole row opens. Reception is reaching for it with a customer on
+      // the phone, so the target is the row, not a small chevron.
+      return '<div onclick="rdWrToggle(\''+esc(r.id)+'\')" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;'+(r.read?'opacity:0.6;':'border-left:4px solid #c4863a;background:rgba(196,134,58,0.08);')+(isOpen?'background:rgba(212,169,106,0.14);':'')+'">'
         +'<div style="flex:1;min-width:220px;">'
         +'<div style="font-weight:800;font-size:0.92rem;">'+esc(rdWrNameFor(r, cls()))
         // The name is already known for everybody in the book. This badge marks
@@ -19284,14 +19372,17 @@ function rdWrCardHtml(r, cls, ix, total){
         // regular for her name, which is the way to look like a stranger to
         // somebody who has been coming for two years.
         +(rdWrIsStranger(r, cls())?' <span style="background:#c4863a;color:#fff;font-size:0.6rem;font-weight:800;letter-spacing:.06em;padding:2px 7px;border-radius:8px;vertical-align:middle;">KAYITSIZ · İSMİNİ SORUN</span>':'')
-        +' <a href="'+tel+'" style="color:var(--wa);text-decoration:none;font-weight:700;font-size:0.82rem;margin-left:6px;">📞 +'+esc(ph)+'</a></div>'
+        +' <a href="'+tel+'" onclick="event.stopPropagation()" style="color:var(--wa);text-decoration:none;font-weight:700;font-size:0.82rem;margin-left:6px;">📞 +'+esc(ph)+'</a></div>'
         +'<div style="font-size:0.9rem;margin-top:3px;">“'+esc(r.text||'(metin yok)')+'”</div>'
         +'<div style="font-size:0.74rem;color:var(--muted);margin-top:3px;">'+esc(rdWrWhen(r.ts))+(off?' · Teklif: <b>'+esc(off)+'</b>':' · teklifle eşleşmedi')+(r.read?' · okundu'+(r.readBy?' ('+esc(r.readBy)+')':''):'')+'</div>'
         +'</div>'
-        +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-        +(r.offerId?'<button onclick="rdWrGoOffer(\''+esc(r.offerId)+'\')" style="background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">📋 Teklife git</button>':'')
-        +'<button onclick="rdWrMarkRead(\''+esc(r.id)+'\','+(r.read?'false':'true')+')" style="background:'+(r.read?'rgba(150,150,150,0.12)':'#1ea34f')+';border:1px solid '+(r.read?'rgba(150,150,150,0.45)':'#1ea34f')+';color:'+(r.read?'#777':'#fff')+';border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">'+(r.read?'↺ Okunmadı':'✓ Okundu')+'</button>'
-        +'</div></div>';
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        +'<span style="color:var(--muted);font-size:0.72rem;white-space:nowrap;">'+(isOpen?'▴ kapat':'▾ neye cevap verdi')+'</span>'
+        +(r.offerId?'<button onclick="event.stopPropagation();rdWrGoOffer(\''+esc(r.offerId)+'\')" style="background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">📋 Teklife git</button>':'')
+        +'<button onclick="event.stopPropagation();rdWrMarkRead(\''+esc(r.id)+'\','+(r.read?'false':'true')+')" style="background:'+(r.read?'rgba(150,150,150,0.12)':'#1ea34f')+';border:1px solid '+(r.read?'rgba(150,150,150,0.45)':'#1ea34f')+';color:'+(r.read?'#777':'#fff')+';border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">'+(r.read?'↺ Okunmadı':'✓ Okundu')+'</button>'
+        +'</div></div>'
+        // The answer to "what is she replying to", right under the question.
+        +(isOpen?rdWrPanel(r):'');
     }).join('');
   }
   /* ── the sound reception hears ──────────────────────────────────────────

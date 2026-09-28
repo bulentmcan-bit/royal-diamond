@@ -274,6 +274,35 @@ const store = () => ({ 'rdns_gapfill_v1/offers': offers });
     is(card2.includes('rdWrGoOffer'), false, 'no offer → no "Teklife git" button');
     const card3 = vm.runInContext('rdWrCardHtml', ctx)({ phone: '905330000000', name: 'Suz', text: 'x', ts: now }, ctx.clients, 0, 1);
     is(card3.includes('KAYITSIZ'), true, 'an unknown number says so, so asking for a name is a decision');
+
+    // ── what she is answering ──────────────────────────────────────────────
+    // "Başka saat" on its own is not a sentence. The row opens to the thread
+    // and to the slot we offered her; where we have neither, it must say so
+    // rather than let reception guess.
+    const map = {
+      a1: { id: 'a1', phone: '905321234567', text: 'Merhaba', ts: now - 300e3, day },
+      a2: { id: 'a2', phone: '905321234567', text: 'Başka saat', ts: now - 60e3, day },
+      b1: { id: 'b1', phone: '905339999999', text: 'Tamam', ts: now - 120e3, day,
+            offerId: 'o1', offer: { d: '2026-09-25', t: '17:30', tech: 'Hannah', service: 'Dolgu (Infill)' } },
+      b2: { id: 'b2', phone: '905339999999', text: 've saat?', ts: now - 30e3, day,
+            offerId: 'o1', offer: { d: '2026-09-25', t: '17:30', tech: 'Hannah', service: 'Dolgu (Infill)' } },
+    };
+    const thread = vm.runInContext('rdWrThread', ctx);
+    is(thread(map, '905321234567').map(r => r.text), ['Merhaba', 'Başka saat'], 'her messages, oldest first');
+    is(thread(map, '0532 123 45 67').map(r => r.text).length, 2, 'a local-format number finds the same thread');
+    is(thread(map, '').length, 0, 'no number, no thread — never the whole inbox');
+    const sentTo = vm.runInContext('rdWrSentTo', ctx);
+    is(sentTo(map, '905339999999').length, 1, 'one offer answered twice is still one offer');
+    is(sentTo(map, '905321234567').length, 0, 'nothing was sent to her — the panel must admit it, not invent context');
+    const apptsFor = vm.runInContext('rdWrApptsFor', ctx);
+    const ap = [
+      { id: 1, clientId: 1, datetime: '2026-09-15T14:00', staff: 'Helen', service: 'Dolgu', status: 'confirmed' },
+      { id: 2, clientId: 1, datetime: '2024-01-01T10:00', staff: 'Helen', service: 'Çok eski', status: 'confirmed' },
+      { id: 3, clientId: 1, datetime: '2026-09-16T10:00', staff: 'Lissa', service: 'İptal', status: 'cancelled' },
+      { id: 4, clientId: 2, datetime: '2026-09-15T11:00', staff: 'Helen', service: 'Başkası', status: 'confirmed' },
+    ];
+    is(apptsFor(ap, ctx.clients[0], now).map(a => a.id), [1], 'her own bookings near today; not the cancelled one, not last year, not somebody else\'s');
+    is(apptsFor(ap, null, now), [], 'an unknown number has no bookings to show');
     const unread = vm.runInContext('rdWrUnreadOf', ctx)({ a: replies[0], b: replies[2], c: replies[1] });
     is(unread.map(r => r.id), ['r2', 'r1'], 'rdWrUnreadOf: the unread ones, newest first');
     is(/txt:'WhatsApp yanıtı okunmadı — müşteriyi arayın', amber:true, act:"rdDashReveal\('dash-wa-replies-panel'\)"/.test(html), true, 'the dashboard carries the amber count line');
