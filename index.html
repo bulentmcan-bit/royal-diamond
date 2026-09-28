@@ -19259,14 +19259,48 @@ function rdWrCardHtml(r, cls, ix, total){
         +'</div></div>';
     }).join('');
   }
+  /* ── saying it out loud ────────────────────────────────────────────────
+     A corner toast is silent, and reception is not looking at the screen: a
+     customer writes, nobody hears it, and the message sits there until
+     somebody happens to open Piyzi. That is the whole reason this exists.
+
+     It goes through the Crown Board's announce() (window.rdAnnounce), so it
+     queues behind a real alarm instead of landing on top of one, the music is
+     held down for it, and a technician's crossing is never spoken over. The
+     chime is the short one, not the alarm — a message is not an emergency.
+
+     ONE line per batch, however many messages arrived in it. Firebase sends
+     the whole list on every change, so a busy minute can bring four new
+     replies at once; four spoken lines would take the best part of a minute
+     and tell reception nothing the first one did not. The count is said
+     instead, and the names stay on the screen where they can be read.
+
+     The line below is fixture-tested — pure, no DOM, no speech. */
+  // WRSAY-SLICE-START
+  function rdWrSayLine(n){
+    if(!(n>0)) return null;
+    return n===1 ? 'Piyzi\u2019ye yeni mesaj geldi'
+                 : 'Piyzi\u2019ye ' + n + ' yeni mesaj geldi';
+  }
+  // WRSAY-SLICE-END
+
   function onData(map){
     _wr=map||{};
     var list=rdWrList(_wr);
+    var fresh=0;
     if(_seen){
       list.forEach(function(r){
         if(_seen[r.id]||r.read) return;
+        fresh++;
         try{ toast('💬','WHATSAPP YANITI — ARAYIN', rdWrNameFor(r, cls())+' +'+String(r.phone||'')+': “'+String(r.text||'').slice(0,120)+'”'+(r.offer?' — teklif: '+rdWrOfferLine(r):''), 'r'); }catch(e){}
       });
+    }
+    // After the toasts, so the words are already on the screen by the time the
+    // room looks up. Guarded: a page where the Crown Board never loaded still
+    // shows every message, it just cannot say them.
+    var _say=rdWrSayLine(fresh);
+    if(_say && typeof window.rdAnnounce==='function'){
+      try{ window.rdAnnounce({lead:'chime', text:_say, tail:null}); }catch(e){}
     }
     _seen={}; list.forEach(function(r){ _seen[r.id]=1; });
     render();
@@ -21811,6 +21845,27 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
     _queue.push(spec);
     pump();
   }
+
+  /* The one door into this from the rest of the page.
+
+     Everything that speaks — the fifteen-minute warning, the crossing alarm,
+     Cagri — lives inside this closure and calls announce() directly. The Piyzi
+     replies watcher does not: it is its own script block further down and has
+     no way to reach in here. Rather than move either of them, the queue is put
+     on the window under a name of its own, so anything on the page can ask for
+     a line to be said and still get the whole of this machinery for free — the
+     queue, the music ducking, the failsafe, the one-at-a-time rule.
+
+     Guarded on both sides: a caller that arrives before this script has run
+     finds nothing and must carry on silently, which is why every caller wraps
+     it. It never throws back at the caller either — a page that cannot speak
+     must still show the message on the screen. */
+  // ANNOUNCE-DOOR-SLICE-START
+  window.rdAnnounce = function(spec){
+    try{ if(spec && typeof spec==='object') announce(spec); }catch(e){ console.warn('[announce]', e); }
+  };
+  // ANNOUNCE-DOOR-SLICE-END
+
   function pump(){
     if(_talking || !_queue.length) return;
     _talking=true; _talkingSince=Date.now();
