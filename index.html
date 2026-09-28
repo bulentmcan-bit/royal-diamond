@@ -22120,8 +22120,16 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
      order, so a new technician appears here with the rest (she needs her
      four voice/cagri clips recorded; until then the speech engine says it). */
   (function(){
-    var WORD={5:'beş',10:'on',15:'on beş',20:'yirmi'};
-    var MINS=[5,10,15,20];
+    /* The minutes reception can call out. Each one needs a recording of Emel
+       saying it — voice/cagri/<key>-<minutes>.mp3 — and where the file is
+       missing the browser's own voice reads the line instead, which is worse
+       than no announcement in a room with customers in it. 30 was added at the
+       owner's word on 28 Eylül; the files for it are not recorded yet, so it
+       speaks in the engine's voice until helen-30, lissa-30 and hannah-30 are
+       dropped into voice/cagri/. Nothing in the code changes when they are —
+       say() prefers the file the moment it exists. */
+    var WORD={5:'beş',10:'on',15:'on beş',20:'yirmi',30:'otuz'};
+    var MINS=[5,10,15,20,30];
     var namesEl=document.getElementById('cagri-names');
     var minsEl=document.getElementById('cagri-mins');
     var saidEl=document.getElementById('cagri-said');
