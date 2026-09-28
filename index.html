@@ -6320,11 +6320,14 @@ function renderDashGrid(){
   const el = document.getElementById('dash-daily-grid');
   if(!el) return;
 
-  // Who works on the day shown, minus anyone kept off the wall board
-  // (hiddenOnBoard in crown-config.js) — the dashboard shows the same
-  // technicians as the TV boards. Their bookings stay in the diary.
+  // Who works on the day shown, minus anyone kept off RECEPTION'S GRID
+  // (hiddenOnDash in crown-config.js). This used to read hiddenOnBoard, which
+  // is the TELEVISION's flag, and the two are not the same question: Beyhan is
+  // off the wall but the desk has to see her Perşembe column, because that is
+  // where her customers are booked. Their bookings stay in the diary either
+  // way; this only decides which columns reception is shown.
   const _hidden = {};
-  try{ ((window.CROWN&&window.CROWN.operators)||[]).forEach(function(o){ if(o.hiddenOnBoard) _hidden[o.name]=1; }); }catch(e){}
+  try{ ((window.CROWN&&window.CROWN.operators)||[]).forEach(function(o){ if(o.hiddenOnDash) _hidden[o.name]=1; }); }catch(e){}
   const staffList = rdStaffOn(dashGridDate).filter(function(n){ return !_hidden[n]; });
   const staffColors = {Helen:'#d4a96a',Hannah:'#7ecec4',Lissa:'#e8847a',Zara:'#b8a0d8',Saeideh:'#f5c27a',Beyhan:'#7aaae8'};
   // How many starts the day holds for her — the ladder's rungs — so "free" is

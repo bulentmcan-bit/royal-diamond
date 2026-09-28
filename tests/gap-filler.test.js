@@ -149,7 +149,7 @@ console.log('1. the settings');
   is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { cancelledWindowDays: undefined }) })).gap.cancelledWindowDays, 14, 'a missing window is 14');
   is(cfg.gap.cancelMinNoticeHours, 24, 'the cancelled route wants 24 hours\' notice — a same-day canceller is not chased (Bülent\'s decision)');
   is(api.gfConfig(Object.assign({}, C, { gapFill: Object.assign({}, C.gapFill, { cancelMinNoticeHours: undefined }) })).gap.cancelMinNoticeHours, 24, 'a missing notice setting is 24 as well');
-  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen', 'beyhan'], 'fill order on a Tuesday: Hannah, Lissa, Helen, then Beyhan (not in fillOrder, appended); Zara is off Tuesdays');
+  is(cfg.fillOrderOn(TODAY).map(o => o.key), ['hannah', 'lissa', 'helen'], 'fill order on a Tuesday: the three only — Zara is off Tuesdays and Beyhan is Perşembe alone');
   is(cfg.fillOrderOn('2026-09-14').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'on a Monday: Hannah, Lissa, Helen, then Zara; Beyhan is off Mondays');
   is(cfg.fillOrderOn('2026-09-17').map(o => o.key), ['hannah', 'lissa', 'helen', 'zara', 'beyhan'], 'on a Thursday: all five');
   is(cfg.fillOrderOn('2026-09-16').map(o => o.key), ['hannah', 'lissa', 'helen'], 'on a Wednesday: the three');
@@ -390,10 +390,10 @@ console.log('6. notBefore');
   is(later.offers[0].tech, 'Hannah', 'from the 14th on she is first, as fillOrder says');
 }
 
-console.log('6b. workdays: never Zara on a Tuesday, never Beyhan on a Monday');
+console.log('6b. workdays: never Zara on a Tuesday, Beyhan on Perşembe alone');
 {
   // Run on Monday 14 Eylül at 10:00 — the window is Pzt 14 … Cum 18, which
-  // holds one of each: Zara's days are Pzt and Perş, Beyhan's Salı and Perş.
+  // holds one of each: Zara's days are Pzt and Perş, Beyhan's is Perş alone.
   // Enough due customers that every free hour of hers could be sold, so an
   // empty day is a day the roster refused, not a day nobody was due.
   const { api } = makeWorker({});
@@ -424,9 +424,10 @@ console.log('6b. workdays: never Zara on a Tuesday, never Beyhan on a Monday');
 
   const b = api.gfPlan({ data: both, offers: {}, optout: {}, cfg: only('beyhan'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
   is(b.offers.length > 0 && b.offers.every(o => o.tech === 'Beyhan'), true, 'Beyhan alone on the roster: she gets offers (' + b.offers.length + ')');
-  is(dates(b.offers), ['2026-09-15', '2026-09-17'], 'her offers fall on Salı the 15th and Perşembe the 17th, no other day');
+  is(dates(b.offers), ['2026-09-17'], 'her offers fall on Perşembe the 17th and nowhere else');
   is(b.offers.some(o => o.d === MON), false, 'Beyhan is NEVER offered a Monday — not even the day the run happens');
-  is(b.offers.every(o => [2, 4].includes(wd(o.d))), true, 'every one of her slots is on a weekday in her workdays [2, 4]');
+  is(b.offers.some(o => o.d === '2026-09-15'), false, 'and never a Tuesday any more — that day came off on 28 Eylül');
+  is(b.offers.every(o => wd(o.d) === 4), true, 'every one of her slots is a Perşembe, her one workday');
   is(b.offers.every(o => o.service === 'Klasik Kirpik Uygulaması'), true, 'and they are all lash customers');
   const bn = api.gfPlan({ data: nails, offers: {}, optout: {}, cfg: only('beyhan'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
   is(bn.offers, [], 'forty due manicure customers and only Beyhan free: NOBODY is offered — she is not a nail technician and nobody is substituted');
@@ -442,7 +443,8 @@ console.log('6b. workdays: never Zara on a Tuesday, never Beyhan on a Monday');
   is(all.offers.filter(o => o.tech === 'Zara' && ![1, 4].includes(wd(o.d))), [], 'a full run never puts Zara on a day off');
   is(all.offers.filter(o => o.tech === 'Beyhan' && ![2, 4].includes(wd(o.d))), [], 'a full run never puts Beyhan on a day off');
   is(all.offers.filter(o => o.tech === 'Beyhan' && o.service !== 'Klasik Kirpik Uygulaması'), [], 'a full run never sends Beyhan a nail customer');
-  is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-15'), true, 'and she does get lash customers on her Tuesday (' + all.offers.filter(o => o.tech === 'Beyhan').length + ' in all)');
+  is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-17'), true, 'and she does get lash customers on her Perşembe (' + all.offers.filter(o => o.tech === 'Beyhan').length + ' in all)');
+  is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-15'), false, 'and none at all on the Tuesday she no longer works');
   is(all.offers.some(o => o.tech === 'Zara' && o.d === MON), true, 'and Zara gets manicure customers on her Monday (' + all.offers.filter(o => o.tech === 'Zara').length + ' in all)');
   // Under the LIVE cap the rules are the same, only fewer offers.
   const capped = api.gfPlan({ data: both, offers: {}, optout: {}, cfg, nowMs: monMs, todayYmd: MON, nowMin: 600 });

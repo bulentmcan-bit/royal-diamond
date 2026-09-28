@@ -44,7 +44,7 @@
    A technician who works only SOME DAYS OF THE WEEK gets `workdays`, an
    array of weekday numbers, 0 = Pazar … 6 = Cumartesi:
 
-       { key:'zara', name:'Zara', hiddenOnBoard: true, workdays: [1, 4] }
+       { key:'zara', name:'Zara', hiddenOnBoard: true, hiddenOnDash: true, workdays: [1, 4] }
 
    is Pazartesi and Perşembe. `rosterOn(date)` leaves her out on every other
    weekday, so the diary's columns, the booking page, Uygun Saat Bul, the
@@ -80,9 +80,14 @@ var CROWN = {
        the same order minus anyone not working that day (leftOn, workdays —
        see rosterOn), so the day-to-day picture is:
          Pazartesi          Helen, Lissa, Zara, Hannah
-         Salı               Helen, Lissa, Beyhan, Hannah
-         Çarşamba/Cuma/Cmt  Helen, Lissa, Hannah
+         Salı/Çarş/Cuma/Cmt Helen, Lissa, Hannah
          Perşembe           Helen, Lissa, Zara, Beyhan, Hannah
+
+       RECEPTION'S DASHBOARD is a separate question from the wall, and the
+       flag for it is `hiddenOnDash`. The wall hides whoever has
+       hiddenOnBoard; the dashboard hides whoever has hiddenOnDash. Beyhan
+       carries only the first, so she is off the television and ON reception's
+       grid on her day. Zara carries both and stays off each.
        Take the hiddenOnBoard flag off a line and she appears on the wall in
        this position without any other line changing. */
     { key:'helen',  name:'Helen',  photo:'op-helen.png'  },
@@ -93,15 +98,22 @@ var CROWN = {
        availability and every salary screen still see her. workdays: she is
        here Pazartesi and Perşembe only, so on the other days the diary
        shows no column for her and nothing automatic offers her. */
-    { key:'zara',   name:'Zara',   hiddenOnBoard: true, workdays: [1, 4] },
+    { key:'zara',   name:'Zara',   hiddenOnBoard: true, hiddenOnDash: true, workdays: [1, 4] },
     /* Beyhan — brows and lashes, NOT nails: kas and kirpik in serviceSkill
        below, never manikur, pedikur or agda, so the diary warns, and the
-       booking page and the gap-filler refuse, a manicure with her. Salı and
-       Perşembe only. No photo, and off the wall board for now, like Zara.
+       booking page and the gap-filler refuse, a manicure with her. PERŞEMBE
+       ONLY since 28 Eylül 2026 — she used to be Salı as well, and the Tuesday
+       came off at the owner's word. That one array is the gate: from here the
+       diary, the booking page, Uygun Saat Bul and the gap-filler all stop
+       putting her on a Tuesday, so nobody can be booked with her on a day she
+       is not in.
+       No photo. hiddenOnBoard keeps her off the TELEVISION; she has no
+       hiddenOnDash, so reception's dashboard grid shows her column on
+       Perşembe, which is where the desk needs to see it.
        She is on commission only (80% of her own client income, no salary,
        paid monthly) — that is written on the money screens in index.html,
        not here. */
-    { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [2, 4] },
+    { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [4] },
     /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
        included) her jobs earn no commission on any screen that counts money;
        everything she earned BEFORE that date stays exactly as it was, and her
