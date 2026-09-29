@@ -19220,6 +19220,22 @@ function rdWrNameFor(r, cls){
 // decision rather than a habit — and so nobody asks a regular twice.
 function rdWrIsStranger(r, cls){ return !rdWrClientFor(r, cls); }
 
+/* The WhatsApp hand-off — reception answering without leaving the page.
+
+   wa.me opens whatever WhatsApp is signed in on THIS machine, which is the
+   salon's own 0548 893 33 33. She wrote to the Piyzi number, 0539 140 3333, so
+   the reply lands in a different chat on her phone; that is the price of
+   answering in one click and it is worth saying out loud rather than
+   discovering. Nothing is pre-typed: every one of these needs its own answer,
+   and a draft that has to be deleted first is slower than an empty box.
+
+   No number, no link — the button is not drawn at all rather than opening
+   WhatsApp on nothing. */
+function rdWrWaLink(phone){
+  var d=String(phone||'').replace(/\D/g,'');
+  return d.length>=10 ? 'https://wa.me/'+d : null;
+}
+
 /* ── what she is answering ──────────────────────────────────────────────────
    One reply on its own is not a sentence. "Başka saat" tells reception
    nothing; the two messages before it, and the slot we offered her, are what
@@ -19378,6 +19394,7 @@ function rdWrCardHtml(r, cls, ix, total){
         +'</div>'
         +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
         +'<span style="color:var(--muted);font-size:0.72rem;white-space:nowrap;">'+(isOpen?'▴ kapat':'▾ neye cevap verdi')+'</span>'
+        +(rdWrWaLink(ph)?'<a href="'+rdWrWaLink(ph)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="background:var(--wa);border:1px solid var(--wa);color:#fff;border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;text-decoration:none;font-family:inherit;white-space:nowrap;">💬 Yanıtla</a>':'')
         +(r.offerId?'<button onclick="event.stopPropagation();rdWrGoOffer(\''+esc(r.offerId)+'\')" style="background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.4);color:var(--gold);border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">📋 Teklife git</button>':'')
         +'<button onclick="event.stopPropagation();rdWrMarkRead(\''+esc(r.id)+'\','+(r.read?'false':'true')+')" style="background:'+(r.read?'rgba(150,150,150,0.12)':'#1ea34f')+';border:1px solid '+(r.read?'rgba(150,150,150,0.45)':'#1ea34f')+';color:'+(r.read?'#777':'#fff')+';border-radius:8px;padding:7px 11px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;">'+(r.read?'↺ Okunmadı':'✓ Okundu')+'</button>'
         +'</div></div>'

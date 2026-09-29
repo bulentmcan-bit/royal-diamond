@@ -303,6 +303,18 @@ const store = () => ({ 'rdns_gapfill_v1/offers': offers });
     ];
     is(apptsFor(ap, ctx.clients[0], now).map(a => a.id), [1], 'her own bookings near today; not the cancelled one, not last year, not somebody else\'s');
     is(apptsFor(ap, null, now), [], 'an unknown number has no bookings to show');
+
+    // ── the WhatsApp hand-off ──────────────────────────────────────────────
+    // One click from the row into the salon's own WhatsApp. Nothing is
+    // pre-typed: every reply is different, and a draft that has to be deleted
+    // first is slower than an empty box.
+    const waLink = vm.runInContext('rdWrWaLink', ctx);
+    is(waLink('905338690346'), 'https://wa.me/905338690346', 'digits only, no plus');
+    is(waLink('+90 533 869 03 46'), 'https://wa.me/905338690346', 'spaces and a plus are stripped');
+    is(waLink('447958486308'), 'https://wa.me/447958486308', 'a foreign number works the same');
+    is(waLink(''), null, 'no number, no link — the button is not drawn at all');
+    is(waLink('12345'), null, 'and nothing is made of a fragment that could not be a phone');
+    is(/text=/.test(waLink('905338690346') || ''), false, 'nothing is pre-typed into the reply');
     const unread = vm.runInContext('rdWrUnreadOf', ctx)({ a: replies[0], b: replies[2], c: replies[1] });
     is(unread.map(r => r.id), ['r2', 'r1'], 'rdWrUnreadOf: the unread ones, newest first');
     is(/txt:'WhatsApp yanıtı okunmadı — müşteriyi arayın', amber:true, act:"rdDashReveal\('dash-wa-replies-panel'\)"/.test(html), true, 'the dashboard carries the amber count line');
