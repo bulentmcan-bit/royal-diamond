@@ -21002,9 +21002,18 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
     }
   }catch(e){}
 
-  function say(text, after, audioKey){
+  function say(text, after, audioKey, recordedOnly){
     var done=false;
     function fin(){ if(done) return; done=true; if(after) after(); }
+    // recordedOnly: say it in the salon's own voice or do not say it at all.
+    // The speech engine is a good safety net for the fifteen-minute warning and
+    // the crossing alarm — a line in a wrong voice still carries the news, and
+    // those fire on their own with nobody watching. The call box is the other
+    // case: reception presses it deliberately, in a room with customers in it,
+    // and the only Turkish voice on these laptops is Microsoft Tolga, a man.
+    // A man's voice calling a technician in a beauty salon is worse than the
+    // chime alone, so there it stays quiet until the recording exists.
+    var missTts = recordedOnly ? fin : tts;
     // The salon's voice is pre-recorded — a Turkish woman's voice (Emel) in
     // voice/<key>-warn.mp3 and voice/<key>-over.mp3, so it never depends on what
     // this laptop happens to have installed. speechSynthesis stays underneath as
@@ -21031,15 +21040,16 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
       if(a){
         a.volume=C.voice.volume;
         a.onended=fin;
-        a.onerror=tts;                          // missing or unreadable → speak it
+        a.onerror=missTts;                      // missing or unreadable → speak it, or (recordedOnly) stay quiet
         // Only for a load that hangs without ever firing an event, so a stuck
         // file can never jam the queue behind it. A file that plays is ~3s.
         setTimeout(function(){ if(!done && !wentTTS) fin(); }, 8000);
         var p=a.play();
-        if(p && p.catch) p.catch(tts);          // autoplay refusal / decode error
+        if(p && p.catch) p.catch(missTts);      // autoplay refusal / decode error
         return;
       }
     }
+    if(recordedOnly){ fin(); return; }
     tts();
   }
 
@@ -22066,7 +22076,7 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
           // Once. The line used to be said twice to get through the old speech
           // engine's mumble; the recorded voice is clear enough that the
           // repeat only made announcements drag.
-          say(it.text, finishTail, it.audio);
+          say(it.text, finishTail, it.audio, it.recordedOnly);
         }catch(e){ release(); }
         function finishTail(){
           var tail=0;
@@ -22138,13 +22148,22 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
      four voice/cagri clips recorded; until then the speech engine says it). */
   (function(){
     /* The minutes reception can call out. Each one needs a recording of Emel
-       saying it — voice/cagri/<key>-<minutes>.mp3 — and where the file is
-       missing the browser's own voice reads the line instead, which is worse
-       than no announcement in a room with customers in it. 30 was added at the
-       owner's word on 28 Eylül; the files for it are not recorded yet, so it
-       speaks in the engine's voice until helen-30, lissa-30 and hannah-30 are
-       dropped into voice/cagri/. Nothing in the code changes when they are —
-       say() prefers the file the moment it exists. */
+       saying it — voice/cagri/<key>-<minutes>.mp3.
+
+       WHERE THE FILE IS MISSING THE BOX DOES NOT SPEAK. It used to fall back
+       to the browser's speech engine, and on these laptops the only Turkish
+       voice installed is Microsoft Tolga — a man. A man's voice calling a
+       technician across a salon full of customers is worse than no words at
+       all, so the announcement is the chime plus the line on the screen, and
+       nothing is said until Emel's recording is there. That is what
+       recordedOnly below buys.
+
+       The button says so itself rather than surprising the desk: when a name
+       is chosen, each minute's file is asked for once, and a minute with no
+       recording is labelled '⚠ sessiz'. Nothing in the code changes when the
+       file is dropped into voice/cagri/ — the probe finds it, the warning
+       goes, and say() plays it. 30 dk was added at the owner's word on
+       28 Eylül and is the one still waiting. */
     var WORD={5:'beş',10:'on',15:'on beş',20:'yirmi',30:'otuz'};
     var MINS=[5,10,15,20,30];
     var namesEl=document.getElementById('cagri-names');
@@ -22162,9 +22181,42 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
         chosen=o;
         Array.prototype.forEach.call(namesEl.children,function(c){ c.classList.toggle('on',c===b); });
         Array.prototype.forEach.call(minsEl.children,function(c){ c.disabled=false; });
+        label();
       };
       namesEl.appendChild(b);
     });
+
+    /* Which recordings exist. Asked of the server once per name-and-minute and
+       remembered: undefined = not asked yet, true = the file is there, false =
+       it is not. A browser that cannot answer (an old one, a file:// page, a
+       network hiccup) leaves it undefined, and an undefined minute is treated
+       as recorded — the old behaviour, a chime and the file attempt, rather
+       than a warning the desk cannot act on. */
+    var have={};
+    function probe(key, m){
+      var id=key+'-'+m;
+      if(id in have) return Promise.resolve(have[id]);
+      if(typeof fetch!=='function'){ have[id]=undefined; return Promise.resolve(undefined); }
+      return fetch('voice/cagri/'+id+'.mp3', {method:'HEAD'})
+        .then(function(r){ have[id]=!!r.ok; return have[id]; })
+        .catch(function(){ have[id]=undefined; return undefined; });
+    }
+    function label(){
+      if(!chosen) return;
+      MINS.forEach(function(m){
+        var el=document.getElementById('cagri-m-'+m);
+        if(!el) return;
+        var k=chosen.key;
+        el.textContent=m+' dk';
+        probe(k, m).then(function(ok){
+          // the desk may have chosen somebody else while this was in the air
+          if(!chosen || chosen.key!==k) return;
+          var e2=document.getElementById('cagri-m-'+m);
+          if(e2) e2.textContent = (ok===false) ? (m+' dk · ⚠ sessiz') : (m+' dk');
+        });
+      });
+    }
+
     MINS.forEach(function(m){
       var b=document.createElement('button');
       b.type='button'; b.className='cagri-b'; b.id='cagri-m-'+m; b.disabled=true;
@@ -22172,8 +22224,10 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
       b.onclick=function(){
         if(!chosen) return;
         try{ unlockAudio(); }catch(e){}
-        announce({lead:'chime', text:chosen.name+', '+WORD[m]+' dakika', audio:'cagri/'+chosen.key+'-'+m, tail:null});
-        if(saidEl) saidEl.textContent='📣 '+chosen.name+' · '+m+' dakika';
+        // recordedOnly — Emel or nobody. See say().
+        announce({lead:'chime', text:chosen.name+', '+WORD[m]+' dakika', audio:'cagri/'+chosen.key+'-'+m, recordedOnly:true, tail:null});
+        var silent = have[chosen.key+'-'+m]===false;
+        if(saidEl) saidEl.textContent='📣 '+chosen.name+' · '+m+' dakika'+(silent?' · ⚠ ses kaydı yok, sadece zil':'');
       };
       minsEl.appendChild(b);
     });

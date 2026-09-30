@@ -1,12 +1,15 @@
 /* The Çağrı box — reception calling a technician out loud.
 
    Each minute button needs a recording of Emel saying it, at
-   voice/cagri/<key>-<minutes>.mp3. Where the file is missing, say() falls back
-   to the browser's own voice, which is the one the salon rejected. So this
-   pins two things that are easy to get out of step: every button has a Turkish
-   word to say, and the list of buttons is checked against the recordings that
-   actually exist on disk, so a missing file is named here rather than
-   discovered out loud in front of a customer. */
+   voice/cagri/<key>-<minutes>.mp3. Where the file is missing the box says
+   NOTHING — a chime and the line on the screen. It used to fall back to the
+   browser's speech engine, and the only Turkish voice on these laptops is
+   Microsoft Tolga, a man; the salon rejected that out loud on 30 Eylül 2026.
+   So this pins four things that are easy to get out of step: every button has
+   a Turkish word to say, the box asks for recordedOnly, say() honours it, and
+   the list of buttons is checked against the recordings that actually exist on
+   disk, so a missing file is named here rather than discovered in front of a
+   customer. */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -34,6 +37,30 @@ is(WORD[30], 'otuz', '30 says otuz');
 // Ascending, so the row reads left to right the way a person counts.
 is(MINS.slice().sort((a, b) => a - b), MINS, 'the buttons are in order');
 
+/* Emel or nobody. Three links in one chain, and any one of them missing puts
+   Tolga back in the room. */
+{
+  const box = /Çağrı — the dashboard's call box[\s\S]*?\n  \}\)\(\);/.exec(src);
+  is(!!box, true, 'the Çağrı box is found in index.html');
+  const b = box ? box[0] : '';
+  is(/announce\(\{[^}]*recordedOnly:\s*true/.test(b), true, 'the call box asks for recordedOnly — the engine voice is not allowed here');
+  is(/audio:\s*'cagri\/'/.test(b), true, "…and still names the recording it wants");
+  is(/probe\(/.test(b), true, 'it probes for the file, so a silent minute is labelled before it is pressed');
+  is(b.includes('⚠ sessiz'), true, '…and says "⚠ sessiz" on a minute with no recording');
+
+  // say() must actually honour the flag, not merely accept it.
+  is(/function say\(text, after, audioKey, recordedOnly\)/.test(src), true, 'say() takes recordedOnly');
+  is(/var missTts\s*=\s*recordedOnly\s*\?\s*fin\s*:\s*tts;/.test(src), true, 'a missing file under recordedOnly finishes quietly instead of speaking');
+  is(/if\(recordedOnly\)\{ fin\(\); return; \}\s*\n\s*tts\(\);/.test(src), true, '…and the no-Audio path stays quiet too');
+  is(/say\(it\.text, finishTail, it\.audio, it\.recordedOnly\)/.test(src), true, 'pump() passes the flag through — without this the box asks and nothing listens');
+
+  // The fifteen-minute warning and the crossing alarm KEEP their safety net:
+  // they fire with nobody watching, and a wrong voice still carries the news.
+  is(/announce\(\{lead:'alarm'[^}]*\}\)/.test(src), true, 'the crossing alarm is still there');
+  is(/announce\(\{lead:'alarm'[^}]*recordedOnly/.test(src), false, '…and is NOT recordedOnly — it must speak even in a borrowed voice');
+  is(/announce\(\{lead:'chime', text:'Canım '[^}]*recordedOnly/.test(src), false, 'nor is the fifteen-minute warning');
+}
+
 // Which technicians the call box offers — everyone not hidden from the wall.
 const ctx = { window: {}, console, Date };
 vm.createContext(ctx);
@@ -43,8 +70,8 @@ const onBox = (C.operators || []).filter(o => !o.hiddenOnBoard).map(o => o.key);
 is(onBox.length > 0, true, 'somebody is on the call box');
 
 // The recordings. A missing file is not a test failure — it is a fact worth
-// printing, because the button still works and simply speaks in the wrong
-// voice until somebody records it.
+// printing, because the button still works: it chimes and writes the line on
+// the screen, and stays silent until somebody records it.
 const dir = path.join(root, 'voice', 'cagri');
 const have = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 const missing = [];
@@ -53,7 +80,7 @@ onBox.forEach(k => MINS.forEach(m => {
 }));
 n++;
 if (missing.length) {
-  console.log('  NOTE: ' + missing.length + ' recording(s) not yet made — these speak in the browser voice until they exist:');
+  console.log('  NOTE: ' + missing.length + ' recording(s) not yet made — these chime but say nothing until they exist:');
   console.log('        ' + missing.join(', '));
 } else {
   console.log('  ok every button on the call box has Emel saying it');
