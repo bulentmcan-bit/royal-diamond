@@ -113,7 +113,7 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   const MON = '2026-09-14', TUE = '2026-09-15', WED = '2026-09-16', THU = '2026-09-17', FRI = '2026-09-18', SAT = '2026-09-19', SUN = '2026-09-20';
   const names = d => C.rosterOn(d).map(o => o.name);
   is(names(MON), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'Pazartesi: Helen, Lissa, Zara, Hannah');
-  is(names(TUE), ['Helen', 'Lissa', 'Hannah'], 'Salı: Helen, Lissa, Hannah — Beyhan came off Tuesdays on 28 Eylül 2026');
+  is(names(TUE), ['Helen', 'Lissa', 'Beyhan', 'Hannah'], 'Salı: Helen, Lissa, Beyhan, Hannah — her Tuesday went back on 30 Eylül 2026');
   is(names(WED), ['Helen', 'Lissa', 'Hannah'], 'Çarşamba: Helen, Lissa, Hannah');
   is(names(THU), ['Helen', 'Lissa', 'Zara', 'Beyhan', 'Hannah'], 'Perşembe: all five — Zara and Beyhan both present');
   is(names(FRI), ['Helen', 'Lissa', 'Hannah'], 'Cuma: Helen, Lissa, Hannah');
@@ -123,13 +123,13 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   is(names(new Date(2026, 8, 17, 23, 30)), names(THU), '…and so is a Thursday night');
   is(names(THU + 'T10:00'), names(THU), 'a datetime string is read by its date');
   is(C.find('zara').workdays, [1, 4], 'Zara: Pazartesi and Perşembe');
-  is(C.find('beyhan').workdays, [4], 'Beyhan: Perşembe alone');
+  is(C.find('beyhan').workdays, [2, 4], 'Beyhan: Salı and Perşembe');
   // RECEPTION'S GRID on a Perşembe — the columns the desk is shown. It is
   // rosterOn for that day minus hiddenOnDash, which is a different flag from
   // the television's hiddenOnBoard: Beyhan is off the wall and on the desk.
   const dashOn = ymd => C.rosterOn(ymd).filter(o => !o.hiddenOnDash).map(o => o.name);
   is(dashOn(THU), ['Helen', 'Lissa', 'Beyhan', 'Hannah'], "the dashboard on a Perşembe: Helen, Lissa, Beyhan, Hannah — Zara stays off");
-  is(dashOn(TUE), ['Helen', 'Lissa', 'Hannah'], 'on a Salı: the three — Beyhan no longer works it');
+  is(dashOn(TUE), ['Helen', 'Lissa', 'Beyhan', 'Hannah'], 'on a Salı: her column is back on the desk as well');
   is(dashOn(MON), ['Helen', 'Lissa', 'Hannah'], 'on a Pazartesi: the three — Zara is rostered but off the grid');
   // And the page really reads that flag, not the wall's.
   {
@@ -141,14 +141,14 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   }
   is(['helen', 'lissa', 'hannah'].map(k => 'workdays' in C.find(k)), [false, false, false], 'Helen, Lissa and Hannah carry no workdays — every open day, exactly as before');
 
-  is(C.skilledOn('Klasik Kirpik Uygulaması', TUE).map(o => o.name), ['Lissa', 'Hannah'], 'lashes on a Tuesday: Lissa and Hannah — Beyhan is not in on a Tuesday');
+  is(C.skilledOn('Klasik Kirpik Uygulaması', TUE).map(o => o.name), ['Lissa', 'Hannah', 'Beyhan'], 'lashes on a Tuesday: Lissa, Hannah and Beyhan — she is in on a Tuesday again');
   is(C.skilledOn('Klasik Kirpik Uygulaması', MON).map(o => o.name), ['Lissa', 'Hannah'], 'lashes on a Monday: Lissa, Hannah — Beyhan is not in');
-  is(C.skilledOn('Klasik Kirpik Uygulaması', TUE).map(o => o.name), ['Lissa', 'Hannah'], '…and on a Tuesday too: Beyhan came off Tuesdays on 28 Eylül');
+  is(C.skilledOn('Kaş Laminasyon', TUE).map(o => o.name), ['Helen', 'Beyhan'], 'brows on a Tuesday too: Helen, then Beyhan — the card advertises Salı, so the diary allows it');
   is(C.skilledOn('Kaş Laminasyon', THU).map(o => o.name), ['Helen', 'Beyhan'], 'brows on a Thursday: Helen, then Beyhan');
   is(C.skilledOn('Kaş Laminasyon', WED).map(o => o.name), ['Helen'], 'brows on a Wednesday: Helen alone');
   is(C.skilledOn('Tüm Yüz Ağda', TUE).map(o => o.name), ['Helen'], 'wax: Helen alone, Beyhan or no Beyhan');
   is(C.skilledOn('Klasik Manikür', MON).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'manicure on a Monday: Helen, Lissa, Zara, Hannah — never Beyhan');
-  is(C.skilledOn('Klasik Manikür', TUE).map(o => o.name), ['Helen', 'Lissa', 'Hannah'], 'manicure on a Tuesday: Helen, Lissa, Hannah — no Zara (her day off), no Beyhan (not a nail technician)');
+  is(C.skilledOn('Klasik Manikür', TUE).map(o => o.name), ['Helen', 'Lissa', 'Hannah'], 'manicure on a Tuesday: Helen, Lissa, Hannah — no Zara (her day off), and no Beyhan even though she is in (not a nail technician)');
   is(C.skilledOn('Klasik Manikür', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'manicure on a Thursday: the four nail technicians, Beyhan still not among them');
   is(C.skilledOn('Jel Pedikür', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'pedicure on a Thursday: the same four');
   is(C.skilledOn('Diğer / Other', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Beyhan', 'Hannah'], 'ungrouped on a Thursday: the whole roster in roster order');
@@ -167,11 +167,11 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   // customers are booked; Zara is off both.
   is(C.find('beyhan').hiddenOnDash, undefined, "and ON reception's dashboard — no hiddenOnDash");
   is(C.find('zara').hiddenOnDash, true, 'Zara is off both the wall and the dashboard');
-  is(C.find('beyhan').workdays, [4], 'Beyhan works Perşembe only since 28 Eylül 2026');
+  is(C.find('beyhan').workdays, [2, 4], 'Beyhan works Salı and Perşembe again since 30 Eylül 2026');
   is('photo' in C.find('zara'), false, 'Zara names no photo file');
   is('photo' in C.find('beyhan'), false, 'Beyhan names no photo file');
   is(C.find('hannah').commissionPaused, true, 'the commission pause on Hannah survives the reorder');
-  is(C.fillOrderOn(TUE).map(o => o.key), ['hannah', 'lissa', 'helen'], 'fillOrder on a Tuesday: the three only — Zara is off, and Beyhan is Perşembe alone now');
+  is(C.fillOrderOn(TUE).map(o => o.key), ['hannah', 'lissa', 'helen', 'beyhan'], 'fillOrder on a Tuesday: the three, then Beyhan — Zara is the one who is off');
   is(C.fillOrderOn(MON).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara'], 'fillOrder on a Monday: Hannah, Lissa, Helen, then Zara; Beyhan is off');
   is(C.fillOrderOn(THU).map(o => o.key), ['hannah', 'lissa', 'helen', 'zara', 'beyhan'], 'fillOrder on a Thursday: the three, then Zara and Beyhan in roster order');
   is(C.fillOrderOn(WED).map(o => o.key), ['hannah', 'lissa', 'helen'], 'fillOrder on a Wednesday: the three only');
@@ -216,7 +216,7 @@ console.log('3b. workdays FAILS OPEN — a typo never deletes a column');
     is(everyDay(withZara(v), 'zara'), [true, true, true, true, true, true], 'workdays = ' + (v === undefined ? '(missing)' : JSON.stringify(v) === undefined ? String(v) : JSON.stringify(v)) + ' — ' + why + ': she is on every day');
     is(withZara(v).workdaysOf(withZara(v).find('zara')), null, '…and workdaysOf calls it no rule');
   }
-  is(C.workdaysOf(C.find('beyhan')), [4], 'workdaysOf hands back a good list as it is');
+  is(C.workdaysOf(C.find('beyhan')), [2, 4], 'workdaysOf hands back a good list as it is');
   is(everyDay(withZara([0, 1, 2, 3, 4, 5, 6]), 'zara'), [true, true, true, true, true, true], 'all seven days written out = every day');
   is(everyDay(withZara([6]), 'zara'), [false, false, false, false, false, true], 'Cumartesi only, the edge of the range');
   is(everyDay(withZara([0]), 'zara'), [false, false, false, false, false, false], 'Pazar only: on no open day of the week (0 is a real value, not a typo)');
