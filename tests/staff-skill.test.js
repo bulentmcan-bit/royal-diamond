@@ -376,10 +376,23 @@ console.log('5b. pick the technician, get HER treatments');
   is(/if\(typeof rdApplyStaffToServiceSel==='function'\) rdApplyStaffToServiceSel\(\);/.test(html), true, '…and run again whenever that list is rebuilt');
   is(/id="a-allsvc"/.test(html), true, 'with "Tüm hizmetleri göster" to bring the whole list back');
   is(/Tüm hizmetleri göster/.test(html), true, '…labelled in Turkish');
-  is(/o\.hidden=!ok&&!keep;/.test(html), true, 'it HIDES rather than refuses — this form warns, it never blocks');
-  is(/const keep=\(o\.value===sv\.value\);/.test(html), true, '…and a service already chosen is kept, never swapped for another');
+  /* iOS DRAWS ITS OWN PICKER AND IGNORES `hidden`. The first version hid the
+     options, which works on a laptop and does nothing at all on an iPhone:
+     Safari builds the native wheel from the option list and shows every one,
+     hidden or not. The owner opened her column on a phone, the label above
+     the box correctly read "BEYHAN'IN YAPTIKLARI", and the list under it
+     still had every pedicure in the salon in it. */
+  is(/o\.hidden\s*=/.test(html), false, 'nothing is merely hidden — iOS ignores that and shows it anyway');
+  is(/o\.parentNode\.removeChild\(o\);/.test(html), true, '…the options she does not do are REMOVED');
+  is(/var RD_SVC_ALL_HTML = null;/.test(html), true, 'the full list is kept once, as the markup wrote it');
+  is(/sv\.innerHTML=RD_SVC_ALL_HTML;/.test(html), true, '…and the box is rebuilt from it every time, never from the last run\u2019s leftovers');
+  is(/if\(!g\.querySelector\('option'\)\) g\.parentNode\.removeChild\(g\);/.test(html), true, '…with an emptied group dropped, not left as a heading over nothing');
+  is(/var keep=\(o\.value===chosen\);/.test(html), true, 'a service already chosen is kept, never dropped');
+  is(/sv\.insertBefore\(o, sv\.firstChild\);/.test(html), true, '…and put back on its own if the rebuild lost it');
+  is(/if\(chosen\) sv\.value=chosen;/.test(html), true, '…and re-selected afterwards, so nothing is silently re-billed');
   is(/bu hizmeti yapmıyor/.test(html), true, '…shown with a mark on it instead');
-  is(/const ok=\(!known\|\|showAll\)\?true:rdCanDo\(who,o\.value\);/.test(html), true, 'Manager, a blank and an unknown name all still see everything');
+  is(/if\(known && !showAll\)\{/.test(html), true, 'Manager, a blank and an unknown name all still see everything');
+  is(/var ok=rdCanDo\(who, o\.value\);/.test(html), true, '…and the question asked of each one is crown-config\u2019s canDo');
 
   /* Her eight must actually EXIST in that form. Four of them did not: the
      + Randevu service list had never been given Kirpik Lifting, Kaş Boyama,

@@ -9431,38 +9431,82 @@ try{ document.getElementById('a-service').addEventListener('change',rdApplySkill
    If the service already chosen is not hers, it is left selected and shown
    with a mark rather than silently swapped for another — a quietly changed
    service is how the wrong thing gets billed. */
+/* iOS DRAWS ITS OWN PICKER AND IGNORES `hidden`.
+
+   This hid the options it should not offer, which works on a laptop and does
+   nothing at all on an iPhone: Safari renders the native wheel from the
+   option list itself and shows every one of them, hidden or not. The owner
+   opened Beyhan's column on a phone, the label above the box correctly read
+   "BEYHAN'IN YAPTIKLARI", and the list under it still had every pedicure in
+   the salon in it. The filter ran; iOS simply did not care.
+
+   So the options are REMOVED and put back, not hidden. The full list is kept
+   once, as it was written in the markup, and the box is rebuilt from it each
+   time — her treatments, in their own groups, with an empty group dropped
+   rather than left as a heading over nothing.
+
+   The service already chosen is kept whatever happens, marked rather than
+   dropped: a selection that vanishes when the technician changes is how the
+   wrong thing gets billed. */
+var RD_SVC_ALL_HTML = null;
+function rdSvcSnapshot(){
+  try{
+    if(RD_SVC_ALL_HTML===null){
+      var sv=document.getElementById('a-service');
+      if(sv) RD_SVC_ALL_HTML=sv.innerHTML;
+    }
+  }catch(e){}
+  return RD_SVC_ALL_HTML;
+}
 function rdApplyStaffToServiceSel(){
   try{
-    const st=document.getElementById('a-staff'), sv=document.getElementById('a-service');
-    const all=document.getElementById('a-allsvc');
+    var st=document.getElementById('a-staff'), sv=document.getElementById('a-service');
+    var all=document.getElementById('a-allsvc');
     if(!st||!sv) return;
-    const who=st.value, showAll=!!(all&&all.checked);
-    let known=false;
+    if(rdSvcSnapshot()===null) return;
+    var who=st.value, showAll=!!(all&&all.checked), chosen=sv.value;
+    var known=false;
     try{ known=!!(window.CROWN&&CROWN.find&&CROWN.find(who)); }catch(e){}
-    let hidden=0;
-    for(let i=0;i<sv.options.length;i++){
-      const o=sv.options[i];
-      const ok=(!known||showAll)?true:rdCanDo(who,o.value);
-      // the one she has already chosen stays visible, marked, never swapped
-      const keep=(o.value===sv.value);
-      o.hidden=!ok&&!keep;
-      o.disabled=!ok&&!keep;
-      if(!ok) hidden++;
-      o.textContent=o.value+((!ok&&keep)?' — '+who+' bu hizmeti yapmıyor':'');
+
+    // Everything back, every time: the filter is applied to the original
+    // list, never to whatever the last run left behind.
+    sv.innerHTML=RD_SVC_ALL_HTML;
+
+    if(known && !showAll){
+      var dropped=0;
+      // Walk the groups, keep what she does, and take out a group that ends
+      // up with nothing left in it.
+      var groups=[].slice.call(sv.querySelectorAll('optgroup'));
+      var scan=function(parent){
+        [].slice.call(parent.querySelectorAll('option')).forEach(function(o){
+          if(!o.value) return;
+          var ok=rdCanDo(who, o.value);
+          var keep=(o.value===chosen);
+          if(ok) return;
+          dropped++;
+          if(keep){ o.textContent=o.value+' — '+who+' bu hizmeti yapmıyor'; return; }
+          o.parentNode.removeChild(o);
+        });
+      };
+      scan(sv);
+      groups.forEach(function(g){ if(!g.querySelector('option')) g.parentNode.removeChild(g); });
+      // She had something chosen that is not hers and is no longer in the box
+      // at all — put it back on its own so nothing is silently re-billed.
+      if(chosen && !sv.querySelector('option[value="'+chosen.replace(/"/g,'\\"')+'"]')){
+        var o=document.createElement('option');
+        o.value=chosen; o.textContent=chosen+' — '+who+' bu hizmeti yapmıyor';
+        sv.insertBefore(o, sv.firstChild);
+      }
+      var lb0=document.getElementById('flabel-a-service');
+      if(lb0) lb0.textContent='Hizmet *'+(dropped?' — '+who+'’ın yaptıkları':'');
+    }else{
+      var lb1=document.getElementById('flabel-a-service');
+      if(lb1) lb1.textContent='Hizmet *';
     }
-    const lb=document.getElementById('flabel-a-service');
-    if(lb) lb.textContent='Hizmet *'+((known&&!showAll&&hidden)?' — '+who+'’ın yaptıkları':'');
+    // Keep what was selected, now that the box has been rebuilt.
+    if(chosen) sv.value=chosen;
   }catch(e){}
 }
-/* EVERY way the technician can change, not just the one a thumb makes.
-
-   Setting a <select>'s .value in code does NOT fire a change event. Tapping
-   an empty slot in a technician's column (quickBookStaff) and opening an
-   existing booking to edit it both set a-staff that way, so the list stayed
-   at all thirty-one services and the owner saw his whole business's menu
-   under Beyhan's name. The listener was right and simply never ran.
-
-   So the reaction lives in one function and every path calls it. */
 window.rdStaffSelChanged = function(){
   try{ rdApplyStaffToServiceSel(); }catch(e){}
   try{ if(typeof autoDurFill==='function') autoDurFill(); }catch(e){}
