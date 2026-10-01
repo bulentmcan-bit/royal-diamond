@@ -138,12 +138,27 @@ function sfMyDays(from, n){
   }
   return out;
 }
-// ── her services ───────────────────────────────────────────────────────────
-// canDo reads staffPrefs.serviceSkill. A technician is never offered a service
-// she does not do, so she cannot book herself a pedicure by accident.
+/* ── her services ──────────────────────────────────────────────────────────
+   Her OWN list wins. An operator in crown-config.js may carry
+   `services: {name: minutes}` (or a plain array of names), and where she does,
+   that IS the list — exactly what she renders, in the order the owner wrote
+   it, including treatments the salon's generic menu has no line for. One map,
+   one place, and no copy of it in this file.
+
+   With no such list the fallback is the skill groups, but STRICTLY: the
+   service must land in a group AND canDo must allow her. canDo on its own is
+   too generous here — it answers "is she forbidden?", and a service it cannot
+   categorise at all (Güzellik Uygulaması) comes back open to everybody. Right
+   for the salon's diary, where an unclassified job should not be blocked;
+   wrong for a page whose whole purpose is to offer her what she does. */
 function sfMyServices(all){
   if(!ME) return [];
-  return (all||[]).filter(function(s){ try{ return !!CROWN.canDo(ME.key, s); }catch(e){ return false; } });
+  var mine=ME.services;
+  if(Array.isArray(mine)) return mine.slice();
+  if(mine && typeof mine==='object') return Object.keys(mine);
+  return (all||[]).filter(function(s){
+    try{ return !!CROWN.serviceGroup(s) && !!CROWN.canDo(ME.key, s); }catch(e){ return false; }
+  });
 }
 var ALL_SERVICES=['Klasik Manikür','Jel Başlangıç (Full Set)','Dolgu (Infill)','Nail Art','French / Ombre','Tırnak Onarımı','Tırnak Çıkarma','Klasik Pedikür (Ojesiz)','Jel Pedikür','Lüks Spa Pedikür','Medikal Pedikür','Renk Değişimi (Pedikür)','Klasik Kirpik Uygulaması','Volume / Rus Kirpiği','Kirpik Dolgu','Kirpik Lifting & Boyama','Kirpik Çıkarma','Altın Oran Kaş Alımı','Kaş Boyama','Kaş Laminasyon','Microblading','Bıyık / Çene Ağda','Tüm Yüz Ağda','Koltuk Altı Ağda','Yarım Bacak Ağda','Tam Bacak Ağda','Bikini Ağda','Özel Bölge Ağda','Tüm Vücut Ağda','Tam Kol Ağda','Güzellik Uygulaması'];
 
@@ -169,11 +184,25 @@ function sfSlots(){
 }
 // What gets pushed. tech is the whole point of it.
 function sfRequest(me, day, time, service, name, phone, now){
-  return { name:String(name||'').trim(), phone:String(phone||'').trim(),
-           date:sfKey(day), time:time, service:service,
-           tech:me.key, ts:Number(now)||Date.now(), src:'staff-'+me.key };
+  var r={ name:String(name||'').trim(), phone:String(phone||'').trim(),
+          date:sfKey(day), time:time, service:service,
+          tech:me.key, ts:Number(now)||Date.now(), src:'staff-'+me.key };
+  // How long it takes, where crown-config says. The salon app works it out
+  // again at its end from the same config, so this is a courtesy for the
+  // confirmation line and for anyone reading the request — never the
+  // authority. Left off entirely when there is no figure, rather than sent
+  // as a 0 that something downstream might believe.
+  var m=sfMinsOf(service);
+  if(m) r.mins=m;
+  return r;
 }
 function sfPhoneOk(p){ return String(p||'').replace(/\D/g,'').length>=10; }
+// How long this job of hers takes, for the list and the confirmation line.
+// null where crown-config has no figure — the page then says nothing rather
+// than putting a guessed length in front of her.
+function sfMinsOf(service){
+  try{ return ME?CROWN.serviceMinutes(ME.key, service):null; }catch(e){ return null; }
+}
 
 if(typeof module!=='undefined'&&module.exports){
   module.exports={sfKey:sfKey,sfSlotState:sfSlotState,sfRequest:sfRequest,sfPhoneOk:sfPhoneOk};
@@ -197,7 +226,10 @@ if(typeof module!=='undefined'&&module.exports){
   fEl.innerHTML='Yazdığınız randevu salonun defterine <b>'+ME.name+'</b> adına geçer. Saat doluysa ya da o gün çalışmıyorsanız kaydedilmez — resepsiyon sizi arar.';
 
   var svcs=sfMyServices(ALL_SERVICES);
-  sEl.innerHTML=svcs.map(function(s){ return '<option value="'+s.replace(/"/g,'&quot;')+'">'+s+'</option>'; }).join('');
+  sEl.innerHTML=svcs.map(function(s){
+    var m=sfMinsOf(s);
+    return '<option value="'+s.replace(/"/g,'&quot;')+'">'+s+(m?' · '+m+' dk':'')+'</option>';
+  }).join('');
 
   function drawDays(){
     var ds=sfMyDays(new Date(), DAYS_AHEAD);
@@ -261,7 +293,7 @@ if(typeof module!=='undefined'&&module.exports){
     db.ref('rdns_booking_requests').push(req).then(function(){
       document.getElementById('form').style.display='none';
       var d=document.getElementById('done'); d.style.display='block';
-      document.getElementById('sum').innerHTML='📅 <b>'+GUN[selDay.getDay()]+', '+selDay.getDate()+' '+AY[selDay.getMonth()]+'</b><br>🕐 <b>'+selTime+'</b><br>💅 '+req.service+'<br>🙋‍♀️ '+req.name+'<br>📞 '+req.phone+'<br>👩 '+ME.name;
+      document.getElementById('sum').innerHTML='📅 <b>'+GUN[selDay.getDay()]+', '+selDay.getDate()+' '+AY[selDay.getMonth()]+'</b><br>🕐 <b>'+selTime+'</b><br>💅 '+req.service+'<br>🙋‍♀️ '+req.name+'<br>📞 '+req.phone+'<br>👩 '+ME.name+(sfMinsOf(req.service)?'<br>⏱ '+sfMinsOf(req.service)+' dakika':'');
       window.scrollTo({top:0,behavior:'smooth'});
     }).catch(function(e){ console.warn(e); b.disabled=false; b.textContent='✅ Randevuyu Yaz'; waFallback(req); });
   };

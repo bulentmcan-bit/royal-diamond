@@ -81,15 +81,49 @@ console.log('3. her services');
 {
   const ctx = load('?who=beyhan');
   const mine = ctx.sfMyServices(ctx.ALL_SERVICES);
-  is(mine.indexOf('Klasik Kirpik Uygulaması') > -1, true, 'lashes are offered to her');
+  is(mine.indexOf('Kirpik Lifting & Boyama') > -1, true, 'the lash LIFT is offered to her');
   is(mine.indexOf('Altın Oran Kaş Alımı') > -1, true, 'brows are offered to her');
   is(mine.indexOf('Klasik Manikür'), -1, 'a manicure is NOT — she is not a nail technician');
   is(mine.indexOf('Klasik Pedikür (Ojesiz)'), -1, '…nor a pedicure');
   is(mine.indexOf('Tüm Yüz Ağda'), -1, '…nor a wax, which is Helen alone');
   is(mine.length > 0 && mine.length < ctx.ALL_SERVICES.length, true, 'she gets some of the list, not all of it and not none');
-  is(/canDo\(/.test(page), true, 'the filter is crown-config’s canDo, not a list typed here');
   const h = load('?who=helen');
   is(h.sfMyServices(h.ALL_SERVICES).indexOf('Tüm Yüz Ağda') > -1, true, 'Helen, who does wax, is offered it');
+
+  /* HER OWN LIST, written out by the owner on 1 Ekim 2026 with the minutes
+     beside each one. This is the whole of what she renders, and the thing it
+     settles is that she does the lash LIFT and NOT lash extensions — a
+     distinction the serviceSkill groups cannot make, because to them both are
+     "kirpik". Until this list existed the salon would have sent her lash
+     customers. */
+  is(mine, ['Altın Oran Kaş Alımı', 'Kaş Boyama', 'Kaş Laminasyon', 'Kirpik Lifting & Boyama',
+            'Kaş Vitamini (dermapen)', 'Kaş Silme (solüsyon)', 'Microblading', 'Pudralama'],
+     'her eight, in the order crown-config names them');
+  is(mine.indexOf('Klasik Kirpik Uygulaması'), -1, 'lash EXTENSIONS are not hers, though the kirpik group would have said they were');
+  is(mine.indexOf('Volume / Rus Kirpiği'), -1, '…nor volume lashes');
+  is(mine.indexOf('Kirpik Dolgu'), -1, '…nor a lash infill');
+  is(mine.indexOf('Kirpik Çıkarma'), -1, '…nor a lash removal');
+  is(mine.indexOf('Pudralama') > -1, true, 'and a treatment the salon menu has no line for is still hers');
+
+  is([ctx.sfMinsOf('Altın Oran Kaş Alımı'), ctx.sfMinsOf('Microblading'), ctx.sfMinsOf('Pudralama')],
+     [30, 90, 90], 'each one carries its own length, not a notional hour');
+  is(ctx.sfMinsOf('Klasik Manikür'), null, 'a job that is not hers has no length from her');
+  is(ctx.sfMinsOf(''), null, '…and neither has nothing');
+  is(h.sfMinsOf('Klasik Manikür'), null, 'a technician with no list of her own gets no invented minutes either');
+
+  // A service crown-config cannot categorise is open to EVERYBODY as far as
+  // canDo is concerned — the right answer for the salon's diary, where an
+  // unclassified job should not be blocked, and the wrong one here.
+  is(h.sfMyServices(h.ALL_SERVICES).indexOf('Güzellik Uygulaması'), -1,
+     'an uncategorised service is NOT offered just because nothing forbids it');
+  is(/serviceGroup\(s\)/.test(page), true, '…because the page requires a real group as well as canDo');
+
+  // The list lives in crown-config. The only array of service names in this
+  // file is the salon's whole menu; a second one would be a per-technician
+  // list living here instead, which is what ME.services exists to prevent.
+  is((page.match(/'Klasik Kirpik Uygulaması'/g) || []).length, 1,
+     'one service array in this file, the salon menu — no per-technician list is typed here');
+  is(/ME\.services/.test(page), true, 'hers is read off the operator');
 }
 
 console.log('4. free or taken');
@@ -119,12 +153,15 @@ console.log('4. free or taken');
 console.log('5. the request names her');
 {
   const ctx = load('?who=beyhan');
-  const r = ctx.sfRequest(ctx.ME, new Date(2026, 8, 17), '14:00', 'Kirpik Dolgu', '  Ayşe K  ', '0533 123 45 67', 1760000000000);
+  const r = ctx.sfRequest(ctx.ME, new Date(2026, 8, 17), '14:00', 'Kaş Laminasyon', '  Ayşe K  ', '0533 123 45 67', 1760000000000);
   is(r.tech, 'beyhan', 'the request carries WHO it is for — the whole point of the page');
   is(r.date, '2026-09-17', 'the date is the salon’s own key form');
   is(r.time, '14:00', 'the hour as chosen');
   is(r.name, 'Ayşe K', 'the name is trimmed');
   is(r.src, 'staff-beyhan', 'and it is marked as coming from her page, not from the public one');
+  is(r.mins, 60, 'and how long it takes, so the confirmation line can say so');
+  is('mins' in ctx.sfRequest(ctx.ME, new Date(2026, 8, 17), '14:00', 'Klasik Manikür', 'A', '05331234567', 1), false,
+     '…left off entirely when there is no figure, never sent as a 0 something downstream might believe');
   is(r.ts, 1760000000000, 'the clock is passed in, so this is testable');
 
   is(ctx.sfPhoneOk('0533 123 45 67'), true, 'a Cyprus mobile passes');
@@ -139,7 +176,10 @@ console.log('5. the request names her');
   is(/o gün\/saat bu hizmet için müsait değil/.test(index), true, 'a refusal names her rather than saying "saat dolu"');
   // The old behaviour — first free technician wins — must not survive for a
   // named request, or a customer who asked for Beyhan gets Lissa.
-  is(/const staffPick=_able\.find\(t=>_obTechCanStart\(t, req\.time, maps\)\)\|\|'';/.test(index), true, 'the pick still comes from the narrowed list');
+  is(/const staffPick=_able\.find\(t=>_obTechCanStart\(t, req\.time, maps, _svcMins\(t\)\)\)\|\|'';/.test(index), true, 'the pick still comes from the narrowed list…');
+  is(/function _obTechCanStart\(tech,slot,maps,mins\)\{/.test(index), true, '…and is asked whether she can start a job of THIS length');
+  is(/const _reqDur=staffPick\?\(_svcMins\(staffPick\)\|\|_obSpacing\(staffPick\)\):60;/.test(index), true, '…and the appointment is written for that length, not a notional hour');
+  is(/CROWN\.serviceMinutes\)\?CROWN\.serviceMinutes\(t, req\.service\|\|''\)/.test(index), true, '…read from crown-config, which is where the owner wrote the minutes');
 }
 
 console.log('6. what the page does NOT do');

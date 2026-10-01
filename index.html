@@ -2530,8 +2530,13 @@
   // This is checked against her REAL booked runs, not against the published
   // half hours, so a job that finishes after the last published slot still
   // blocks properly instead of being invisible and bookable straight over.
-  function _obTechCanStart(tech,slot,maps){
-    const st=_obMins(slot), en=st+_obSpacing(tech);
+  // `mins` is how long THIS job takes. Left out, it is her usual length, which
+  // is what the published availability grid asks about. A booking that names a
+  // service passes the service's own length instead: a 90 minute Microblading
+  // at 17:00 would finish at 18:30, and she must not be offered that start
+  // merely because a 60 minute job would have fitted.
+  function _obTechCanStart(tech,slot,maps,mins){
+    const st=_obMins(slot), en=st+(Number(mins)>0?Number(mins):_obSpacing(tech));
     return !((maps&&maps.spans&&maps.spans[tech])||[]).some(b=>st<b[1]&&b[0]<en);
   }
   const RD_OB_DAYS=14;
@@ -2662,10 +2667,14 @@
          refusal below, which tells reception to ring with an alternative. */
       const _want=String(req.tech||'').trim().toLowerCase();
       if(_want) _able=_able.filter(t=>String(t).toLowerCase()===_want);
-      const staffPick=_able.find(t=>_obTechCanStart(t, req.time, maps))||'';
+      // Her own length for THIS service, where crown-config knows one, so the
+      // free-to-start test is asked about the real job and not about a
+      // notional hour.
+      const _svcMins=t=>{ try{ return (window.CROWN&&CROWN.serviceMinutes)?CROWN.serviceMinutes(t, req.service||''):null; }catch(e){ return null; } };
+      const staffPick=_able.find(t=>_obTechCanStart(t, req.time, maps, _svcMins(t)))||'';
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
-      const _reqDur=staffPick?_obSpacing(staffPick):60;
+      const _reqDur=staffPick?(_svcMins(staffPick)||_obSpacing(staffPick)):60;
       if(!_obUnion().includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
@@ -9297,6 +9306,16 @@ function svcCat(service){
   return null;
 }
 function staffSvcDur(staff,service){
+  // crown-config.js first: a technician who carries her own {service: minutes}
+  // list has a real figure per treatment, written down by the owner — 30 for a
+  // brow shape, 90 for microblading. STAFF_SVC_DUR below is the older, coarser
+  // thing: three categories, two technicians. The exact answer wins.
+  try{
+    if(window.CROWN&&CROWN.serviceMinutes){
+      const m=CROWN.serviceMinutes(staff, service);
+      if(m)return m;
+    }
+  }catch(e){}
   const t=(staff||'').toLowerCase().trim();
   const key=Object.keys(STAFF_SVC_DUR).find(k=>t.includes(k));
   if(!key)return null;

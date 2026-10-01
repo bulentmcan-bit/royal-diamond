@@ -409,7 +409,11 @@ console.log('6b. workdays: never Zara on a Tuesday, Beyhan on Salı and Perşemb
     return { clients: cl, appointments: ap };
   };
   const nails = pool(300, 'Klasik Manikür', 'Helen');
-  const lashes = pool(400, 'Klasik Kirpik Uygulaması', 'Lissa');
+  // The LASH LIFT, not lash extensions: Beyhan does the lift and Lissa and
+  // Hannah do both, so this is a service all three of them share. Her own
+  // list (crown-config, 1 Ekim 2026) excludes extensions, and a fixture built
+  // on those would test nothing about her.
+  const lashes = pool(400, 'Kirpik Lifting & Boyama', 'Lissa');
   const both = { clients: nails.clients.concat(lashes.clients), appointments: nails.appointments.concat(lashes.appointments) };
   const only = key => Object.assign({}, cfg, { fillOrderOn: ymd => cfg.fillOrderOn(ymd).filter(o => o.key === key) });
   const dates = offers => [...new Set(offers.map(o => o.d))].sort();
@@ -428,7 +432,7 @@ console.log('6b. workdays: never Zara on a Tuesday, Beyhan on Salı and Perşemb
   is(b.offers.some(o => o.d === MON), false, 'Beyhan is NEVER offered a Monday — not even the day the run happens');
   is(b.offers.some(o => o.d === '2026-09-15'), true, 'a Tuesday IS offered again — her card advertises Salı, so the diary sells it');
   is(b.offers.every(o => [2, 4].includes(wd(o.d))), true, 'every one of her slots is on a weekday in her workdays [2, 4]');
-  is(b.offers.every(o => o.service === 'Klasik Kirpik Uygulaması'), true, 'and they are all lash customers');
+  is(b.offers.every(o => o.service === 'Kirpik Lifting & Boyama'), true, 'and they are all lash-lift customers — the lash work she actually does');
   const bn = api.gfPlan({ data: nails, offers: {}, optout: {}, cfg: only('beyhan'), nowMs: monMs, todayYmd: MON, nowMin: 600 });
   is(bn.offers, [], 'forty due manicure customers and only Beyhan free: NOBODY is offered — she is not a nail technician and nobody is substituted');
 
@@ -437,12 +441,12 @@ console.log('6b. workdays: never Zara on a Tuesday, Beyhan on Salı and Perşemb
   // 120 of each, so the walk reaches Beyhan's days (Hannah and Lissa take the
   // lash customers first, as fillOrder says) — under the live cap of 25
   // the first three technicians' Monday would use every offer up.
-  const wide = { clients: pool(300, 'Klasik Manikür', 'Helen', 120).clients.concat(pool(500, 'Klasik Kirpik Uygulaması', 'Lissa', 120).clients), appointments: pool(300, 'Klasik Manikür', 'Helen', 120).appointments.concat(pool(500, 'Klasik Kirpik Uygulaması', 'Lissa', 120).appointments) };
+  const wide = { clients: pool(300, 'Klasik Manikür', 'Helen', 120).clients.concat(pool(500, 'Kirpik Lifting & Boyama', 'Lissa', 120).clients), appointments: pool(300, 'Klasik Manikür', 'Helen', 120).appointments.concat(pool(500, 'Kirpik Lifting & Boyama', 'Lissa', 120).appointments) };
   const uncapped = c => Object.assign({}, c, { gap: Object.assign({}, c.gap, { dailyCap: 200 }) });
   const all = api.gfPlan({ data: wide, offers: {}, optout: {}, cfg: uncapped(cfg), nowMs: monMs, todayYmd: MON, nowMin: 600 });
   is(all.offers.filter(o => o.tech === 'Zara' && ![1, 4].includes(wd(o.d))), [], 'a full run never puts Zara on a day off');
   is(all.offers.filter(o => o.tech === 'Beyhan' && ![2, 4].includes(wd(o.d))), [], 'a full run never puts Beyhan on a day off');
-  is(all.offers.filter(o => o.tech === 'Beyhan' && o.service !== 'Klasik Kirpik Uygulaması'), [], 'a full run never sends Beyhan a nail customer');
+  is(all.offers.filter(o => o.tech === 'Beyhan' && o.service !== 'Kirpik Lifting & Boyama'), [], 'a full run never sends Beyhan a nail customer');
   is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-17'), true, 'and she does get lash customers on her Perşembe (' + all.offers.filter(o => o.tech === 'Beyhan').length + ' in all)');
   is(all.offers.some(o => o.tech === 'Beyhan' && o.d === '2026-09-15'), true, '…and on her Salı as well, the day that went back on 30 Eylül');
   is(all.offers.some(o => o.tech === 'Zara' && o.d === MON), true, 'and Zara gets manicure customers on her Monday (' + all.offers.filter(o => o.tech === 'Zara').length + ' in all)');

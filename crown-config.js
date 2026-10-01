@@ -114,7 +114,31 @@ var CROWN = {
        She is on commission only (80% of her own client income, no salary,
        paid monthly) — that is written on the money screens in index.html,
        not here. */
-    { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [2, 4] },
+    { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [2, 4],
+      /* HER OWN LIST, with how long each one takes. The owner wrote both out
+         on 1 Ekim 2026, and this is the whole of what she renders — she does
+         NOT do lash extensions (Klasik Kirpik, Volume/Rus, Kirpik Dolgu,
+         Kirpik Çıkarma), which the serviceSkill groups below would otherwise
+         have let reception and the gap-filler send her.
+
+         Where an operator carries this map it WINS over the groups: canDo,
+         skilledOn, her own page and the duration the diary fills in all read
+         it. The three the salon's menu has no line for are hers from her
+         printed card; they go on the booking page in the same patch so a
+         customer who reads the card can find them.
+
+         The number is minutes, and 0 would mean "no idea" — every one here
+         is a real figure from the owner, not a default. */
+      services: {
+        'Altın Oran Kaş Alımı':    30,
+        'Kaş Boyama':              30,
+        'Kaş Laminasyon':          60,
+        'Kirpik Lifting & Boyama': 60,
+        'Kaş Vitamini (dermapen)': 60,
+        'Kaş Silme (solüsyon)':    60,
+        'Microblading':            90,
+        'Pudralama':               90
+      } },
     /* Hannah's commission is STOPPED. From `commissionPausedSince` (that day
        included) her jobs earn no commission on any screen that counts money;
        everything she earned BEFORE that date stays exactly as it was, and her
@@ -282,8 +306,11 @@ var CROWN = {
     serviceSkill: {
       manikur: ['helen', 'lissa', 'zara', 'hannah'],
       pedikur: ['helen', 'lissa', 'zara', 'hannah'],
-      kirpik:  ['lissa', 'hannah', 'beyhan'],   // Helen does not do lashes; Beyhan does, on her Salı/Perşembe
-      kas:     ['helen', 'beyhan'],             // Altın Oran, Kaş Boyama, Laminasyon, Microblading — Helen, and Beyhan on her days
+      // Beyhan is in neither list: she carries her own `services` map above,
+      // which answers for her instead. She does brow work and the lash LIFT,
+      // not lash extensions, and these groups are too coarse to say that.
+      kirpik:  ['lissa', 'hannah'],             // Helen does not do lashes
+      kas:     ['helen'],                       // Altın Oran, Kaş Boyama, Laminasyon, Microblading
       agda:    ['helen']                        // Helen only — every wax, the lip/chin wax included
     },
     fillOrder: ['hannah', 'lissa', 'helen'],
@@ -438,7 +465,20 @@ var CROWN = {
      "Kirpik" and "kirpik" read the same. The order matters: pedikur before
      manikur so "Jel Pedikür" is not a manicure, kirpik before manikur so
      "Kirpik Dolgu" is not an infill. */
+  /* Treatments that belong to the person who brought them, not to a group.
+     Pudralama, Kaş Vitamini and Kaş Silme came in with Beyhan on 1 Ekim 2026
+     and nobody else in the salon does them. Two of the three would otherwise
+     fall into `kas` on the word "kaş" alone, and Helen — who IS in `kas`, and
+     does the brow work the group was written for — would silently become
+     bookable for a dermapen she has never done.
+
+     Named here, they have no group, so the only people who may do them are
+     the ones who name them in a list of their own. Helen keeps every brow
+     service she actually does; nothing of hers changes. */
+  soloServices: ['Pudralama', 'Kaş Vitamini (dermapen)', 'Kaş Silme (solüsyon)'],
   serviceGroup: function(service){
+    var self = this, want = this.svcKey(service);
+    if (want && (this.soloServices || []).some(function(n){ return self.svcKey(n) === want; })) return null;
     var s = String(service || '').toLowerCase()
       .replace(/i̇/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i')
       .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ç/g, 'c');
@@ -454,23 +494,95 @@ var CROWN = {
   // a technician (Manager, a blank) is not governed here — true. A service
   // with no group, or a group nobody has written down, is open — true. A
   // technician missing from the group's list — false, everywhere.
+  /* A service name, compared the way a person would: case and the Turkish
+     letters ignored, spacing tidied. 'KAŞ BOYAMA' and 'Kas  Boyama' are the
+     same job, and a list that only matched one of them would quietly drop
+     half of somebody's work. */
+  svcKey: function(service){
+    return String(service || '').toLowerCase()
+      .replace(/i̇/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+      .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ç/g, 'c')
+      .replace(/\s+/g, ' ').trim();
+  },
+  /* An operator's OWN list, as {service: minutes} or a plain array of names,
+     or null where she has none. The groups are a blunt instrument — they say
+     "lashes", and Beyhan does the lash LIFT but not lash extensions. Where a
+     technician's work does not divide along the group lines, she carries the
+     list itself and it answers for her. */
+  servicesOf: function(who){
+    var o = this.find(who);
+    var v = o && o.services;
+    if (Array.isArray(v)) { var m = {}; v.forEach(function(n){ m[n] = 0; }); return m; }
+    return (v && typeof v === 'object') ? v : null;
+  },
+  // How long one job of hers takes, in minutes — null where nobody has said.
+  // Never guesses a number: a wrong length double-books her or wastes an hour.
+  serviceMinutes: function(who, service){
+    var m = this.servicesOf(who);
+    if (!m) return null;
+    var want = this.svcKey(service), self = this, hit = null;
+    Object.keys(m).forEach(function(k){ if (hit === null && self.svcKey(k) === want) hit = m[k]; });
+    return (typeof hit === 'number' && hit > 0) ? hit : null;
+  },
+  // May `who` (key or name) be booked for this service? A name that is not
+  // a technician (Manager, a blank) is not governed here — true. An operator
+  // with her own `services` list is answered from THAT, and from nothing
+  // else: it is the whole of what she does, so a service missing from it is
+  // a no even when the group she sits in would have allowed it. Otherwise a
+  // service with no group, or a group nobody has written down, is open —
+  // true. A technician missing from the group's list — false, everywhere.
+  // Everyone who names this service in a list of her own. Empty means nobody
+  // has claimed it and the groups decide; non-empty means it is THEIRS — a
+  // treatment one technician brought with her is not quietly open to the rest
+  // of the salon just because the group regex has no word for it.
+  claimedBy: function(service){
+    var self = this, want = this.svcKey(service), out = [];
+    if (!want) return out;
+    (this.operators || []).forEach(function(o){
+      var m = self.servicesOf(o.key);
+      if (m && Object.keys(m).some(function(k){ return self.svcKey(k) === want; })) out.push(o.key);
+    });
+    return out;
+  },
   canDo: function(who, service){
     var o = this.find(who);
     if (!o) return true;
+    // 1. Her own list, where she has one, is the whole of her work. Beyhan's
+    //    names the lash LIFT and not lash extensions, which the groups cannot
+    //    tell apart, and that distinction is the point of the list existing.
+    var mine = this.servicesOf(o.key);
+    if (mine) {
+      var want = this.svcKey(service), self = this;
+      return Object.keys(mine).some(function(k){ return self.svcKey(k) === want; });
+    }
+    // 2. For everybody else the groups answer, exactly as they always have.
     var g = this.serviceGroup(service);
-    if (!g) return true;
-    var list = this.staffPrefs && this.staffPrefs.serviceSkill && this.staffPrefs.serviceSkill[g];
-    if (!Array.isArray(list)) return true;
-    return list.indexOf(o.key) !== -1;
+    if (g) {
+      var list = this.staffPrefs && this.staffPrefs.serviceSkill && this.staffPrefs.serviceSkill[g];
+      if (!Array.isArray(list)) return true;
+      return list.indexOf(o.key) !== -1;
+    }
+    // 3. A service the groups have no word for. Open to all, UNLESS somebody
+    //    has claimed it in a list of her own — a treatment one technician
+    //    brought with her (Pudralama, Kaş Vitamini, Kaş Silme) must not fall
+    //    open to the whole salon merely because the regex cannot name it.
+    return this.claimedBy(service).length === 0;
   },
   // Who on the day's roster can do this service, best first (serviceSkill
   // order). Empty means nobody — say "no availability", never substitute.
   skilledOn: function(service, date){
-    var roster = this.rosterOn(date);
+    var roster = this.rosterOn(date), self = this;
     var g = this.serviceGroup(service);
     var list = g && this.staffPrefs && this.staffPrefs.serviceSkill && this.staffPrefs.serviceSkill[g];
-    if (!Array.isArray(list)) return roster;
-    return list.map(function(k){ return roster.filter(function(o){ return o.key === k; })[0]; }).filter(Boolean);
+    // Whoever carries her own list is judged by it, wherever the groups put
+    // her — she is added at the end, after the group's own order, so the
+    // existing preference order is untouched.
+    var own = roster.filter(function(o){ return self.servicesOf(o.key) && self.canDo(o.key, service); });
+    if (!Array.isArray(list)) return roster.filter(function(o){ return self.canDo(o.key, service); });
+    var out = list.map(function(k){ return roster.filter(function(o){ return o.key === k; })[0]; })
+                  .filter(Boolean).filter(function(o){ return self.canDo(o.key, service); });
+    own.forEach(function(o){ if (out.indexOf(o) === -1) out.push(o); });
+    return out;
   },
   // The day's roster in the order the gap-filler works it: fillOrder first,
   // then anyone on the roster the list does not name, in roster order.

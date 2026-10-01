@@ -58,10 +58,22 @@ console.log('1. every service name in the list lands in its heading');
   }
   const want = { '💅 MANİKÜR': 'manikur', '🦶 PEDİKÜR': 'pedikur', '👁 KİRPİK': 'kirpik', '🤨 KAŞ': 'kas', '🪒 AĞDA': 'agda', '✨ DİĞER': null };
   is(Object.keys(groups), Object.keys(want), 'the five headings plus DİĞER, as the page lists them');
+  /* soloServices are the exception, and deliberately so. Pudralama, Kaş
+     Vitamini and Kaş Silme came in with Beyhan on 1 Ekim 2026 and nobody else
+     does them. Two of the three would otherwise fall into `kas` on the word
+     "kaş" alone, and Helen — who IS in `kas` — would silently become bookable
+     for a dermapen she has never done. Having no group, they belong to
+     whoever names them in a list of her own, and Helen keeps every brow
+     service she really does. */
+  const solo = n => (C.soloServices || []).some(x => C.svcKey(x) === C.svcKey(n));
   for (const h of Object.keys(want)) {
     const got = (groups[h] || []).map(n => C.serviceGroup(n));
-    is(got, (groups[h] || []).map(() => want[h]), h + ' → ' + want[h] + ' for all ' + (groups[h] || []).length);
+    is(got, (groups[h] || []).map(n => solo(n) ? null : want[h]),
+       h + ' → ' + want[h] + ' for all ' + (groups[h] || []).length + ((groups[h] || []).some(solo) ? ', bar the solo ones' : ''));
   }
+  is(C.soloServices.filter(n => C.serviceGroup(n) !== null), [], 'every solo service really is left ungrouped');
+  is(C.soloServices.filter(n => C.claimedBy(n).length === 0), [], '…and every one of them is claimed by somebody, or nobody could do it at all');
+  is(C.serviceGroup('Kaş Laminasyon'), 'kas', 'and an ordinary brow service is still a brow service');
   is(C.serviceGroup('Bıyık / Çene Ağda'), 'agda', 'the lip/chin wax is a wax — there is no separate lip category');
   is(C.serviceGroup('KİRPİK'), 'kirpik', 'upper-case Turkish İ folds');
   is(C.serviceGroup('Kalıcı Ojeli Pedikür'), 'pedikur', 'a pedicure with polish is a pedicure, not a manicure');
@@ -89,8 +101,17 @@ console.log('2. canDo');
   // Beyhan (15 Eylül 2026): a brow and lash specialist, NOT a nail
   // technician. She must never be offered a manicure by the diary, the
   // booking page or the gap-filler — canDo is what all three ask.
-  is(C.canDo('Beyhan', 'Klasik Kirpik Uygulaması'), true, 'Beyhan does lashes');
-  is(C.canDo('beyhan', 'Kirpik Dolgu'), true, 'Beyhan does lash infills (by key)');
+  /* Beyhan does the lash LIFT and NOT lash extensions. The owner wrote her
+     list out on 1 Ekim 2026 and that is the whole of her work; the kirpik
+     group cannot make the distinction, because to it both are "kirpik". Until
+     the list existed the salon would have sent her lash customers. */
+  is(C.canDo('Beyhan', 'Klasik Kirpik Uygulaması'), false, 'Beyhan does NOT do lash extensions');
+  is(C.canDo('beyhan', 'Kirpik Dolgu'), false, 'Beyhan does NOT do lash infills (by key)');
+  is(C.canDo('beyhan', 'Kirpik Lifting & Boyama'), true, '…but she DOES do the lash lift');
+  is(C.canDo('beyhan', 'Pudralama'), true, '…and a treatment the salon menu has no line for, because she named it');
+  is(C.canDo('lissa', 'Pudralama'), false, '…which nobody else may be booked for');
+  is(C.canDo('helen', 'Kaş Laminasyon'), true, 'Helen keeps every brow service she really does');
+  is(C.canDo('helen', 'Kaş Vitamini (dermapen)'), false, "…and is not quietly given one she doesn't, on the word kaş alone");
   is(C.canDo('Beyhan', 'Altın Oran Kaş Alımı'), true, 'Beyhan does brows');
   is(C.canDo('Beyhan', 'Kaş Laminasyon'), true, 'Beyhan does brow lamination');
   is(C.canDo('Beyhan', 'Microblading'), true, 'Beyhan does microblading');
@@ -99,8 +120,10 @@ console.log('2. canDo');
   is(C.canDo('Beyhan', 'Jel Pedikür'), false, 'Beyhan is REFUSED a pedicure');
   is(C.canDo('Beyhan', 'Bikini Ağda'), false, 'Beyhan is REFUSED a wax');
   is(C.canDo('Beyhan', 'Bıyık / Çene Ağda'), false, 'Beyhan is REFUSED the lip/chin wax — that is agda, Helen only');
-  is(C.staffPrefs.serviceSkill.kirpik, ['lissa', 'hannah', 'beyhan'], 'kirpik: Lissa, Hannah, Beyhan');
-  is(C.staffPrefs.serviceSkill.kas, ['helen', 'beyhan'], 'kas: Helen, Beyhan');
+  is(C.staffPrefs.serviceSkill.kirpik, ['lissa', 'hannah'], 'kirpik: Lissa and Hannah — Beyhan carries her own list instead');
+  is(C.staffPrefs.serviceSkill.kas, ['helen'], 'kas: Helen — likewise');
+  is(Object.keys(C.servicesOf('beyhan')).length, 8, "…and Beyhan's own list names eight treatments");
+  is(C.servicesOf('helen'), null, 'nobody else carries one, so the groups still answer for them');
   is(C.staffPrefs.serviceSkill.manikur.includes('beyhan') || C.staffPrefs.serviceSkill.pedikur.includes('beyhan') || C.staffPrefs.serviceSkill.agda.includes('beyhan'), false, 'Beyhan is under neither manikur, pedikur nor agda');
   is(C.canDo('Manager', 'Bikini Ağda'), true, 'Manager is not a technician — the rule does not govern the name');
   is(C.canDo('Lissa', 'Güzellik Uygulaması'), true, 'an ungrouped service is open to everyone');
@@ -141,7 +164,10 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   }
   is(['helen', 'lissa', 'hannah'].map(k => 'workdays' in C.find(k)), [false, false, false], 'Helen, Lissa and Hannah carry no workdays — every open day, exactly as before');
 
-  is(C.skilledOn('Klasik Kirpik Uygulaması', TUE).map(o => o.name), ['Lissa', 'Hannah', 'Beyhan'], 'lashes on a Tuesday: Lissa, Hannah and Beyhan — she is in on a Tuesday again');
+  is(C.skilledOn('Klasik Kirpik Uygulaması', TUE).map(o => o.name), ['Lissa', 'Hannah'], 'lash extensions on a Tuesday: Lissa and Hannah — Beyhan does not do them');
+  is(C.skilledOn('Kirpik Lifting & Boyama', TUE).map(o => o.name), ['Lissa', 'Hannah', 'Beyhan'], '…but the lash LIFT on a Tuesday is hers as well');
+  is(C.skilledOn('Pudralama', TUE).map(o => o.name), ['Beyhan'], 'and a treatment only she does is hers alone');
+  is(C.skilledOn('Pudralama', '2026-09-16').map(o => o.name), [], '…and nobody at all on a day she is not in');
   is(C.skilledOn('Klasik Kirpik Uygulaması', MON).map(o => o.name), ['Lissa', 'Hannah'], 'lashes on a Monday: Lissa, Hannah — Beyhan is not in');
   is(C.skilledOn('Kaş Laminasyon', TUE).map(o => o.name), ['Helen', 'Beyhan'], 'brows on a Tuesday too: Helen, then Beyhan — the card advertises Salı, so the diary allows it');
   is(C.skilledOn('Kaş Laminasyon', THU).map(o => o.name), ['Helen', 'Beyhan'], 'brows on a Thursday: Helen, then Beyhan');
@@ -151,7 +177,9 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   is(C.skilledOn('Klasik Manikür', TUE).map(o => o.name), ['Helen', 'Lissa', 'Hannah'], 'manicure on a Tuesday: Helen, Lissa, Hannah — no Zara (her day off), and no Beyhan even though she is in (not a nail technician)');
   is(C.skilledOn('Klasik Manikür', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'manicure on a Thursday: the four nail technicians, Beyhan still not among them');
   is(C.skilledOn('Jel Pedikür', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'pedicure on a Thursday: the same four');
-  is(C.skilledOn('Diğer / Other', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Beyhan', 'Hannah'], 'ungrouped on a Thursday: the whole roster in roster order');
+  is(C.skilledOn('Diğer / Other', THU).map(o => o.name), ['Helen', 'Lissa', 'Zara', 'Hannah'], 'ungrouped on a Thursday: everyone the groups govern, in roster order');
+  is(C.skilledOn('Diğer / Other', THU).map(o => o.name).indexOf('Beyhan'), -1,
+     '…and NOT Beyhan: an unnamed job is open to whoever the groups leave open, and her own list names what she does');
   // The operators array IS the column order: Helen, Lissa, Zara, Beyhan,
   // Hannah left to right. Zara and Beyhan are hidden from the wall
   // (hiddenOnBoard, and only that — they keep their keys, skills, diary
@@ -180,7 +208,8 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   // leftOn is tested first, whatever her workdays say.
   const C2 = loadCrown(); C2.operators.find(o => o.key === 'hannah').leftOn = '2026-09-20';
   is(C2.skilledOn('Kirpik Dolgu', '2026-09-21').map(o => o.name), ['Lissa'], 'after Hannah leaves, lashes on a Monday are Lissa only (Beyhan is off Mondays)');
-  is(C2.skilledOn('Kirpik Dolgu', '2026-09-24').map(o => o.name), ['Lissa', 'Beyhan'], '…and on a Thursday Lissa and Beyhan');
+  is(C2.skilledOn('Kirpik Dolgu', '2026-09-24').map(o => o.name), ['Lissa'], '…and on a Thursday Lissa alone — Beyhan does not do lash infills');
+  is(C2.skilledOn('Kirpik Lifting & Boyama', '2026-09-24').map(o => o.name), ['Lissa', 'Beyhan'], '…though the lash LIFT that Thursday is Lissa and Beyhan');
   is(C2.fillOrderOn('2026-09-21').map(o => o.key), ['lissa', 'helen', 'zara'], 'and the fill order skips her');
   const C3 = loadCrown(); C3.operators.find(o => o.key === 'beyhan').leftOn = '2026-09-17';
   is(C3.rosterOn('2026-09-17').map(o => o.key).includes('beyhan'), false, 'a leftOn on one of her workdays: out from that day, the leftOn test comes first');
@@ -343,7 +372,8 @@ console.log('6. the check is carried everywhere it must be');
   // invariant that matters — staffPick comes out of _able and nowhere else —
   // is pinned on its own.
   is(/let _able=_obTechs\(req\.date\)\.filter\(t=>rdCanDo\(t, req\.service\|\|''\)\);/.test(html), true, 'the online request handler starts from technicians who do the requested service');
-  is(/const staffPick=_able\.find\(t=>_obTechCanStart\(t, req\.time, maps\)\)\|\|'';/.test(html), true, '…and picks only from that list, never from the whole roster');
+  is(/const staffPick=_able\.find\(t=>_obTechCanStart\(t, req\.time, maps, _svcMins\(t\)\)\)\|\|'';/.test(html), true, '…and picks only from that list, never from the whole roster');
+  is(/function _obTechCanStart\(tech,slot,maps,mins\)\{/.test(html), true, '…asked whether she can start a job of THIS service\u2019s length');
   is(/if\(_want\) _able=_able\.filter\(t=>String\(t\)\.toLowerCase\(\)===_want\);/.test(html), true, '…a named technician narrows it further, never widens it');
   is(/bu hizmeti \('\+\(req\.service\|\|''\)\+'\) yapan personel yok/.test(html), true, '…and says so when nobody does');
   is(/const able=\(typeof rdSkilledOn==='function'\)\?rdSkilledOn\(svc, dayStr\):rdStaffOn\(dayStr\);/.test(html), true, 'Uygun Saat Bul searches only those who do the service');
