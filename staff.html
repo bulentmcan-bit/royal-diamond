@@ -168,13 +168,29 @@ var ALL_SERVICES=['Klasik Manikür','Jel Başlangıç (Full Set)','Dolgu (Infill
 // Anything the feed does not answer is 'unknown', drawn as bookable and said
 // to be unconfirmed, because refusing a booking on missing data would lose her
 // a customer over a slow connection.
-function sfSlotState(avail, ymd, slot, key){
+/* WHICH NAME the feed uses for her. index.html publishes these maps keyed by
+   the technician's DISPLAY name — "Beyhan", "Helen" — while everything in
+   crown-config is keyed by the lower-case key. Reading a[key] found nothing
+   and every hour of her day came back 'unknown', which drew as bookable with
+   no BOŞ or DOLU on it: the page looked like it was working and was telling
+   her nothing. So the lookup accepts either, case-insensitively, and the
+   caller passes the operator rather than one of her two names. */
+function sfPick(map, me){
+  if(!map || !me) return undefined;
+  var want=[String(me.key||'').toLowerCase(), String(me.name||'').toLowerCase()];
+  var hit;
+  Object.keys(map).forEach(function(k){
+    if(typeof hit==='undefined' && want.indexOf(String(k).toLowerCase())!==-1) hit=map[k];
+  });
+  return hit;
+}
+function sfSlotState(avail, ymd, slot, me){
   var day=avail&&avail.days&&avail.days[ymd];
   if(!day||day._closed) return day&&day._closed?'closed':'unknown';
   var s=day[slot];
   if(!s||typeof s!=='object') return 'unknown';
-  if(s.a&&typeof s.a[key]!=='undefined') return s.a[key]?'free':'busy';
-  if(s.t&&typeof s.t[key]!=='undefined') return s.t[key]?'busy':'free';
+  var a=sfPick(s.a, me); if(typeof a!=='undefined') return a?'free':'busy';
+  var t=sfPick(s.t, me); if(typeof t!=='undefined') return t?'busy':'free';
   return 'unknown';
 }
 function sfSlots(){
@@ -205,7 +221,7 @@ function sfMinsOf(service){
 }
 
 if(typeof module!=='undefined'&&module.exports){
-  module.exports={sfKey:sfKey,sfSlotState:sfSlotState,sfRequest:sfRequest,sfPhoneOk:sfPhoneOk};
+  module.exports={sfKey:sfKey,sfSlotState:sfSlotState,sfPick:sfPick,sfRequest:sfRequest,sfPhoneOk:sfPhoneOk};
 }
 </script>
 <script>
@@ -247,7 +263,7 @@ if(typeof module!=='undefined'&&module.exports){
     if(!selDay){ tEl.innerHTML='<div class="note">Önce bir gün seçin.</div>'; return; }
     var ymd=sfKey(selDay);
     tEl.innerHTML=sfSlots().map(function(t){
-      var st=sfSlotState(avail, ymd, t, ME.key);
+      var st=sfSlotState(avail, ymd, t, ME);
       var cls=st==='busy'?'busy':(st==='free'?'free':'');
       var tag=st==='busy'?'<small>DOLU</small>':(st==='free'?'<small>BOŞ</small>':'');
       var on=(selTime===t)?' on':'';
@@ -286,7 +302,7 @@ if(typeof module!=='undefined'&&module.exports){
     if(!selTime){ alert('Lütfen boş bir saat seçin.'); return; }
     if(!String(nm).trim()){ alert('Müşterinin adını yazın.'); return; }
     if(!sfPhoneOk(ph)){ alert('Geçerli bir telefon yazın (05XX XXX XX XX).'); return; }
-    if(sfSlotState(avail, sfKey(selDay), selTime, ME.key)==='busy'){ alert('Bu saat az önce doldu, başka bir saat seçin.'); selTime=null; drawTimes(); return; }
+    if(sfSlotState(avail, sfKey(selDay), selTime, ME)==='busy'){ alert('Bu saat az önce doldu, başka bir saat seçin.'); selTime=null; drawTimes(); return; }
     var req=sfRequest(ME, selDay, selTime, sEl.value, nm, ph, Date.now());
     var b=this; b.disabled=true; b.textContent='Kaydediliyor…';
     if(!ready||!db){ waFallback(req); return; }

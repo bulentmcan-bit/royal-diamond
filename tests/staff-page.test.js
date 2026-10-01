@@ -130,21 +130,43 @@ console.log('4. free or taken');
 {
   const ctx = load('?who=beyhan');
   const S = ctx.sfSlotState;
+  const BEY = ctx.ME, LIS = { key: 'lissa', name: 'Lissa' };
+  /* The feed keys these maps by the technician's DISPLAY name, because that is
+     what index.html publishes — not by the lower-case key everything in
+     crown-config uses. Reading a[key] found nothing, every hour came back
+     'unknown' and drew as bookable with no BOŞ or DOLU on it: the page looked
+     like it was working and told her nothing. Caught on the live site on
+     1 Ekim 2026, before the link went to her. */
   const feed = { days: { '2026-09-17': {
-    '09:00': { b: 0, c: 3, t: { beyhan: 0, lissa: 1 }, a: { beyhan: 1, lissa: 0 } },
-    '10:00': { b: 1, c: 3, t: { beyhan: 1, lissa: 0 }, a: { beyhan: 0, lissa: 1 } },
-    '11:00': { b: 0, c: 3, t: { lissa: 0 }, a: { lissa: 1 } },
+    '09:00': { b: 0, c: 3, t: { Beyhan: 0, Lissa: 1 }, a: { Beyhan: 1, Lissa: 0 } },
+    '10:00': { b: 1, c: 3, t: { Beyhan: 1, Lissa: 0 }, a: { Beyhan: 0, Lissa: 1 } },
+    '11:00': { b: 0, c: 3, t: { Lissa: 0 }, a: { Lissa: 1 } },
     '12:00': 0
   }, '2026-09-20': { _closed: 1 } } };
-  is(S(feed, '2026-09-17', '09:00', 'beyhan'), 'free', 'free for her whole job → free');
-  is(S(feed, '2026-09-17', '10:00', 'beyhan'), 'busy', 'busy → busy');
-  is(S(feed, '2026-09-17', '09:00', 'lissa'), 'busy', "…and it is read PER technician — Lissa is busy in the hour Beyhan is free");
-  is(S(feed, '2026-09-17', '11:00', 'beyhan'), 'unknown', 'an hour the feed says nothing about her is unknown');
-  is(S(feed, '2026-09-17', '12:00', 'beyhan'), 'unknown', 'a malformed slot is unknown, not a crash');
-  is(S(feed, '2026-09-17', '23:00', 'beyhan'), 'unknown', 'an hour that is not in the feed at all is unknown');
-  is(S(feed, '2026-09-20', '09:00', 'beyhan'), 'closed', 'a closed day says closed');
-  is(S(feed, '2026-09-19', '09:00', 'beyhan'), 'unknown', 'a day the feed has not got is unknown');
-  is(S(null, '2026-09-17', '09:00', 'beyhan'), 'unknown', 'no feed at all is unknown');
+  is(S(feed, '2026-09-17', '09:00', BEY), 'free', 'free for her whole job → free, found under her DISPLAY name');
+  is(S(feed, '2026-09-17', '10:00', BEY), 'busy', 'busy → busy');
+  is(S(feed, '2026-09-17', '09:00', LIS), 'busy', "…and it is read PER technician — Lissa is busy in the hour Beyhan is free");
+  is(S(feed, '2026-09-17', '11:00', BEY), 'unknown', 'an hour the feed says nothing about her is unknown');
+  is(S(feed, '2026-09-17', '12:00', BEY), 'unknown', 'a malformed slot is unknown, not a crash');
+  is(S(feed, '2026-09-17', '23:00', BEY), 'unknown', 'an hour that is not in the feed at all is unknown');
+  is(S(feed, '2026-09-20', '09:00', BEY), 'closed', 'a closed day says closed');
+  is(S(feed, '2026-09-19', '09:00', BEY), 'unknown', 'a day the feed has not got is unknown');
+  is(S(null, '2026-09-17', '09:00', BEY), 'unknown', 'no feed at all is unknown');
+
+  // Either spelling, whichever the feed happens to use.
+  const byKey = { days: { '2026-09-17': { '09:00': { a: { beyhan: 1 }, t: { beyhan: 0 } } } } };
+  is(S(byKey, '2026-09-17', '09:00', BEY), 'free', 'a feed keyed by the lower-case key works just as well');
+  const shouty = { days: { '2026-09-17': { '09:00': { a: { BEYHAN: 0 }, t: { BEYHAN: 1 } } } } };
+  is(S(shouty, '2026-09-17', '09:00', BEY), 'busy', '…and so does one that shouts');
+  is(ctx.sfPick({ Beyhan: 1 }, BEY), 1, 'the lookup finds her by name');
+  is(ctx.sfPick({ beyhan: 0 }, BEY), 0, '…and by key, and 0 is an answer, not a miss');
+  is(ctx.sfPick({ Lissa: 1 }, BEY), undefined, '…and somebody else is not her');
+  is(ctx.sfPick(null, BEY), undefined, 'no map, no answer');
+  is(ctx.sfPick({ Beyhan: 1 }, null), undefined, 'no technician, no answer');
+  // The page must pass the operator, not one of her two names — that was the bug.
+  is(/sfSlotState\(avail, ymd, t, ME\)/.test(page), true, 'the grid asks with the operator herself');
+  is(/sfSlotState\(avail, sfKey\(selDay\), selTime, ME\)/.test(page), true, '…and so does the check before saving');
+  is(/sfSlotState\([^)]*ME\.key\)/.test(page), false, '…and never with the key alone, which found nothing');
   // Unknown must not be drawn as busy: a slow connection would otherwise cost
   // her the booking.
   is(/st==='busy'\?' disabled':''/.test(page), true, 'ONLY a busy slot is disabled — unknown stays bookable');
