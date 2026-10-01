@@ -19282,6 +19282,133 @@ function rdWrDayTR(ymd){ try{ return new Date(String(ymd)+'T12:00:00').toLocaleD
 function rdWrWhen(ts){ if(!ts) return ''; var d=new Date(Number(ts)); var p=function(n){ return String(n).padStart(2,'0'); }; return p(d.getDate())+'.'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes()); }
 // "Pzt 14 Eyl 09:00 · Helen · Dolgu (Infill)" — the slot she was offered.
 function rdWrOfferLine(r){ var o=r&&r.offer; if(!o) return ''; return rdWrDayTR(o.d)+' '+(o.t||'')+(o.tech?' · '+o.tech:'')+(o.service?' · '+o.service:''); }
+/* ── what the customer actually read ────────────────────────────────────────
+   Piyzi's own inbox shows an outgoing message as its TEMPLATE NAME and nothing
+   else: a blue box reading "bosluk_teklifi". The owner looked at one and said
+   he could not relate to it, which is the right reaction — a file name is not a
+   sentence, and reception cannot answer "Evet" without knowing what the yes is
+   to. So the names are translated back into what the customer saw.
+
+   `exact: true` means the wording below IS the approved template body, kept
+   beside it in worker/templates/. `exact: false` means the template was written
+   inside Piyzi and its body is NOT in this repository: the label and the
+   variables we filled in are true, the wording is not reproduced, and nothing
+   is invented to fill the gap. Paste a body in here from Piyzi and flip the
+   flag when you have it in front of you. */
+var RD_WA_TEMPLATES = {
+  'bosluk_teklifi': {
+    label: 'Boşluk teklifi',
+    exact: true,
+    body: 'Merhaba,\n\nRoyal Diamond Nail Studio’da önümüzdeki günler için bir yerimiz açıldı.\n\nİsterseniz bu mesaja yanıt verin, size uygun saati hemen ayarlayalım.',
+    buttons: ['Evet / Yes please', 'Bizi arayın / Call us']
+  },
+  'bosluk_gun': {
+    label: 'Boşluk teklifi (gün belirtilmiş)',
+    exact: true,
+    body: 'Merhaba,\n\nRoyal Diamond Nail Studio’da {{gün}} için bir yerimiz açıldı.\n\nİsterseniz bu mesaja yanıt verin, size uygun saati hemen ayarlayalım.',
+    buttons: ['Evet / Yes please', 'Bizi arayın / Call us']
+  },
+  'pyz_randevu_hatirlatma_24saat': {
+    label: 'Randevu hatırlatması — 24 saat önce', exact: false,
+    vars: ['randevu saati'], buttons: ['Detaylar / Details']
+  },
+  'pyz_randevu_hatirlatma_2saat': {
+    label: 'Randevu hatırlatması — 2 saat önce', exact: false,
+    vars: ['randevu saati'], buttons: ['Detaylar / Details']
+  },
+  'pyz_appointment_booked_v2': {
+    label: 'Randevu onayı — kayıt anında', exact: false,
+    vars: ['tarih', 'saat']
+  },
+  'pyz_google_yorum_istegi': {
+    label: 'Google yorum isteği', exact: false, vars: []
+  }
+};
+// A template name → what it is. An unknown name comes back labelled as itself
+// rather than as nothing, so a template added at Piyzi tomorrow still reads.
+function rdWrTemplate(name){
+  var k=String(name||'').trim();
+  if(!k) return null;
+  var t=RD_WA_TEMPLATES[k];
+  if(t) return Object.assign({ name:k }, t);
+  return { name:k, label:k, exact:false, unknown:true };
+}
+
+/* The offer id carries the moment it was sent: "1790488822000-hannah-2026-09-28-0900".
+   That is the only timestamp the reply row holds for the offer, and it is what
+   makes "she answered three days later" sayable. */
+function rdWrOfferSentAt(offerId){
+  var m=/^(\d{10,})-/.exec(String(offerId||''));
+  return m ? Number(m[1]) : 0;
+}
+/* How long after the offer she answered, and whether the slot was still being
+   held for her. holdMinutes comes from crown-config — it is 45 today and the
+   worker's own default is 120, so it is read, never assumed.
+
+   This is the difference between "ring her, the slot is hers" and "ring her,
+   the slot has gone, offer another" — and reception cannot tell them apart
+   from the row as it stands. */
+function rdWrOfferLate(offerId, replyTs, holdMinutes){
+  var sent=rdWrOfferSentAt(offerId), t=Number(replyTs)||0;
+  if(!sent || !t || t<sent) return null;
+  var mins=Math.round((t-sent)/60000), hold=Number(holdMinutes);
+  if(!(hold>0)) hold=45;
+  return { mins:mins, hours:Math.floor(mins/60), days:Math.floor(mins/1440), pastHold:mins>hold, holdMinutes:hold };
+}
+// Is the offered day itself in the past? A slot on a date already gone cannot
+// be given to her however quickly reception moves.
+function rdWrSlotGone(ymd, now){
+  if(!ymd) return false;
+  var t=new Date(String(ymd)+'T23:59:59').getTime();
+  return !!t && t < (Number(now)||Date.now());
+}
+
+/* ── the reminders ──────────────────────────────────────────────────────────
+   Most replies answer no offer at all. They answer a reminder, and until now
+   the panel said so in the vaguest possible way: "probably a reminder, go and
+   look in Piyzi". It can do better, because the salon already knows which
+   reminders went out.
+
+   Two sources, and they are not equally good, so they are not presented as
+   though they were:
+     · rdns_r24_sent_log_v1 holds {sentAt, text} for a reminder sent from the
+       app's own 24-hour panel — an exact time and the exact words.
+     · the appointment's own r24 / r1 flags say a reminder went, but not when.
+       The send time is then DERIVED from the appointment (24 hours and 2 hours
+       before it), and marked as derived.
+   Newest first, at most four, and never a reminder sent after the reply it is
+   supposed to explain. */
+function rdWrRemindersFor(appts, client, beforeTs, sentLog){
+  if(!client) return [];
+  var t=Number(beforeTs)||Date.now(), log=sentLog||{}, out=[];
+  (appts||[]).forEach(function(a){
+    if(!a || String(a.clientId)!==String(client.id)) return;
+    var at=new Date(String(a.datetime||'')).getTime();
+    if(!at) return;
+    var rec=log[a.id] || log[String(a.id)];
+    if(a.r24){
+      var exact=!!(rec && rec.sentAt);
+      out.push({ kind:'r24', appt:a, at: exact?Number(rec.sentAt):at-86400000,
+                 text:(rec&&rec.text)||'', exact:exact,
+                 tpl:'pyz_randevu_hatirlatma_24saat' });
+    }
+    if(a.r1){
+      out.push({ kind:'r1', appt:a, at:at-2*3600000, text:'', exact:false,
+                 tpl:'pyz_randevu_hatirlatma_2saat' });
+    }
+  });
+  return out
+    .filter(function(x){ return x.at<=t && (t-x.at) < 30*86400000; })
+    .sort(function(x,y){ return y.at-x.at; })
+    .slice(0,4);
+}
+// "24 saat önce · Çar 30 Eyl 17:00 · Helen · Dolgu (Infill)"
+function rdWrReminderLine(x){
+  var a=(x&&x.appt)||{}, d=String(a.datetime||'');
+  return (x.kind==='r1'?'2 saat önce':'24 saat önce')+' · '
+    + rdWrDayTR(d.slice(0,10))+' '+d.slice(11,16)
+    + (a.staff?' · '+a.staff:'') + (a.service?' · '+a.service:'');
+}
 // The full-screen reception card, in the call alert's own clothes.
 function rdWrCardHtml(r, cls, ix, total){
   var esc=rdWrEsc, nm=rdWrNameFor(r, cls), ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,'');
@@ -19338,12 +19465,48 @@ function rdWrCardHtml(r, cls, ix, total){
     var h='<div style="padding:12px 14px 14px 30px;background:rgba(127,127,127,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;">';
 
     h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">NEYE CEVAP VERİYOR</div>';
+
+    // 1. the slots we offered her — and, where she answered one, whether the
+    //    slot was still being held when she did.
+    var hold=0; try{ hold=(C.gapFill&&C.gapFill.holdMinutes)||0; }catch(e){}
     if(sent.length){
       h+=sent.map(function(o){
-        return '<div style="margin-bottom:4px;">📤 Ona gönderdiğimiz boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b></div>';
+        var tpl=rdWrTemplate('bosluk_teklifi'), late=rdWrOfferLate(o.id, r.ts, hold);
+        var gone=rdWrSlotGone(o.offer&&o.offer.d, Date.now());
+        var line='<div style="margin-bottom:6px;">📤 Ona gönderdiğimiz boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b>';
+        if(tpl&&tpl.body) line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(tpl.body)+(tpl.buttons?'\n[ '+esc(tpl.buttons.join(' ]   [ '))+' ]':'')+'</div>';
+        if(late && (late.pastHold||gone)){
+          var how = late.days>=1 ? (late.days+' gün') : (late.hours>=1 ? (late.hours+' saat') : (late.mins+' dakika'));
+          line+='<div style="margin:5px 0 0 20px;color:#c4863a;font-weight:700;">⚠ Cevabı '+esc(how)+' sonra geldi'
+             +(gone?' — teklif edilen gün çoktan geçti.':' — slot '+esc(String(late.holdMinutes))+' dakika tutuluyordu, artık serbest.')
+             +' Ona yeni bir saat teklif edin.</div>';
+        }
+        return line+'</div>';
       }).join('');
-    }else{
-      h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya son 14 günde sistemden teklif gitmemiş. Muhtemelen bir hatırlatmaya ya da resepsiyonun kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
+    }
+
+    // 2. the reminders. Most replies answer one of these, and the panel used to
+    //    shrug and send reception to Piyzi.
+    var rems=[]; try{ rems=rdWrRemindersFor(appointments, c, r.ts, (typeof getR24SentLog==='function'?getR24SentLog():{})); }catch(e){}
+    if(rems.length){
+      h+=rems.map(function(x){
+        var tpl=rdWrTemplate(x.tpl);
+        var line='<div style="margin-bottom:6px;">⏰ Ona giden hatırlatma: <b>'+esc(rdWrReminderLine(x))+'</b>'
+          +'<span style="color:var(--muted);"> · '+esc(rdWrWhen(x.at))+(x.exact?'':' (randevudan hesaplandı)')+'</span>';
+        if(x.text){
+          line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(x.text)+'</div>';
+        }else if(tpl){
+          line+='<div style="margin:3px 0 0 20px;color:var(--muted);font-size:0.78rem;">'+esc(tpl.label)
+            +(tpl.vars&&tpl.vars.length?' — içinde: '+esc(tpl.vars.join(', ')):'')
+            +'. Tam metni bu depoda yok, Piyzi\'deki şablonda.</div>';
+        }
+        return line+'</div>';
+      }).join('');
+    }
+
+    // 3. nothing matched at all. Still said plainly, but only when it is true.
+    if(!sent.length && !rems.length){
+      h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya sistemden teklif de hatırlatma da gitmemiş. Muhtemelen resepsiyonun Piyzi\'den kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
     }
 
     h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">ONDAN GELEN TÜM MESAJLAR</div>';
