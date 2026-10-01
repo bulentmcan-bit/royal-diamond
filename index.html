@@ -5268,11 +5268,14 @@ p, span, div, label, h1, h2, h3, h4 {
         <select class="fctrl" id="a-service">
           <optgroup label="💅 MANİKÜR"><option value="Klasik Manikür">Klasik Manikür</option><option value="Jel Başlangıç (Full Set)">Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">Dolgu (Infill)</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option><option value="Tırnak Çıkarma">Tırnak Çıkarma</option></optgroup>
           <optgroup label="🦶 PEDİKÜR"><option value="Klasik Pedikür (Ojesiz)">Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Medikal Pedikür">Medikal Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
-          <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
-          <optgroup label="🤨 KAŞ"><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı</option><option value="Microblading">Microblading</option></optgroup>
+          <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Lifting &amp; Boyama">Kirpik Lifting &amp; Boyama</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
+          <optgroup label="🤨 KAŞ"><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı</option><option value="Kaş Boyama">Kaş Boyama</option><option value="Kaş Laminasyon">Kaş Laminasyon</option><option value="Microblading">Microblading</option><option value="Pudralama">Pudralama</option><option value="Kaş Vitamini (dermapen)">Kaş Vitamini (dermapen)</option><option value="Kaş Silme (solüsyon)">Kaş Silme (solüsyon)</option></optgroup>
           <optgroup label="🪒 AĞDA"><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda</option><option value="Tam Bacak Ağda">Tam Bacak Ağda</option><option value="Bikini Ağda">Bikini Ağda</option><option value="Özel Bölge Ağda">Özel Bölge Ağda</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda</option><option value="Tam Kol Ağda">Tam Kol Ağda</option></optgroup>
           <optgroup label="✨ GÜZELLİK"><option value="Güzellik Uygulaması">Güzellik Uygulaması</option></optgroup>
-        </select></div>
+        </select>
+        <label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:0.76rem;color:var(--muted);cursor:pointer;">
+          <input type="checkbox" id="a-allsvc" style="width:auto;margin:0;"> Tüm hizmetleri göster
+        </label></div>
     </div>
     <div class="form-row fr2">
       <div class="fg"><label class="flabel" id="flabel-a-dt">Tarih &amp; Saat *</label><input class="fctrl" type="datetime-local" id="a-dt"></div>
@@ -6254,6 +6257,7 @@ function popStaffSel(){
   if(prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
   // …and label whoever is not down for the chosen service (never disabled)
   if(typeof rdApplySkillToStaffSel==='function') rdApplySkillToStaffSel();
+  if(typeof rdApplyStaffToServiceSel==='function') rdApplyStaffToServiceSel();
 }
 try{ document.getElementById("a-dt").addEventListener("change", popStaffSel); }catch(e){}
 
@@ -9360,6 +9364,48 @@ function rdApplySkillToStaffSel(){
   }catch(e){}
 }
 try{ document.getElementById('a-service').addEventListener('change',rdApplySkillToStaffSel); }catch(e){}
+
+/* AND THE OTHER WAY ROUND: choose the technician, and the Hizmet list becomes
+   HER treatments. Beyhan is on commission with eight treatments of her own;
+   scrolling past thirty-one to find Pudralama, in a salon, with a customer
+   waiting, is the sort of thing that makes a till feel like paperwork. Pick
+   her name and her eight are what is left.
+
+   It HIDES, it does not refuse. "Tüm hizmetleri göster" brings the whole list
+   back in one tap, because reception knows the staff better than the config
+   does and this form has always warned rather than blocked — the label on the
+   Personel list, the confirm on save. Manager, a blank, and a name the config
+   does not know all show everything: they are not technicians and nothing is
+   written down about what they do.
+
+   If the service already chosen is not hers, it is left selected and shown
+   with a mark rather than silently swapped for another — a quietly changed
+   service is how the wrong thing gets billed. */
+function rdApplyStaffToServiceSel(){
+  try{
+    const st=document.getElementById('a-staff'), sv=document.getElementById('a-service');
+    const all=document.getElementById('a-allsvc');
+    if(!st||!sv) return;
+    const who=st.value, showAll=!!(all&&all.checked);
+    let known=false;
+    try{ known=!!(window.CROWN&&CROWN.find&&CROWN.find(who)); }catch(e){}
+    let hidden=0;
+    for(let i=0;i<sv.options.length;i++){
+      const o=sv.options[i];
+      const ok=(!known||showAll)?true:rdCanDo(who,o.value);
+      // the one she has already chosen stays visible, marked, never swapped
+      const keep=(o.value===sv.value);
+      o.hidden=!ok&&!keep;
+      o.disabled=!ok&&!keep;
+      if(!ok) hidden++;
+      o.textContent=o.value+((!ok&&keep)?' — '+who+' bu hizmeti yapmıyor':'');
+    }
+    const lb=document.getElementById('flabel-a-service');
+    if(lb) lb.textContent='Hizmet *'+((known&&!showAll&&hidden)?' — '+who+'’ın yaptıkları':'');
+  }catch(e){}
+}
+try{ document.getElementById('a-staff').addEventListener('change',function(){ rdApplyStaffToServiceSel(); if(typeof autoDurFill==='function') autoDurFill(); }); }catch(e){}
+try{ document.getElementById('a-allsvc').addEventListener('change',rdApplyStaffToServiceSel); }catch(e){}
 function renderGapReport(){
   const dateInput = document.getElementById('gr-date');
   if(!dateInput) return;

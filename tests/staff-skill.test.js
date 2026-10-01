@@ -364,6 +364,37 @@ console.log('5. booking.html: a time is free only if someone who does the servic
   }
 }
 
+console.log('5b. pick the technician, get HER treatments');
+{
+  /* The owner asked for this in as many words: she books for herself and her
+     treatments come out. The form has always worked the other way round —
+     choose the service, and the Personel list labels whoever does not do it.
+     Scrolling past thirty-one services to find Pudralama, in a salon, with a
+     customer waiting, is how a till starts to feel like paperwork. */
+  is(/function rdApplyStaffToServiceSel\(/.test(html), true, 'choosing a technician narrows the Hizmet list');
+  is(/document\.getElementById\('a-staff'\)\.addEventListener\('change'/.test(html), true, '…wired to the Personel box');
+  is(/if\(typeof rdApplyStaffToServiceSel==='function'\) rdApplyStaffToServiceSel\(\);/.test(html), true, '…and run again whenever that list is rebuilt');
+  is(/id="a-allsvc"/.test(html), true, 'with "Tüm hizmetleri göster" to bring the whole list back');
+  is(/Tüm hizmetleri göster/.test(html), true, '…labelled in Turkish');
+  is(/o\.hidden=!ok&&!keep;/.test(html), true, 'it HIDES rather than refuses — this form warns, it never blocks');
+  is(/const keep=\(o\.value===sv\.value\);/.test(html), true, '…and a service already chosen is kept, never swapped for another');
+  is(/bu hizmeti yapmıyor/.test(html), true, '…shown with a mark on it instead');
+  is(/const ok=\(!known\|\|showAll\)\?true:rdCanDo\(who,o\.value\);/.test(html), true, 'Manager, a blank and an unknown name all still see everything');
+
+  /* Her eight must actually EXIST in that form. Four of them did not: the
+     + Randevu service list had never been given Kirpik Lifting, Kaş Boyama,
+     Kaş Laminasyon, Pudralama, Kaş Vitamini or Kaş Silme, so picking Beyhan
+     would have narrowed the list to two. */
+  const form = /<select class="fctrl" id="a-service">([\s\S]*?)<\/select>/.exec(html);
+  is(!!form, true, 'the + Randevu service list is found');
+  const opts = [...(form ? form[1] : '').matchAll(/<option value="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, '&'));
+  const hers = Object.keys(C.servicesOf('beyhan'));
+  is(hers.filter(n => !opts.includes(n)), [], 'every one of Beyhan\u2019s eight is in the form');
+  is(opts.filter(n => C.canDo('beyhan', n)).length, 8, '…and picking her leaves exactly those eight');
+  is(opts.filter(n => C.canDo('helen', n)).length > 8, true, '…while Helen still has her own, much longer list');
+  is(opts.includes('Pudralama'), true, 'Pudralama is bookable at the desk, not only online');
+}
+
 console.log('6. the check is carried everywhere it must be');
 {
   // The skill filter and the pick are no longer adjacent lines: a REQUESTED
