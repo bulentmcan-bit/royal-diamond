@@ -395,6 +395,60 @@ console.log('5b. pick the technician, get HER treatments');
   is(opts.includes('Pudralama'), true, 'Pudralama is bookable at the desk, not only online');
 }
 
+console.log('5c. …however her name got into the box');
+{
+  /* THE BUG THE OWNER SAW. Setting a <select>'s .value in code does NOT fire
+     a change event. Tapping an empty slot in a technician's column, and
+     opening an existing booking to edit it, both set a-staff that way — so
+     the filter never ran and he saw his whole business's menu under Beyhan's
+     name. The listener was right and simply never fired.
+
+     The reaction lives in one function now, and every path calls it. */
+  is(/window\.rdStaffSelChanged = function\(\)\{/.test(html), true, 'one function reacts to the technician changing');
+  is(/rdApplyStaffToServiceSel\(\);/.test(html), true, '…narrowing the service list');
+  is(/if\(typeof autoDurFill==='function'\) autoDurFill\(\);/.test(html), true, '…and filling in the length');
+  is(/addEventListener\('change',function\(\)\{ rdStaffSelChanged\(\); \}\)/.test(html), true, 'a tap on the box calls it');
+  is(/if\(o\.value===staffName\)\{ staffSel\.value=staffName; break; \}\s*\n\s*\}\s*\n\s*\/\/[^\n]*\n\s*try\{ rdStaffSelChanged\(\); \}catch\(e\)\{\}/.test(html), true,
+     'tapping an empty slot in her column calls it — the case he reported');
+  is(/if\(st\)\{ st\.value = a\.staff \|\| ''; try\{ rdStaffSelChanged\(\); \}catch\(e\)\{\} \}/.test(html), true,
+     'opening an existing booking calls it');
+  is(/if\(st\)\{ st\.value=''; try\{ rdStaffSelChanged\(\); \}catch\(e\)\{\} \}/.test(html), true,
+     'and clearing the form calls it, so the whole list comes back');
+  /* No path may set that box and leave the list stale again. Every place the
+     a-staff element is fetched and then written to must call the reaction
+     within a few lines — counting `.value=` across the whole file would catch
+     half a dozen other variables that happen to be called `st`. */
+  const sites = [...html.matchAll(/getElementById\(['"]a-staff['"]\)/g)].map(m => m.index);
+  // Only a write to the technician box itself counts — autoDurFill fetches it
+  // and then writes to a-dur, which is not the same thing at all.
+  const writes = sites.filter(i => /(?:st|staffSel)\.value\s*=\s*[^=]/.test(html.slice(i, i + 260)));
+  is(writes.length, 7, 'seven places fetch the technician box and write to it');
+  is(writes.filter(i => !/rdStaffSelChanged/.test(html.slice(i, i + 400))), [],
+     '…and every one of them calls the reaction straight after');
+  is((html.match(/rdStaffSelChanged\(\)/g) || []).length >= 8, true,
+     'the reaction is called from the change event and from every one of those seven');
+}
+
+console.log('5d. and the system offers her empty slots');
+{
+  /* "for our system to be able to offer her empty slots" — Uygun Saat Bul.
+     It already asks skilledOn, so her own list governs who it searches. What
+     it did NOT do was measure her job properly. */
+  is(/const able=\(typeof rdSkilledOn==='function'\)\?rdSkilledOn\(svc, dayStr\):rdStaffOn\(dayStr\);/.test(html), true,
+     'the finder searches only the technicians who do the service');
+  is(/bu hizmeti yapmıyor \('\+svc\+'\)/.test(html), true, '…and refuses a named one who does not, with the reason');
+  // The 60 cap was right for a salon where everyone ran on the hour. Her
+  // microblading really is 90, and an hour-long hole for it does the exact
+  // harm the cap existed to prevent, to the customer after her.
+  is(/window\.rdSvcDur = function\(service, who\)\{/.test(html), true, 'rdSvcDur can be asked about a particular technician');
+  is(/CROWN\.serviceMinutes\(who, service\) : null;\s*\n\s*if\(m\) return m;/.test(html), true, '…and her own figure comes back UNCAPPED');
+  is(/return Math\.min\(60, best \|\| 60\);/.test(html), true, '…while everyone else keeps the 60 ceiling exactly as before');
+  is(/const durOf=function\(t\)\{ return \(typeof rdSvcDur==='function'\)\?rdSvcDur\(svc,t\):60; \};/.test(html), true,
+     'the finder measures each technician separately');
+  is(/fitsAt\(busy\[t\], want, durOf\(t\)\)/.test(html), true, '…for the exact time asked');
+  is(/if\(fitsAt\(busy\[t\], s, d\)\)/.test(html), true, '…and for every alternative rung, against HER length');
+}
+
 console.log('6. the check is carried everywhere it must be');
 {
   // The skill filter and the pick are no longer adjacent lines: a REQUESTED

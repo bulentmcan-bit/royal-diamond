@@ -6172,7 +6172,7 @@ function openModal(id){
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
     const pr=document.getElementById('a-price'); if(pr) pr.value='';
-    const st=document.getElementById('a-staff'); if(st) st.value='';
+    const st=document.getElementById('a-staff'); if(st){ st.value=''; try{ rdStaffSelChanged(); }catch(e){} }
     const saveBtn=document.getElementById('btn-save-appt');
     if(saveBtn){ saveBtn.textContent='+ Randevu'; saveBtn.onclick=saveAppt; }
   }
@@ -6661,7 +6661,7 @@ function dashEditAppt(id){
       }
     }catch(e){}
     const st = document.getElementById('a-staff');
-    if(st) st.value = a.staff || '';
+    if(st){ st.value = a.staff || ''; try{ rdStaffSelChanged(); }catch(e){} }
     // Switch save button to update mode
     const saveBtn = document.getElementById('btn-save-appt');
     if(saveBtn){
@@ -7134,6 +7134,8 @@ function quickBookStaff(staffName, slotH){
       for(let o of staffSel.options){
         if(o.value===staffName){ staffSel.value=staffName; break; }
       }
+      // …and the service list follows her, which setting .value alone does not do
+      try{ rdStaffSelChanged(); }catch(e){}
     }
   }, 150);
 }
@@ -9404,7 +9406,20 @@ function rdApplyStaffToServiceSel(){
     if(lb) lb.textContent='Hizmet *'+((known&&!showAll&&hidden)?' — '+who+'’ın yaptıkları':'');
   }catch(e){}
 }
-try{ document.getElementById('a-staff').addEventListener('change',function(){ rdApplyStaffToServiceSel(); if(typeof autoDurFill==='function') autoDurFill(); }); }catch(e){}
+/* EVERY way the technician can change, not just the one a thumb makes.
+
+   Setting a <select>'s .value in code does NOT fire a change event. Tapping
+   an empty slot in a technician's column (quickBookStaff) and opening an
+   existing booking to edit it both set a-staff that way, so the list stayed
+   at all thirty-one services and the owner saw his whole business's menu
+   under Beyhan's name. The listener was right and simply never ran.
+
+   So the reaction lives in one function and every path calls it. */
+window.rdStaffSelChanged = function(){
+  try{ rdApplyStaffToServiceSel(); }catch(e){}
+  try{ if(typeof autoDurFill==='function') autoDurFill(); }catch(e){}
+};
+try{ document.getElementById('a-staff').addEventListener('change',function(){ rdStaffSelChanged(); }); }catch(e){}
 try{ document.getElementById('a-allsvc').addEventListener('change',rdApplyStaffToServiceSel); }catch(e){}
 function renderGapReport(){
   const dateInput = document.getElementById('gr-date');
@@ -10398,7 +10413,7 @@ function rbGiveTime(id){
     const cs=document.getElementById('a-client-search'); if(cs) cs.value=c?c.name:'';
     const dd=document.getElementById('a-client-dropdown'); if(dd) dd.style.display='none';
     try{ apptSvcSet(it.service||''); }catch(e){ const sv=document.getElementById('a-service'); if(sv) sv.value=it.service||''; }
-    const st=document.getElementById('a-staff'); if(st) st.value=it.staff||'';
+    const st=document.getElementById('a-staff'); if(st){ st.value=it.staff||''; try{ rdStaffSelChanged(); }catch(e){} }
     const du=document.getElementById('a-dur'); if(du) du.value=String(Math.min(60,it.duration||60));
     const dt=document.getElementById('a-dt');
     if(dt){ dt.value=(it.targetDate||todayStr())+'T09:00'; try{ dt.focus(); }catch(e){} }
@@ -11798,7 +11813,7 @@ function openBookFromGrid(tech, hour){
   setTimeout(()=>{
     // Pre-fill staff and date/time
     const staffSel = document.getElementById("a-staff");
-    if(staffSel) staffSel.value = tech;
+    if(staffSel){ staffSel.value = tech; try{ rdStaffSelChanged(); }catch(e){} }
     const today = new Date();
     today.setHours(hour, 0, 0, 0);
     const dtInput = document.getElementById("a-dt");
@@ -19928,7 +19943,24 @@ function rdWrCardHtml(r, cls, ix, total){
   // yok artık: salon tamamen saat başı çalışıyor, ve buradan dönen 75/90/120
   // rebook'a, bul-yerleştir'e ve otomatik doldurmaya sızıp sonraki saati
   // işgal ediyordu. Tablo eski süreleri belge olarak tutar; cevap 60'ı aşmaz.
-  window.rdSvcDur = function(service){
+  window.rdSvcDur = function(service, who){
+    /* A TECHNICIAN'S OWN FIGURE WINS, AND IS NOT CAPPED. The 60 below is
+       right for the salon as it was: everyone ran on the hour, and the old
+       table's 75/90/120 leaked into rebook, find-a-slot and auto-fill and ate
+       the following hour for jobs that did not take that long.
+
+       Beyhan is the case that breaks it. Her microblading really is 90
+       minutes — the owner wrote the figure himself — and offering her a
+       60-minute slot for it does the exact harm the cap was meant to prevent,
+       only to the customer after her. So where crown-config holds a real
+       per-technician figure it is used as it stands; everywhere else nothing
+       changes, because `who` is left out and the cap still applies. */
+    if(who){
+      try{
+        const m = (window.CROWN && CROWN.serviceMinutes) ? CROWN.serviceMinutes(who, service) : null;
+        if(m) return m;
+      }catch(e){}
+    }
     const s = String(service||'').toLowerCase();
     if(/pedik|pedic/.test(s)) return 60;   // her pedikür 60 dk
     let best = null, len = 0;
@@ -20319,7 +20351,7 @@ function rdWrCardHtml(r, cls, ix, total){
         const el = document.getElementById('a-dt');
         if(el) el.value = d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+hm;
         const st = document.getElementById('a-staff');
-        if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===staff){ st.value=staff; break; } } }
+        if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===staff){ st.value=staff; break; } } try{ rdStaffSelChanged(); }catch(e){} }
       }, 120);
     }catch(e){ console.warn('quickbook:', e); }
   };
@@ -20402,7 +20434,10 @@ function rdWrCardHtml(r, cls, ix, total){
     const svc=document.getElementById('fnd-svc').value;
     if(!dayStr||!timeStr){ out.innerHTML='<div style="color:var(--red);font-size:0.85rem;">Tarih ve saat girin.</div>'; return; }
 
-    const dur=(typeof rdSvcDur==='function')?rdSvcDur(svc):60;
+    // Each technician's OWN length for this job: a 90 minute microblading must
+    // be offered a 90 minute hole, not an hour with the next customer in it.
+    const durOf=function(t){ return (typeof rdSvcDur==='function')?rdSvcDur(svc,t):60; };
+    const dur=durOf(only||'');
     const want=parseInt(timeStr.split(':')[0])*60+parseInt(timeStr.split(':')[1]);
     // WHO CAN DO WHAT (crown-config staffPrefs.serviceSkill): only the
     // technicians who do this service are searched. A named one who does
@@ -20420,14 +20455,15 @@ function rdWrCardHtml(r, cls, ix, total){
     // tam istenen saatte uygun olanlar — a time that is not on the ladder
     // (crown-config `starts`: whole hours, half hours from 17:30) is never an
     // exact match, because it could not be offered; the nearest rungs follow.
-    const exact=rdCanStartAt(want) ? list.filter(function(t){ return fitsAt(busy[t], want, dur); }) : [];
+    const exact=rdCanStartAt(want) ? list.filter(function(t){ return fitsAt(busy[t], want, durOf(t)); }) : [];
 
     // en yakın alternatifler — every rung of the ladder that fits
     const alts=[];
     list.forEach(function(t){
+      const d=durOf(t);
       rdStartLadder().forEach(function(s){
-        if(s===want || s+dur>CLOSE) return;
-        if(fitsAt(busy[t], s, dur)) alts.push({t:t, s:s, diff:Math.abs(s-want)});
+        if(s===want || s+d>CLOSE) return;
+        if(fitsAt(busy[t], s, d)) alts.push({t:t, s:s, diff:Math.abs(s-want)});
       });
     });
     alts.sort(function(a,b){ return a.diff-b.diff || a.s-b.s; });
@@ -20481,7 +20517,7 @@ function rdWrCardHtml(r, cls, ix, total){
     setTimeout(function(){
       const dt=document.getElementById('a-dt'); if(dt) dt.value=day+'T'+hm;
       const st=document.getElementById('a-staff');
-      if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===tech){ st.value=tech; break; } } }
+      if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===tech){ st.value=tech; break; } } try{ rdStaffSelChanged(); }catch(e){} }
       const sv=document.getElementById('a-service');
       if(sv && svc){ sv.value=svc; if(typeof rdAutoDur==='function') rdAutoDur(); }
     }, 140);
