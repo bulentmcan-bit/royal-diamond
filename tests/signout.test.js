@@ -35,7 +35,7 @@ console.log('1. the button');
   is(/🚪 Çıkış Yap/.test(html), true, '…and it says Çıkış Yap in Turkish');
   // In Ayarlar, with the other account-level things, not on the dashboard
   // where a thumb lands all day.
-  const settings = /<div class="page" id="page-settings">([\s\S]*?)\n    <\/div>\n\n    <!-- ════ SALARY PAGE/.exec(html);
+  const settings = /<div class="page" id="page-settings">([\s\S]*?)\r?\n    <\/div>\r?\n\r?\n    <!-- ════ SALARY PAGE/.exec(html);
   is(!!settings, true, 'the Ayarlar page is found');
   is(settings ? /rd-signout-btn/.test(settings[1]) : false, true, '…and the button is inside it');
   is(/id="page-dashboard"[\s\S]{0,4000}rd-signout-btn/.test(html), false, '…and nowhere near the dashboard');
