@@ -337,7 +337,14 @@ console.log('5. booking.html: a time is free only if someone who does the servic
 
 console.log('6. the check is carried everywhere it must be');
 {
-  is(/const _able=_obTechs\(req\.date\)\.filter\(t=>rdCanDo\(t, req\.service\|\|''\)\);\s*const staffPick=_able\.find/.test(html), true, 'the online request handler picks only from technicians who do the requested service');
+  // The skill filter and the pick are no longer adjacent lines: a REQUESTED
+  // technician now narrows _able in between (staff.html, where Beyhan books
+  // her own customers). So the two halves are pinned separately, and the
+  // invariant that matters — staffPick comes out of _able and nowhere else —
+  // is pinned on its own.
+  is(/let _able=_obTechs\(req\.date\)\.filter\(t=>rdCanDo\(t, req\.service\|\|''\)\);/.test(html), true, 'the online request handler starts from technicians who do the requested service');
+  is(/const staffPick=_able\.find\(t=>_obTechCanStart\(t, req\.time, maps\)\)\|\|'';/.test(html), true, '…and picks only from that list, never from the whole roster');
+  is(/if\(_want\) _able=_able\.filter\(t=>String\(t\)\.toLowerCase\(\)===_want\);/.test(html), true, '…a named technician narrows it further, never widens it');
   is(/bu hizmeti \('\+\(req\.service\|\|''\)\+'\) yapan personel yok/.test(html), true, '…and says so when nobody does');
   is(/const able=\(typeof rdSkilledOn==='function'\)\?rdSkilledOn\(svc, dayStr\):rdStaffOn\(dayStr\);/.test(html), true, 'Uygun Saat Bul searches only those who do the service');
   is(/bu hizmeti yapmıyor \('\+svc\+'\)/.test(html), true, '…and refuses a named technician who does not, by name');

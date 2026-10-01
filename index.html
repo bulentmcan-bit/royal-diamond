@@ -2644,7 +2644,24 @@
       // technician who does the requested service may take it. If the only
       // one who does is busy, the request is FULL — nobody else is booked
       // for it quietly; reception rings with an alternative.
-      const _able=_obTechs(req.date).filter(t=>rdCanDo(t, req.service||''));
+      let _able=_obTechs(req.date).filter(t=>rdCanDo(t, req.service||''));
+      /* A REQUESTED technician is honoured, or the request is refused — she is
+         never quietly swapped for somebody else.
+
+         The customer page names nobody and takes whoever is free, which is
+         right for a stranger booking a manicure. A technician booking her OWN
+         customer into her OWN column is the opposite case: Beyhan writing to
+         staff.html?who=beyhan means Beyhan, and handing that customer to Lissa
+         because Lissa happened to be first in the roster would be a worse
+         outcome than no booking at all — the customer turns up expecting the
+         person she asked for.
+
+         So a named technician narrows the list to her alone. If she does not
+         do that service, or is not in that day, or is busy at that hour, the
+         list is empty, staffPick is '' and the request falls through to the
+         refusal below, which tells reception to ring with an alternative. */
+      const _want=String(req.tech||'').trim().toLowerCase();
+      if(_want) _able=_able.filter(t=>String(t).toLowerCase()===_want);
       const staffPick=_able.find(t=>_obTechCanStart(t, req.time, maps))||'';
       // And the booking is written for exactly that long, which is what keeps
       // her next offered start the right distance away.
@@ -2652,7 +2669,9 @@
       if(!_obUnion().includes(req.time)||booked>=cap||!staffPick){
         _obMarkProcessed(id);
         _fbDb.ref('rdns_booking_requests/'+id).update({handled:'full',handledAt:Date.now()}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Firebase Rules ekranındaki tek satırlık güncelleme yayınlanmamış görünüyor.','r');}catch(_){}} );
-        const _why=_able.length?'saat dolu':'bu hizmeti ('+(req.service||'')+') yapan personel yok';
+        const _why=_able.length?'saat dolu'
+                 :(_want?(_want.charAt(0).toUpperCase()+_want.slice(1))+' o gün/saat bu hizmet için müsait değil'
+                        :'bu hizmeti ('+(req.service||'')+') yapan personel yok');
         try{toast('🌐','ONLINE TALEP — SAAT DOLU ⚠️',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' istedi ama '+_why+'. Tel: '+(req.phone||'—')+' — alternatif için arayın.','r');}catch(e){}
         publishAvailability();
         return;

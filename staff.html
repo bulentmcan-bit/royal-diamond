@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>👑 Randevu Defterim — Royal Diamond</title>
+<link rel="icon" type="image/png" href="/crown-gold.png">
+<link rel="apple-touch-icon" href="/crown-gold.png">
+<link rel="manifest" href="/staff-manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Defterim">
+<meta name="theme-color" content="#141614">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="crown-config.js"></script>
+<style>
+:root{--gold:#c9a05a;--goldD:#8a6420;--dark:#141614;--card:#fff;--bg:#f7f5f2;--wa:#25D366;--ok:#2e9e5b;--bad:#c0392b;--text:#1f1f1f;--muted:#777;--line:#e3ded4;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:env(safe-area-inset-bottom);}
+.hero{background:linear-gradient(135deg,#141614,#2a2f28);color:#fff;text-align:center;padding:calc(26px + env(safe-area-inset-top)) 16px 20px;}
+.hero h1{font-family:'Playfair Display',serif;color:var(--gold);font-size:1.35rem;}
+.hero p{color:#cfcabc;font-size:0.8rem;margin-top:5px;}
+.wrap{max-width:520px;margin:-12px auto 32px;padding:0 13px;}
+.card{background:var(--card);border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.07);padding:17px 15px;margin-bottom:14px;}
+.lbl{font-size:.7rem;font-weight:800;letter-spacing:1px;color:var(--goldD);text-transform:uppercase;margin:12px 0 8px;}
+.lbl:first-child{margin-top:0;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;}
+.chip{flex:1 1 92px;min-height:52px;border:2px solid var(--line);background:#fff;border-radius:12px;padding:8px 6px;font-family:inherit;font-size:.8rem;font-weight:700;color:var(--text);cursor:pointer;line-height:1.25;}
+.chip.on{border-color:var(--gold);background:#fdf6e9;}
+.chip:disabled{opacity:.42;cursor:not-allowed;}
+.slot{flex:1 1 72px;min-height:50px;font-variant-numeric:tabular-nums;}
+.slot.busy{background:#f3eeea;border-color:#e0d6cc;color:#9a8e85;}
+.slot.busy small{display:block;font-size:.6rem;font-weight:800;letter-spacing:.05em;color:#b4645a;}
+.slot.free small{display:block;font-size:.6rem;font-weight:800;letter-spacing:.05em;color:var(--ok);}
+input,select{width:100%;padding:13px 12px;border:2px solid var(--line);border-radius:12px;font-family:inherit;font-size:16px;background:#fff;color:var(--text);}
+.go{width:100%;margin-top:16px;padding:16px;border:0;border-radius:14px;background:linear-gradient(135deg,#c9a05a,#8a6420);color:#fff;font-family:inherit;font-size:1.02rem;font-weight:800;cursor:pointer;}
+.go:disabled{opacity:.55;}
+.note{font-size:.76rem;color:var(--muted);margin-top:9px;line-height:1.5;}
+.conn{text-align:center;font-size:.75rem;color:var(--muted);padding:7px 0 2px;}
+.done{display:none;text-align:center;padding:10px 4px;}
+.done h2{font-family:'Playfair Display',serif;color:var(--goldD);font-size:1.2rem;margin-bottom:10px;}
+.sum{background:#fdf6e9;border:1px solid #efe0c4;border-radius:12px;padding:13px;font-size:.92rem;line-height:1.7;margin:10px 0;text-align:left;}
+.again{display:inline-block;margin-top:6px;padding:12px 20px;border:2px solid var(--gold);border-radius:12px;background:#fff;color:var(--goldD);font-weight:800;font-family:inherit;font-size:.9rem;cursor:pointer;}
+.bad{background:#fdecea;border:1px solid #f5c6c0;color:#8e2f23;border-radius:12px;padding:13px;font-size:.86rem;line-height:1.55;}
+</style></head>
+<body>
+<div class="hero"><h1 id="hd">👑 Randevu Defterim</h1><p id="sub">Royal Diamond Nail &amp; Beauty</p></div>
+<div class="wrap">
+  <div class="conn" id="conn">Bağlanıyor…</div>
+  <div class="card" id="form">
+    <div class="lbl">📅 Gün</div><div class="chips" id="days"></div>
+    <div class="lbl">🕐 Saat</div><div class="chips" id="times"></div>
+    <div class="lbl">💅 Hizmet</div><select id="svc"></select>
+    <div class="lbl">🙋‍♀️ Müşteri</div>
+    <input id="nm" placeholder="Adı Soyadı" autocomplete="off">
+    <div style="height:9px"></div>
+    <input id="ph" placeholder="05XX XXX XX XX" inputmode="tel" autocomplete="off">
+    <button class="go" id="go">✅ Randevuyu Yaz</button>
+    <div class="note" id="foot"></div>
+  </div>
+  <div class="card done" id="done">
+    <h2>✅ Randevu yazıldı</h2>
+    <div class="sum" id="sum"></div>
+    <button class="again" id="again">+ Bir randevu daha</button>
+  </div>
+</div>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   A technician's own page — her days, her hours, her bookings.
+
+   WHO IT IS FOR. Beyhan is in on her own days, on commission, with her own
+   customers, and she has no reason to see the salon's books. index.html has
+   exactly two roles, owner and reception, and both of them see Daily Takings,
+   salaries, the P&L and every customer's telephone number. Handing her that
+   login to let her write her own appointments would be trading the whole
+   ledger for a diary.
+
+   SO THIS PAGE HAS NO LOGIN AT ALL. It signs in anonymously, exactly as
+   booking.html does, and it reads ONE world-readable thing: the availability
+   feed the salon already publishes (rdns_public_availability), which carries
+   free/busy per technician per half hour and NO customer data whatsoever. She
+   therefore sees her day as open or taken, never who is coming — and nothing
+   new is published anywhere to make this page work. Customer names stay inside
+   the salon. That was a deliberate choice, not an oversight.
+
+   WRITING. She pushes to rdns_booking_requests like the customer page, with
+   one extra field: tech. The salon app picks it up within seconds and writes
+   the appointment. index.html honours that field or REFUSES — it never hands
+   her customer to whoever happens to be free, because a customer who asked for
+   Beyhan and finds somebody else is worse served than one who is rung back.
+
+   The salon app must be open on a machine for the request to be turned into an
+   appointment. That is already true of every online booking.
+
+   ?who=<key> names the technician, and the key must exist in crown-config.js.
+   Nothing about this file is particular to Beyhan: a second technician needs a
+   link, not a copy of this page.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyDHSIhzTf-zpOwh9ELe3DzpfHrxAffnz2k",
+  authDomain:"royal-diamond-1031c.firebaseapp.com",
+  databaseURL:"https://royal-diamond-1031c-default-rtdb.firebaseio.com",
+  projectId:"royal-diamond-1031c",
+  storageBucket:"royal-diamond-1031c.firebasestorage.app",
+  messagingSenderId:"440737939833",
+  appId:"1:440737939833:web:56d697cb2d6d4baa992fa8"
+};
+var SALON='905488933333';
+var GUN=['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+var AY=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+var DAYS_AHEAD=28;
+
+// ── who ────────────────────────────────────────────────────────────────────
+// The key comes off the address and is checked against crown-config. An
+// unknown one shows a refusal rather than a page that silently books nobody.
+function sfWho(){
+  var m=/[?&]who=([^&#]+)/.exec(location.search||'');
+  var k=m?decodeURIComponent(m[1]).trim().toLowerCase():'';
+  try{ var o=k&&window.CROWN&&CROWN.find?CROWN.find(k):null; return o||null; }catch(e){ return null; }
+}
+var ME=sfWho();
+
+// ── the days she is actually in ────────────────────────────────────────────
+// rosterOn answers it, so her workdays live in crown-config and nowhere else:
+// change [2,4] there and this page follows without being touched.
+function sfKey(d){ var p=function(n){return (n<10?'0':'')+n;}; return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function sfClosed(d){ try{ return !!(window.CROWN&&CROWN.isClosedDay&&CROWN.isClosedDay(d)); }catch(e){ return d.getDay()===0; } }
+function sfOnDuty(d){
+  if(!ME) return false;
+  try{ return (CROWN.rosterOn(sfKey(d))||[]).some(function(o){ return o.key===ME.key; }); }catch(e){ return false; }
+}
+function sfMyDays(from, n){
+  var out=[], d0=new Date(from);
+  for(var i=0;i<(n||DAYS_AHEAD);i++){
+    var d=new Date(d0); d.setDate(d0.getDate()+i);
+    if(!sfClosed(d) && sfOnDuty(d)) out.push(d);
+  }
+  return out;
+}
+// ── her services ───────────────────────────────────────────────────────────
+// canDo reads staffPrefs.serviceSkill. A technician is never offered a service
+// she does not do, so she cannot book herself a pedicure by accident.
+function sfMyServices(all){
+  if(!ME) return [];
+  return (all||[]).filter(function(s){ try{ return !!CROWN.canDo(ME.key, s); }catch(e){ return false; } });
+}
+var ALL_SERVICES=['Klasik Manikür','Jel Başlangıç (Full Set)','Dolgu (Infill)','Nail Art','French / Ombre','Tırnak Onarımı','Tırnak Çıkarma','Klasik Pedikür (Ojesiz)','Jel Pedikür','Lüks Spa Pedikür','Medikal Pedikür','Renk Değişimi (Pedikür)','Klasik Kirpik Uygulaması','Volume / Rus Kirpiği','Kirpik Dolgu','Kirpik Lifting & Boyama','Kirpik Çıkarma','Altın Oran Kaş Alımı','Kaş Boyama','Kaş Laminasyon','Microblading','Bıyık / Çene Ağda','Tüm Yüz Ağda','Koltuk Altı Ağda','Yarım Bacak Ağda','Tam Bacak Ağda','Bikini Ağda','Özel Bölge Ağda','Tüm Vücut Ağda','Tam Kol Ağda','Güzellik Uygulaması'];
+
+// ── free or taken, for HER ─────────────────────────────────────────────────
+// The feed's per-technician flags: a=1 she can start a whole job here, t=1 she
+// is busy. No name, no service, no telephone — this feed carries none.
+// Anything the feed does not answer is 'unknown', drawn as bookable and said
+// to be unconfirmed, because refusing a booking on missing data would lose her
+// a customer over a slow connection.
+function sfSlotState(avail, ymd, slot, key){
+  var day=avail&&avail.days&&avail.days[ymd];
+  if(!day||day._closed) return day&&day._closed?'closed':'unknown';
+  var s=day[slot];
+  if(!s||typeof s!=='object') return 'unknown';
+  if(s.a&&typeof s.a[key]!=='undefined') return s.a[key]?'free':'busy';
+  if(s.t&&typeof s.t[key]!=='undefined') return s.t[key]?'busy':'free';
+  return 'unknown';
+}
+function sfSlots(){
+  try{ if(window.CROWN&&CROWN.startLadderHM) return CROWN.startLadderHM(); }catch(e){}
+  var a=[]; for(var m=8*60;m<=18*60;m+=30){ if(m%60===0||m>=17*60+30) a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2)); }
+  return a;
+}
+// What gets pushed. tech is the whole point of it.
+function sfRequest(me, day, time, service, name, phone, now){
+  return { name:String(name||'').trim(), phone:String(phone||'').trim(),
+           date:sfKey(day), time:time, service:service,
+           tech:me.key, ts:Number(now)||Date.now(), src:'staff-'+me.key };
+}
+function sfPhoneOk(p){ return String(p||'').replace(/\D/g,'').length>=10; }
+
+if(typeof module!=='undefined'&&module.exports){
+  module.exports={sfKey:sfKey,sfSlotState:sfSlotState,sfRequest:sfRequest,sfPhoneOk:sfPhoneOk};
+}
+</script>
+<script>
+(function(){
+  var db=null, ready=false, avail=null, selDay=null, selTime=null;
+  var dEl=document.getElementById('days'), tEl=document.getElementById('times'),
+      sEl=document.getElementById('svc'), cEl=document.getElementById('conn'),
+      fEl=document.getElementById('foot');
+
+  if(!ME){
+    document.getElementById('form').innerHTML='<div class="bad"><b>Bu bağlantı eksik.</b><br>Adresin sonunda kimin defteri olduğu yazmalı, örneğin <code>?who=beyhan</code>. Lütfen Bülent’den doğru bağlantıyı isteyin.</div>';
+    cEl.style.display='none';
+    document.getElementById('hd').textContent='👑 Randevu Defteri';
+    return;
+  }
+  document.getElementById('hd').textContent='👑 '+ME.name;
+  document.getElementById('sub').textContent='Royal Diamond — kendi randevu defteriniz';
+  fEl.innerHTML='Yazdığınız randevu salonun defterine <b>'+ME.name+'</b> adına geçer. Saat doluysa ya da o gün çalışmıyorsanız kaydedilmez — resepsiyon sizi arar.';
+
+  var svcs=sfMyServices(ALL_SERVICES);
+  sEl.innerHTML=svcs.map(function(s){ return '<option value="'+s.replace(/"/g,'&quot;')+'">'+s+'</option>'; }).join('');
+
+  function drawDays(){
+    var ds=sfMyDays(new Date(), DAYS_AHEAD);
+    if(!ds.length){ dEl.innerHTML='<div class="note">Önümüzdeki '+DAYS_AHEAD+' günde çalışma gününüz görünmüyor.</div>'; return; }
+    dEl.innerHTML=ds.map(function(d,i){
+      var on=selDay&&sfKey(selDay)===sfKey(d);
+      return '<button type="button" class="chip'+(on?' on':'')+'" data-i="'+i+'">'+GUN[d.getDay()]+'<br><b>'+d.getDate()+' '+AY[d.getMonth()]+'</b></button>';
+    }).join('');
+    [].forEach.call(dEl.children,function(b){
+      if(!b.dataset) return;
+      b.onclick=function(){ selDay=ds[+b.dataset.i]; selTime=null; drawDays(); drawTimes(); };
+    });
+  }
+  function drawTimes(){
+    if(!selDay){ tEl.innerHTML='<div class="note">Önce bir gün seçin.</div>'; return; }
+    var ymd=sfKey(selDay);
+    tEl.innerHTML=sfSlots().map(function(t){
+      var st=sfSlotState(avail, ymd, t, ME.key);
+      var cls=st==='busy'?'busy':(st==='free'?'free':'');
+      var tag=st==='busy'?'<small>DOLU</small>':(st==='free'?'<small>BOŞ</small>':'');
+      var on=(selTime===t)?' on':'';
+      return '<button type="button" class="chip slot '+cls+on+'" data-t="'+t+'"'+(st==='busy'?' disabled':'')+'>'+t+tag+'</button>';
+    }).join('');
+    [].forEach.call(tEl.children,function(b){
+      if(!b.dataset||!b.dataset.t) return;
+      b.onclick=function(){ selTime=b.dataset.t; drawTimes(); };
+    });
+  }
+  drawDays(); drawTimes();
+
+  try{
+    var app=firebase.initializeApp(FIREBASE_CONFIG,'staffPage');
+    db=app.database();
+    app.auth().setPersistence(firebase.auth.Auth.Persistence.NONE)
+      .then(function(){ return app.auth().signInAnonymously(); })
+      .then(function(){
+        ready=true;
+        db.ref('rdns_public_availability/days').on('value',function(snap){
+          avail={days:snap.val()||{}};
+          cEl.innerHTML=snap.val()?'🟢 Canlı müsaitlik':'Müsaitlik bilgisi yok — yine de yazabilirsiniz';
+          drawTimes();
+        });
+      })
+      .catch(function(e){ console.warn(e); cEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile yazın'; });
+  }catch(e){ console.warn(e); cEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile yazın'; }
+
+  function waFallback(req){
+    var msg='👑 RANDEVU — '+ME.name+'\n\n📅 '+req.date+'\n🕐 '+req.time+'\n💅 '+req.service+'\n🙋‍♀️ '+req.name+'\n📞 '+req.phone;
+    location.href='https://wa.me/'+SALON+'?text='+encodeURIComponent(msg);
+  }
+  document.getElementById('go').onclick=function(){
+    var nm=document.getElementById('nm').value, ph=document.getElementById('ph').value;
+    if(!selDay){ alert('Lütfen bir gün seçin.'); return; }
+    if(!selTime){ alert('Lütfen boş bir saat seçin.'); return; }
+    if(!String(nm).trim()){ alert('Müşterinin adını yazın.'); return; }
+    if(!sfPhoneOk(ph)){ alert('Geçerli bir telefon yazın (05XX XXX XX XX).'); return; }
+    if(sfSlotState(avail, sfKey(selDay), selTime, ME.key)==='busy'){ alert('Bu saat az önce doldu, başka bir saat seçin.'); selTime=null; drawTimes(); return; }
+    var req=sfRequest(ME, selDay, selTime, sEl.value, nm, ph, Date.now());
+    var b=this; b.disabled=true; b.textContent='Kaydediliyor…';
+    if(!ready||!db){ waFallback(req); return; }
+    db.ref('rdns_booking_requests').push(req).then(function(){
+      document.getElementById('form').style.display='none';
+      var d=document.getElementById('done'); d.style.display='block';
+      document.getElementById('sum').innerHTML='📅 <b>'+GUN[selDay.getDay()]+', '+selDay.getDate()+' '+AY[selDay.getMonth()]+'</b><br>🕐 <b>'+selTime+'</b><br>💅 '+req.service+'<br>🙋‍♀️ '+req.name+'<br>📞 '+req.phone+'<br>👩 '+ME.name;
+      window.scrollTo({top:0,behavior:'smooth'});
+    }).catch(function(e){ console.warn(e); b.disabled=false; b.textContent='✅ Randevuyu Yaz'; waFallback(req); });
+  };
+  document.getElementById('again').onclick=function(){
+    document.getElementById('done').style.display='none';
+    var f=document.getElementById('form'); f.style.display='block';
+    document.getElementById('nm').value=''; document.getElementById('ph').value='';
+    selTime=null; drawTimes();
+    var g=document.getElementById('go'); g.disabled=false; g.textContent='✅ Randevuyu Yaz';
+  };
+})();
+</script>
+</body></html>

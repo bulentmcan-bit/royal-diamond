@@ -1,0 +1,15 @@
+{
+  "name": "Royal Diamond — Randevu Defterim",
+  "short_name": "Defterim",
+  "description": "Royal Diamond Nail & Beauty — personelin kendi randevu defteri.",
+  "lang": "tr",
+  "start_url": "/staff.html",
+  "scope": "/staff.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f5f2",
+  "theme_color": "#141614",
+  "icons": [
+    { "src": "/crown-gold.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
