@@ -32,6 +32,17 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);min-
 .slot.busy{background:#f3eeea;border-color:#e0d6cc;color:#9a8e85;}
 .slot.busy small{display:block;font-size:.6rem;font-weight:800;letter-spacing:.05em;color:#b4645a;}
 .slot.free small{display:block;font-size:.6rem;font-weight:800;letter-spacing:.05em;color:var(--ok);}
+.grid{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px;}
+.grid table{border-collapse:collapse;width:100%;font-size:.8rem;}
+.grid th,.grid td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;text-align:center;}
+.grid th:last-child,.grid td:last-child{border-right:0;}
+.grid thead th{background:#faf7f2;color:var(--goldD);font-weight:800;font-size:.74rem;padding:8px 4px;position:sticky;top:0;}
+.grid tbody th{background:#faf7f2;font-weight:800;font-variant-numeric:tabular-nums;padding:0 8px;white-space:nowrap;position:sticky;left:0;z-index:1;}
+.cell{display:block;width:100%;min-width:62px;min-height:42px;border:0;background:none;font-family:inherit;font-size:.68rem;font-weight:800;letter-spacing:.04em;cursor:pointer;color:var(--ok);}
+.cell.busy{background:#f3eeea;color:#b4645a;cursor:not-allowed;}
+.cell.off{background:#f7f7f7;color:#c8c8c8;cursor:not-allowed;}
+.cell.on{background:var(--gold);color:#fff;}
+.pickline{margin-top:9px;font-size:.84rem;font-weight:700;color:var(--goldD);min-height:20px;}
 input,select{width:100%;padding:13px 12px;border:2px solid var(--line);border-radius:12px;font-family:inherit;font-size:16px;background:#fff;color:var(--text);}
 .go{width:100%;margin-top:16px;padding:16px;border:0;border-radius:14px;background:linear-gradient(135deg,#c9a05a,#8a6420);color:#fff;font-family:inherit;font-size:1.02rem;font-weight:800;cursor:pointer;}
 .go:disabled{opacity:.55;}
@@ -49,7 +60,8 @@ input,select{width:100%;padding:13px 12px;border:2px solid var(--line);border-ra
   <div class="conn" id="conn">Bağlanıyor…</div>
   <div class="card" id="form">
     <div class="lbl">📅 Gün</div><div class="chips" id="days"></div>
-    <div class="lbl">🕐 Saat</div><div class="chips" id="times"></div>
+    <div class="lbl">👩 Personel ve saat <span id="gridhint" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);"></span></div>
+    <div id="grid" class="grid"></div>
     <div class="lbl">💅 Hizmet</div><select id="svc"></select>
     <div class="lbl">🙋‍♀️ Müşteri</div>
     <input id="nm" placeholder="Adı Soyadı" autocomplete="off">
@@ -163,6 +175,31 @@ function sfMyDays(from, n){
   }
   return out;
 }
+/* EVERY open day, not only hers. She books for the whole salon now, so the
+   day list is the salon's week and not her own two days. A day the salon is
+   shut is left out; a day she is not in is not, because she can still take a
+   booking for Helen on a Wednesday. */
+function sfOpenDays(from, n){
+  var out=[], d0=new Date(from);
+  for(var i=0;i<(n||DAYS_AHEAD);i++){
+    var d=new Date(d0); d.setDate(d0.getDate()+i);
+    if(!sfClosed(d)) out.push(d);
+  }
+  return out;
+}
+/* WHO is in on a given day — the same answer reception's own grid gives.
+   rosterOn minus hiddenOnDash: Zara is rostered on Mondays and Thursdays and
+   is deliberately off reception's columns, so she is off these too. One screen
+   showing a technician the desk's own screen does not would be two different
+   stories about the same day, and the desk's is the one the salon runs on. */
+function sfTechsOn(ymd){
+  try{
+    // A closed day has nobody in it, whatever the roster says: rosterOn
+    // answers "who works this weekday", not "is the salon open".
+    if(sfClosed(new Date(String(ymd)+'T12:00:00'))) return [];
+    return (CROWN.rosterOn(ymd)||[]).filter(function(o){ return !o.hiddenOnDash; });
+  }catch(e){ return []; }
+}
 /* ── her services ──────────────────────────────────────────────────────────
    Her OWN list wins. An operator in crown-config.js may carry
    `services: {name: minutes}` (or a plain array of names), and where she does,
@@ -176,15 +213,17 @@ function sfMyDays(from, n){
    categorise at all (Güzellik Uygulaması) comes back open to everybody. Right
    for the salon's diary, where an unclassified job should not be blocked;
    wrong for a page whose whole purpose is to offer her what she does. */
-function sfMyServices(all){
-  if(!ME) return [];
-  var mine=ME.services;
+function sfServicesOf(op, all){
+  if(!op) return [];
+  var mine=op.services;
   if(Array.isArray(mine)) return mine.slice();
   if(mine && typeof mine==='object') return Object.keys(mine);
   return (all||[]).filter(function(s){
-    try{ return !!CROWN.serviceGroup(s) && !!CROWN.canDo(ME.key, s); }catch(e){ return false; }
+    try{ return !!CROWN.serviceGroup(s) && !!CROWN.canDo(op.key, s); }catch(e){ return false; }
   });
 }
+// Kept for the page's own default view: whoever the link belongs to.
+function sfMyServices(all){ return sfServicesOf(ME, all); }
 var ALL_SERVICES=['Klasik Manikür','Jel Başlangıç (Full Set)','Dolgu (Infill)','Nail Art','French / Ombre','Tırnak Onarımı','Tırnak Çıkarma','Klasik Pedikür (Ojesiz)','Jel Pedikür','Lüks Spa Pedikür','Medikal Pedikür','Renk Değişimi (Pedikür)','Klasik Kirpik Uygulaması','Volume / Rus Kirpiği','Kirpik Dolgu','Kirpik Lifting & Boyama','Kirpik Çıkarma','Altın Oran Kaş Alımı','Kaş Boyama','Kaş Laminasyon','Microblading','Bıyık / Çene Ağda','Tüm Yüz Ağda','Koltuk Altı Ağda','Yarım Bacak Ağda','Tam Bacak Ağda','Bikini Ağda','Özel Bölge Ağda','Tüm Vücut Ağda','Tam Kol Ağda','Güzellik Uygulaması'];
 
 // ── free or taken, for HER ─────────────────────────────────────────────────
@@ -224,16 +263,20 @@ function sfSlots(){
   return a;
 }
 // What gets pushed. tech is the whole point of it.
-function sfRequest(me, day, time, service, name, phone, now){
+/* `me` is the technician the booking is FOR; `by` is whose page it came from.
+   They are the same when she books herself and different when she takes a
+   customer for Helen, and the salon should be able to tell which — `src` says
+   who typed it, `tech` says who does the work. */
+function sfRequest(me, day, time, service, name, phone, now, by){
   var r={ name:String(name||'').trim(), phone:String(phone||'').trim(),
           date:sfKey(day), time:time, service:service,
-          tech:me.key, ts:Number(now)||Date.now(), src:'staff-'+me.key };
+          tech:me.key, ts:Number(now)||Date.now(), src:'staff-'+((by&&by.key)||me.key) };
   // How long it takes, where crown-config says. The salon app works it out
   // again at its end from the same config, so this is a courtesy for the
   // confirmation line and for anyone reading the request — never the
   // authority. Left off entirely when there is no figure, rather than sent
   // as a 0 that something downstream might believe.
-  var m=sfMinsOf(service);
+  var m=sfMinsOf(service, me);
   if(m) r.mins=m;
   return r;
 }
@@ -241,8 +284,9 @@ function sfPhoneOk(p){ return String(p||'').replace(/\D/g,'').length>=10; }
 // How long this job of hers takes, for the list and the confirmation line.
 // null where crown-config has no figure — the page then says nothing rather
 // than putting a guessed length in front of her.
-function sfMinsOf(service){
-  try{ return ME?CROWN.serviceMinutes(ME.key, service):null; }catch(e){ return null; }
+function sfMinsOf(service, op){
+  var who=op||ME;
+  try{ return who?CROWN.serviceMinutes(who.key, service):null; }catch(e){ return null; }
 }
 
 if(typeof module!=='undefined'&&module.exports){
@@ -251,8 +295,9 @@ if(typeof module!=='undefined'&&module.exports){
 </script>
 <script>
 (function(){
-  var db=null, ready=false, avail=null, selDay=null, selTime=null;
-  var dEl=document.getElementById('days'), tEl=document.getElementById('times'),
+  var db=null, ready=false, avail=null, selDay=null, selTime=null, selTech=null;
+  var dEl=document.getElementById('days'), gEl=document.getElementById('grid'),
+      hintEl=document.getElementById('gridhint'),
       sEl=document.getElementById('svc'), cEl=document.getElementById('conn'),
       fEl=document.getElementById('foot');
 
@@ -263,43 +308,74 @@ if(typeof module!=='undefined'&&module.exports){
     return;
   }
   document.getElementById('hd').textContent='👑 '+ME.name;
-  document.getElementById('sub').textContent='Royal Diamond — kendi randevu defteriniz';
-  fEl.innerHTML='Yazdığınız randevu salonun defterine <b>'+ME.name+'</b> adına geçer. Saat doluysa ya da o gün çalışmıyorsanız kaydedilmez — resepsiyon sizi arar.';
+  document.getElementById('sub').textContent='Royal Diamond — salonun randevu defteri';
+  fEl.innerHTML='Herkes için randevu yazabilirsiniz. Randevu, seçtiğiniz personelin adına salonun defterine geçer. Saat doluysa ya da o personel o gün çalışmıyorsa kaydedilmez — resepsiyon arar. <b>Para ekranları bu sayfada yoktur.</b>';
 
-  var svcs=sfMyServices(ALL_SERVICES);
-  sEl.innerHTML=svcs.map(function(s){
-    var m=sfMinsOf(s);
-    return '<option value="'+s.replace(/"/g,'&quot;')+'">'+s+(m?' · '+m+' dk':'')+'</option>';
-  }).join('');
-
+  /* THE WHOLE SALON'S DAY. She books for everyone now, so the day list is
+     every open day and the picture is a grid: an hour down the side, a
+     technician across the top, each cell BOŞ or DOLU for THAT woman at THAT
+     hour. One tap chooses the pair. */
   function drawDays(){
-    var ds=sfMyDays(new Date(), DAYS_AHEAD);
-    if(!ds.length){ dEl.innerHTML='<div class="note">Önümüzdeki '+DAYS_AHEAD+' günde çalışma gününüz görünmüyor.</div>'; return; }
+    var ds=sfOpenDays(new Date(), DAYS_AHEAD);
+    if(!ds.length){ dEl.innerHTML='<div class="note">Önümüzdeki '+DAYS_AHEAD+' günde açık gün yok.</div>'; return; }
     dEl.innerHTML=ds.map(function(d,i){
       var on=selDay&&sfKey(selDay)===sfKey(d);
-      return '<button type="button" class="chip'+(on?' on':'')+'" data-i="'+i+'">'+GUN[d.getDay()]+'<br><b>'+d.getDate()+' '+AY[d.getMonth()]+'</b></button>';
+      var mine=sfOnDuty(d);
+      return '<button type="button" class="chip'+(on?' on':'')+'" data-i="'+i+'">'+GUN[d.getDay()]
+        +'<br><b>'+d.getDate()+' '+AY[d.getMonth()]+'</b>'
+        +(mine?'<br><span style="font-size:.6rem;font-weight:800;letter-spacing:.05em;color:var(--goldD);">SİZ</span>':'')
+        +'</button>';
     }).join('');
     [].forEach.call(dEl.children,function(b){
       if(!b.dataset) return;
-      b.onclick=function(){ selDay=ds[+b.dataset.i]; selTime=null; drawDays(); drawTimes(); };
+      b.onclick=function(){ selDay=ds[+b.dataset.i]; selTime=null; selTech=null; drawDays(); drawGrid(); };
     });
   }
-  function drawTimes(){
-    if(!selDay){ tEl.innerHTML='<div class="note">Önce bir gün seçin.</div>'; return; }
-    var ymd=sfKey(selDay);
-    tEl.innerHTML=sfSlots().map(function(t){
-      var st=sfSlotState(avail, ymd, t, ME);
-      var cls=st==='busy'?'busy':(st==='free'?'free':'');
-      var tag=st==='busy'?'<small>DOLU</small>':(st==='free'?'<small>BOŞ</small>':'');
-      var on=(selTime===t)?' on':'';
-      return '<button type="button" class="chip slot '+cls+on+'" data-t="'+t+'"'+(st==='busy'?' disabled':'')+'>'+t+tag+'</button>';
-    }).join('');
-    [].forEach.call(tEl.children,function(b){
-      if(!b.dataset||!b.dataset.t) return;
-      b.onclick=function(){ selTime=b.dataset.t; drawTimes(); };
+
+  function drawGrid(){
+    if(!selDay){ gEl.innerHTML='<div class="note" style="padding:12px;">Önce bir gün seçin.</div>'; hintEl.textContent=''; drawSvc(); return; }
+    var ymd=sfKey(selDay), techs=sfTechsOn(ymd);
+    if(!techs.length){ gEl.innerHTML='<div class="note" style="padding:12px;">O gün çalışan görünmüyor.</div>'; hintEl.textContent=''; drawSvc(); return; }
+    hintEl.textContent='— boş bir kutuya dokunun';
+    var h='<table><thead><tr><th></th>'+techs.map(function(o){
+      return '<th'+(ME&&o.key===ME.key?' style="color:var(--gold);"':'')+'>'+o.name+'</th>';
+    }).join('')+'</tr></thead><tbody>';
+    sfSlots().forEach(function(t){
+      h+='<tr><th>'+t+'</th>';
+      techs.forEach(function(o,ti){
+        var st=sfSlotState(avail, ymd, t, o);
+        var busy=(st==='busy');
+        var on=(selTime===t && selTech && selTech.key===o.key);
+        h+='<td><button type="button" class="cell'+(busy?' busy':'')+(on?' on':'')+'" data-t="'+t+'" data-i="'+ti+'"'
+          +(busy?' disabled':'')+'>'+(busy?'DOLU':(st==='free'?'BOŞ':'·'))+'</button></td>';
+      });
+      h+='</tr>';
     });
+    gEl.innerHTML=h+'</tbody></table><div class="pickline" id="pick"></div>';
+    [].forEach.call(gEl.querySelectorAll('button.cell'),function(b){
+      b.onclick=function(){
+        selTime=b.dataset.t; selTech=techs[+b.dataset.i];
+        drawGrid(); drawSvc();
+      };
+    });
+    var pk=document.getElementById('pick');
+    if(pk) pk.textContent = (selTech&&selTime) ? ('Seçilen: '+selTech.name+' · '+selTime) : '';
   }
-  drawDays(); drawTimes();
+
+  /* The service list follows WHOSE column was tapped: Beyhan's eight when it
+     is hers, Helen's when it is Helen's. A technician is never offered a
+     service she does not do, so a customer cannot be written into a column
+     where nobody can serve her. */
+  function drawSvc(){
+    var who=selTech||ME;
+    var list=sfServicesOf(who, ALL_SERVICES);
+    sEl.innerHTML=list.map(function(x){
+      var m=sfMinsOf(x, who);
+      return '<option value="'+x.replace(/"/g,'&quot;')+'">'+x+(m?' · '+m+' dk':'')+'</option>';
+    }).join('') || '<option value="">(hizmet yok)</option>';
+  }
+
+  drawDays(); drawGrid(); drawSvc();
 
   try{
     var app=firebase.initializeApp(FIREBASE_CONFIG,'staffPage');
@@ -311,30 +387,32 @@ if(typeof module!=='undefined'&&module.exports){
         db.ref('rdns_public_availability/days').on('value',function(snap){
           avail={days:snap.val()||{}};
           cEl.innerHTML=snap.val()?'🟢 Canlı müsaitlik':'Müsaitlik bilgisi yok — yine de yazabilirsiniz';
-          drawTimes();
+          drawGrid();
         });
       })
       .catch(function(e){ console.warn(e); cEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile yazın'; });
   }catch(e){ console.warn(e); cEl.innerHTML='Bağlantı kurulamadı — WhatsApp ile yazın'; }
 
   function waFallback(req){
-    var msg='👑 RANDEVU — '+ME.name+'\n\n📅 '+req.date+'\n🕐 '+req.time+'\n💅 '+req.service+'\n🙋‍♀️ '+req.name+'\n📞 '+req.phone;
+    var msg='👑 RANDEVU — '+((selTech&&selTech.name)||ME.name)+'\n\n📅 '+req.date+'\n🕐 '+req.time+'\n💅 '+req.service+'\n🙋‍♀️ '+req.name+'\n📞 '+req.phone;
     location.href='https://wa.me/'+SALON+'?text='+encodeURIComponent(msg);
   }
   document.getElementById('go').onclick=function(){
     var nm=document.getElementById('nm').value, ph=document.getElementById('ph').value;
     if(!selDay){ alert('Lütfen bir gün seçin.'); return; }
-    if(!selTime){ alert('Lütfen boş bir saat seçin.'); return; }
+    if(!selTime||!selTech){ alert('Lütfen personel ve saat seçin — tablodan boş bir kutuya dokunun.'); return; }
     if(!String(nm).trim()){ alert('Müşterinin adını yazın.'); return; }
     if(!sfPhoneOk(ph)){ alert('Geçerli bir telefon yazın (05XX XXX XX XX).'); return; }
-    if(sfSlotState(avail, sfKey(selDay), selTime, ME)==='busy'){ alert('Bu saat az önce doldu, başka bir saat seçin.'); selTime=null; drawTimes(); return; }
-    var req=sfRequest(ME, selDay, selTime, sEl.value, nm, ph, Date.now());
+    if(!sEl.value){ alert('Bu personel için hizmet listesi boş.'); return; }
+    if(sfSlotState(avail, sfKey(selDay), selTime, selTech)==='busy'){ alert('Bu saat az önce doldu, başka bir kutu seçin.'); selTime=null; selTech=null; drawGrid(); return; }
+    // FOR selTech, BY ME — the two are the same when she books herself.
+    var req=sfRequest(selTech, selDay, selTime, sEl.value, nm, ph, Date.now(), ME);
     var b=this; b.disabled=true; b.textContent='Kaydediliyor…';
     if(!ready||!db){ waFallback(req); return; }
     db.ref('rdns_booking_requests').push(req).then(function(){
       document.getElementById('form').style.display='none';
       var d=document.getElementById('done'); d.style.display='block';
-      document.getElementById('sum').innerHTML='📅 <b>'+GUN[selDay.getDay()]+', '+selDay.getDate()+' '+AY[selDay.getMonth()]+'</b><br>🕐 <b>'+selTime+'</b><br>💅 '+req.service+'<br>🙋‍♀️ '+req.name+'<br>📞 '+req.phone+'<br>👩 '+ME.name+(sfMinsOf(req.service)?'<br>⏱ '+sfMinsOf(req.service)+' dakika':'');
+      document.getElementById('sum').innerHTML='📅 <b>'+GUN[selDay.getDay()]+', '+selDay.getDate()+' '+AY[selDay.getMonth()]+'</b><br>🕐 <b>'+selTime+'</b><br>💅 '+req.service+'<br>🙋‍♀️ '+req.name+'<br>📞 '+req.phone+'<br>👩 '+selTech.name+(sfMinsOf(req.service, selTech)?'<br>⏱ '+sfMinsOf(req.service, selTech)+' dakika':'');
       window.scrollTo({top:0,behavior:'smooth'});
     }).catch(function(e){ console.warn(e); b.disabled=false; b.textContent='✅ Randevuyu Yaz'; waFallback(req); });
   };
@@ -342,7 +420,7 @@ if(typeof module!=='undefined'&&module.exports){
     document.getElementById('done').style.display='none';
     var f=document.getElementById('form'); f.style.display='block';
     document.getElementById('nm').value=''; document.getElementById('ph').value='';
-    selTime=null; drawTimes();
+    selTime=null; selTech=null; drawGrid(); drawSvc();
     var g=document.getElementById('go'); g.disabled=false; g.textContent='✅ Randevuyu Yaz';
   };
 })();

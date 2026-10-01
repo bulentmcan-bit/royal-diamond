@@ -104,12 +104,40 @@ console.log('1. who she is');
   is(/\?who=<key>|\?who=beyhan/.test(page), true, 'the file documents how the link is formed');
 }
 
-console.log('2. her days');
+console.log('2. the days, and whose they are');
 {
   const ctx = load('?who=beyhan');
   // The week of 14 Eylül 2026: Pzt 14 … Pazar 20.
+
+  /* THE WHOLE SALON'S WEEK. She books for everyone now, so the day list is
+     every OPEN day — she can take a customer for Helen on a Wednesday she is
+     not in herself. Sunday is still out, because the salon is shut. */
+  const open = ctx.sfOpenDays(new Date(2026, 8, 14), 7).map(d => ctx.sfKey(d));
+  is(open, ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19'],
+     'every open day of the week, Monday to Saturday');
+  is(open.indexOf('2026-09-20'), -1, 'and never the Sunday the salon is shut');
+
+  // Her own two are still marked, so her day is one glance away.
   const days = ctx.sfMyDays(new Date(2026, 8, 14), 7).map(d => ctx.sfKey(d));
-  is(days, ['2026-09-15', '2026-09-17'], 'Beyhan sees her Salı and Perşembe, and no other day of that week');
+  is(days, ['2026-09-15', '2026-09-17'], 'Beyhan\u2019s own days are still Salı and Perşembe');
+  is(ctx.sfOnDuty(new Date(2026, 8, 15)), true, '…and the page can still tell which days are hers');
+
+  /* WHO is in that day — the same answer reception's own grid gives, so two
+     screens never tell two stories about one day. */
+  is(ctx.sfTechsOn('2026-09-17').map(o => o.name), ['Helen', 'Lissa', 'Beyhan', 'Hannah'],
+     'a Perşembe: the four reception sees');
+  is(ctx.sfTechsOn('2026-09-17').map(o => o.name).indexOf('Zara'), -1,
+     '…and never Zara, who is deliberately off the desk\u2019s columns');
+  is(ctx.sfTechsOn('2026-09-16').map(o => o.name), ['Helen', 'Lissa', 'Hannah'],
+     'a Çarşamba: the three, no Beyhan');
+  is(ctx.sfTechsOn('2026-09-20'), [], 'a Sunday: nobody');
+
+  /* The service list follows WHOSE column was tapped. */
+  is(ctx.sfServicesOf(ctx.CROWN.find('beyhan'), ctx.ALL_SERVICES).length, 8, 'tap Beyhan: her eight');
+  is(ctx.sfServicesOf(ctx.CROWN.find('helen'), ctx.ALL_SERVICES).indexOf('Tüm Yüz Ağda') > -1, true, 'tap Helen: the wax she does');
+  is(ctx.sfServicesOf(ctx.CROWN.find('helen'), ctx.ALL_SERVICES).indexOf('Klasik Kirpik Uygulaması'), -1, '…and not the lashes she does not');
+  is(ctx.sfServicesOf(ctx.CROWN.find('lissa'), ctx.ALL_SERVICES).indexOf('Klasik Kirpik Uygulaması') > -1, true, 'tap Lissa: lashes');
+  is(ctx.sfServicesOf(null, ctx.ALL_SERVICES), [], 'nobody tapped, nothing offered');
   is(ctx.sfOnDuty(new Date(2026, 8, 16)), false, 'a Wednesday is not her day');
   is(ctx.sfClosed(new Date(2026, 8, 20)), true, 'Sunday is closed for everyone');
 
@@ -166,7 +194,7 @@ console.log('3. her services');
   // list living here instead, which is what ME.services exists to prevent.
   is((page.match(/'Klasik Kirpik Uygulaması'/g) || []).length, 1,
      'one service array in this file, the salon menu — no per-technician list is typed here');
-  is(/ME\.services/.test(page), true, 'hers is read off the operator');
+  is(/op\.services/.test(page), true, 'a technician\u2019s list is read off the operator, whoever was tapped');
 }
 
 console.log('4. free or taken');
@@ -207,12 +235,12 @@ console.log('4. free or taken');
   is(ctx.sfPick(null, BEY), undefined, 'no map, no answer');
   is(ctx.sfPick({ Beyhan: 1 }, null), undefined, 'no technician, no answer');
   // The page must pass the operator, not one of her two names — that was the bug.
-  is(/sfSlotState\(avail, ymd, t, ME\)/.test(page), true, 'the grid asks with the operator herself');
-  is(/sfSlotState\(avail, sfKey\(selDay\), selTime, ME\)/.test(page), true, '…and so does the check before saving');
-  is(/sfSlotState\([^)]*ME\.key\)/.test(page), false, '…and never with the key alone, which found nothing');
+  is(/sfSlotState\(avail, ymd, t, o\)/.test(page), true, 'the grid asks per technician, with the operator herself');
+  is(/sfSlotState\(avail, sfKey\(selDay\), selTime, selTech\)/.test(page), true, '…and the check before saving asks about the one who was tapped');
+  is(/sfSlotState\([^)]*\.key\)/.test(page), false, '…and never with a key alone, which found nothing');
   // Unknown must not be drawn as busy: a slow connection would otherwise cost
   // her the booking.
-  is(/st==='busy'\?' disabled':''/.test(page), true, 'ONLY a busy slot is disabled — unknown stays bookable');
+  is(/\(busy\?' disabled':''\)/.test(page), true, 'ONLY a busy cell is disabled — unknown stays bookable');
 }
 
 console.log('5. the request names her');
@@ -224,6 +252,19 @@ console.log('5. the request names her');
   is(r.time, '14:00', 'the hour as chosen');
   is(r.name, 'Ayşe K', 'the name is trimmed');
   is(r.src, 'staff-beyhan', 'and it is marked as coming from her page, not from the public one');
+
+  /* BOOKING FOR SOMEBODY ELSE. tech is who does the work, src is who typed
+     it — the same when she books herself, different when she takes a customer
+     for Helen, and the salon can tell which. */
+  {
+    const helen = ctx.CROWN.find('helen');
+    const f = ctx.sfRequest(helen, new Date(2026, 8, 16), '11:00', 'Tüm Yüz Ağda', 'Ayşe', '05331234567', 1, ctx.ME);
+    is(f.tech, 'helen', 'a booking she takes for Helen is written for HELEN');
+    is(f.src, 'staff-beyhan', '…and says it came from Beyhan\u2019s page');
+    is('mins' in f, false, '…with no length, because Helen carries no minutes of her own');
+    const own = ctx.sfRequest(ctx.ME, new Date(2026, 8, 17), '11:00', 'Microblading', 'Ayşe', '05331234567', 1, ctx.ME);
+    is([own.tech, own.src, own.mins], ['beyhan', 'staff-beyhan', 90], 'and her own booking carries her name, her page and her 90 minutes');
+  }
   is(r.mins, 60, 'and how long it takes, so the confirmation line can say so');
   is('mins' in ctx.sfRequest(ctx.ME, new Date(2026, 8, 17), '14:00', 'Klasik Manikür', 'A', '05331234567', 1), false,
      '…left off entirely when there is no figure, never sent as a 0 something downstream might believe');
@@ -261,6 +302,18 @@ console.log('6. what the page does NOT do');
    'rdns_r24_sent_log_v1', 'rdns_takings', 'rdns_salary', 'payments']
     .forEach(p => is(page.indexOf(p), -1, 'staff.html never touches ' + p));
   is(/noindex/.test(page), true, 'and it is kept out of search engines');
+
+  /* THE GRID: the salon's whole day, and still not a penny of its money. */
+  is(/function drawGrid\(/.test(page), true, 'the day is drawn as a technician-by-hour grid');
+  is(/sfTechsOn\(ymd\)/.test(page), true, '…with the columns reception itself would show');
+  is(/Para ekranları bu sayfada yoktur/.test(page), true, '…and the page says in Turkish that the money screens are not here');
+  /* Comments are stripped first: the file EXPLAINS at length which money
+     screens she must not see, and naming them in a comment is the opposite of
+     shipping them. What matters is that none of it reaches the markup or a
+     string the page can render. */
+  const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ['Günlük Hasılat', 'Kasa Kontrol', 'Maaş', 'Komisyon', 'P&L', 'Avans', 'Kesinti', 'Fatura', 'Hasılat', 'firebase.auth().currentUser']
+    .forEach(w => is(code.indexOf(w), -1, 'nothing the page can show mentions ' + w));
   is(fs.existsSync(path.join(root, 'staff-manifest.json')), false,
      'no manifest file either — it is what broke her home screen icon, and a half-used one would invite the mistake back');
   is(/manifest\.json/.test(page), false, '…and nothing in the page asks for one');
