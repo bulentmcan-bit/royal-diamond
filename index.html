@@ -81,6 +81,38 @@
     if(ov) ov.remove();
   }
 
+  /* SIGNING OUT. Until now there was no way: a device that had once signed in
+     stayed signed in for good, and the only way off an account was to clear
+     the browser's site data or delete the home-screen app and add it again.
+
+     That held while the only devices were the owner's and reception's. It
+     stopped holding the day a technician's phone was set up with the owner's
+     own account, because the way back from that is a sign-out and there
+     wasn't one.
+
+     It asks first — a mis-tap in Ayarlar that logged the salon out mid-shift
+     would be its own small disaster — and it says plainly that nothing is
+     deleted: the diary lives in Firebase and this only ends the session on
+     this one phone. */
+  window.rdSignOut = function(){
+    try{
+      if(!confirm('Bu cihazda oturumu kapatmak istediğinize emin misiniz?\n\nSalonun verisi silinmez — sadece bu telefondan çıkış yapılır ve yeniden giriş istenir.')) return;
+      firebase.auth().signOut().then(function(){ location.reload(); })
+        .catch(function(e){ alert('Çıkış yapılamadı: '+(e&&e.message||e)); });
+    }catch(e){ alert('Çıkış yapılamadı: '+(e&&e.message||e)); }
+  };
+  // And WHO is signed in, written where the button is, so nobody has to guess
+  // whose account a phone is on.
+  function rdShowWhoAmI(){
+    try{
+      var el=document.getElementById('rd-who-email');
+      if(!el) return;
+      var u=firebase.auth().currentUser;
+      el.textContent=(u&&u.email)?u.email:'—';
+    }catch(e){}
+  }
+  try{ firebase.auth().onAuthStateChanged(rdShowWhoAmI); }catch(e){}
+
   function syncInit(){
     try{
       if(FIREBASE_CONFIG.apiKey==='REPLACE_API_KEY'){showSyncStatus('local');return;}
@@ -4290,6 +4322,21 @@ p, span, div, label, h1, h2, h3, h4 {
         <button class="btn" onclick="rdRestoreGate()" style="background:rgba(232,122,122,0.12);border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;">📂 Yedek dosyası seç (PIN)</button>
         <input type="file" id="restore-file-input" accept=".json" style="display:none;" onchange="rdnsImportData(event)">
       </div>
+
+      <!-- Who is signed in on THIS phone, and how to stop being her.
+           There was no way out of the app: every device that had ever signed
+           in stayed signed in for good. That was fine while the only devices
+           were the owner's and reception's, and stopped being fine the day a
+           technician's phone was set up with the owner's own account. -->
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">👤 Bu cihazdaki hesap</div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 6px;">
+          Şu an giriş yapan: <b id="rd-who-email">—</b></p>
+        <p style="font-size:0.78rem;color:var(--muted);line-height:1.6;margin:0 0 14px;">
+          Her çalışanın kendi hesabı olmalı. Başka bir hesapla girmek için çıkış yapın —
+          salonun verisi bulutta durur, bu telefondan hiçbir şey silinmez.</p>
+        <button class="btn" id="rd-signout-btn" onclick="rdSignOut()" style="background:rgba(232,122,122,0.12);border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;">🚪 Çıkış Yap</button>
+      </div>
     </div>
 
     <!-- ════ SALARY PAGE ════ -->
@@ -6129,6 +6176,7 @@ function _gotoActual(page,el){
   if(page==="calendar")renderCalendar();
   if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}try{mRenderStaleAppts();}catch(e){}}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
+  if(page==="settings"){ try{ rdShowWhoAmI(); }catch(e){} }
   if(page==="deductions"){ renderDeductionsPage(); }
   if(page==="advance"){ renderAdvancePage(); }
   if(page==="gapreport"){ renderGapReport(); }
