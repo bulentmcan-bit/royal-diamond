@@ -36,11 +36,18 @@ const crown = fs.readFileSync(path.join(root, 'crown-config.js'), 'utf8');
 const blocks = [...page.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]);
 is(blocks.length, 2, 'the page keeps its pure logic and its DOM wiring apart');
 
-function load(search) {
+function load(search, store) {
+  const mem = store || {};
   const ctx = {
     window: {}, console: { log(){}, warn(){}, error(){} },
     location: { search: search || '' }, Date, module: { exports: {} },
+    localStorage: {
+      getItem: k => (k in mem ? mem[k] : null),
+      setItem: (k, v) => { mem[k] = String(v); },
+      removeItem: k => { delete mem[k]; },
+    },
   };
+  ctx._mem = mem;
   vm.createContext(ctx);
   vm.runInContext(crown, ctx);
   ctx.CROWN = ctx.window.CROWN;
@@ -58,6 +65,42 @@ console.log('1. who she is');
   is(load('').ME, null, 'no ?who at all is refused');
   is(load('?who=').ME, null, '…and an empty one too');
   is(/Bu bağlantı eksik/.test(page), true, '…and the page says so in Turkish rather than showing an empty diary');
+
+  /* SHE IS REMEMBERED. The first thing that happened when Beyhan put this on
+     her iPhone home screen was that it stopped working: a saved web app opens
+     the address in the MANIFEST, and that manifest said /staff.html with no
+     ?who= on it. She got "Bu bağlantı eksik" and an empty page. The manifest
+     is gone — with none, iOS bookmarks the exact address she is on — and the
+     answer is remembered as well, so a link that loses its tail in WhatsApp
+     or an icon saved before today still opens her own diary. */
+  is(/rel="manifest"/.test(page), false, 'no manifest, so iOS saves the address she is actually on — query string and all');
+  {
+    const mem = {};
+    is(load('?who=beyhan', mem).ME.key, 'beyhan', 'the address names her…');
+    is(mem['rd_staff_who_v1'], 'beyhan', '…and she is written down');
+    is(load('', mem).ME.key, 'beyhan', '…so a later visit with no ?who at all still opens HER diary');
+    is(load('?who=helen', mem).ME.key, 'helen', 'a different link wins over the memory — one phone can be handed on');
+    is(mem['rd_staff_who_v1'], 'helen', '…and the memory follows it');
+    is(load('?who=0', mem).ME, null, '?who=0 forgets her');
+    is('rd_staff_who_v1' in mem, false, '…and really clears it, rather than leaving a stale name behind');
+    is(load('', mem).ME, null, '…so the next visit asks for a proper link again');
+  }
+  {
+    const stale = { 'rd_staff_who_v1': 'somebody-who-left' };
+    is(load('', stale).ME, null, 'a remembered name crown-config no longer knows opens nothing…');
+    is('rd_staff_who_v1' in stale, false, '…and is forgotten rather than failing again every morning');
+  }
+  {
+    // A page where localStorage throws — private browsing, blocked site data.
+    const ctx = { window: {}, console: { log(){}, warn(){}, error(){} },
+                  location: { search: '?who=beyhan' }, Date, module: { exports: {} },
+                  localStorage: { getItem(){ throw new Error('blocked'); },
+                                  setItem(){ throw new Error('blocked'); },
+                                  removeItem(){ throw new Error('blocked'); } } };
+    vm.createContext(ctx); vm.runInContext(crown, ctx); ctx.CROWN = ctx.window.CROWN;
+    vm.runInContext(blocks[0], ctx);
+    is(ctx.ME && ctx.ME.key, 'beyhan', 'and a phone that refuses to remember anything still works from the address');
+  }
   is(/\?who=<key>|\?who=beyhan/.test(page), true, 'the file documents how the link is formed');
 }
 
@@ -218,10 +261,9 @@ console.log('6. what the page does NOT do');
    'rdns_r24_sent_log_v1', 'rdns_takings', 'rdns_salary', 'payments']
     .forEach(p => is(page.indexOf(p), -1, 'staff.html never touches ' + p));
   is(/noindex/.test(page), true, 'and it is kept out of search engines');
-  is(fs.existsSync(path.join(root, 'staff-manifest.json')), true, 'it has its own manifest, so adding it to a home screen does not install the salon app');
-  const man = JSON.parse(fs.readFileSync(path.join(root, 'staff-manifest.json'), 'utf8'));
-  is(man.start_url, '/staff.html', '…opening on her own page');
-  is(man.scope, '/staff.html', '…and scoped to it, so the home-screen app cannot wander into index.html');
+  is(fs.existsSync(path.join(root, 'staff-manifest.json')), false,
+     'no manifest file either — it is what broke her home screen icon, and a half-used one would invite the mistake back');
+  is(/manifest\.json/.test(page), false, '…and nothing in the page asks for one');
 }
 
 console.log('');

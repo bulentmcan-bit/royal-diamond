@@ -4,7 +4,6 @@
 <title>👑 Randevu Defterim — Royal Diamond</title>
 <link rel="icon" type="image/png" href="/crown-gold.png">
 <link rel="apple-touch-icon" href="/crown-gold.png">
-<link rel="manifest" href="/staff-manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Defterim">
@@ -114,10 +113,36 @@ var DAYS_AHEAD=28;
 // ── who ────────────────────────────────────────────────────────────────────
 // The key comes off the address and is checked against crown-config. An
 // unknown one shows a refusal rather than a page that silently books nobody.
+/* WHOSE diary this is, and why it is remembered.
+
+   It came off the address alone, and the first thing that happened when Beyhan
+   put the page on her iPhone home screen was that it stopped working: a saved
+   web app opens the address in the MANIFEST, and that manifest said
+   /staff.html with no ?who= on the end. She got "Bu bağlantı eksik" and an
+   empty page. The manifest is gone now — with none, iOS bookmarks the exact
+   address she is standing on, query string and all — and on top of that the
+   answer is remembered here, so a link that loses its tail on the way through
+   WhatsApp, a bookmark made the old way, or a home screen icon saved before
+   today all still open her own diary.
+
+   The address still wins when it carries a name, so one phone can be handed
+   to a different technician with a different link and is not stuck with
+   whoever opened it first. ?who=0 forgets her again. */
+var SF_MEM='rd_staff_who_v1';
+function sfRemember(k){ try{ if(k) localStorage.setItem(SF_MEM,k); else localStorage.removeItem(SF_MEM); }catch(e){} }
+function sfRecall(){ try{ return localStorage.getItem(SF_MEM)||''; }catch(e){ return ''; } }
 function sfWho(){
   var m=/[?&]who=([^&#]+)/.exec(location.search||'');
   var k=m?decodeURIComponent(m[1]).trim().toLowerCase():'';
-  try{ var o=k&&window.CROWN&&CROWN.find?CROWN.find(k):null; return o||null; }catch(e){ return null; }
+  if(k==='0'){ sfRemember(''); k=''; }
+  var fromUrl=!!k;
+  if(!k) k=sfRecall();
+  try{
+    var o=k&&window.CROWN&&CROWN.find?CROWN.find(k):null;
+    if(o&&fromUrl) sfRemember(o.key);
+    if(!o&&!fromUrl) sfRemember('');   // a remembered name the config no longer knows
+    return o||null;
+  }catch(e){ return null; }
 }
 var ME=sfWho();
 
