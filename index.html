@@ -19945,6 +19945,31 @@ function rdWrCardHtml(r, cls, ix, total){
     +'<div class="rdca-why">Müşteri mesaja cevap verdi'+(r.offer?'; teklif edilen saat bekletme süresi boyunca ona ayrılı — arayıp randevuyu deftere yazın':'')+'. Okundu deyince bu uyarı her cihazda kapanır.</div>'
     +(total>1?('<div class="rdca-multi">Sırada başka müşteriler var — <b>'+(ix+1)+' / '+total+'</b></div>'):'');
 }
+/* Can reception still type a plain answer to this message?
+
+   WhatsApp opens a 24-hour service window when the customer writes, and only
+   inside it may a typed sentence be sent; after it shuts, Piyzi answers 409
+   SERVICE_WINDOW_CLOSED and nothing but an approved template will go.
+
+   Piyzi states the window on every webhook event, so where we have it we
+   believe it. Where we do NOT — every message stored before the hook started
+   keeping it — the customer's own timestamp is the next best thing, because
+   the window is defined from exactly that moment.
+
+   Erring open would be the wrong way round: reception types a paragraph, the
+   send fails, and the customer is still waiting. Erring closed only ever
+   costs a telephone call that was going to be fine either way. */
+function rdWrWindow(r, now){
+  now = now || Date.now();
+  var until = (r && r.winUntil) ? Number(r.winUntil) : null;
+  if(!until){
+    var at = (r && r.ts) ? Number(r.ts) : 0;
+    until = at ? at + 24*3600000 : 0;
+  }
+  // An explicit open:false from Piyzi closes it whatever the clock says.
+  var open = !!until && until > now && (!r || r.winOpen !== false);
+  return { open: open, until: until || null, untilTxt: (open && until) ? rdWrClock(until) : '' };
+}
 // WAREPLY-SLICE-END
 (function(){
   var _wr={}, _seen=null, _started=false, _timer=null, _open=null;
@@ -19958,6 +19983,34 @@ function rdWrCardHtml(r, cls, ix, total){
   // So the Gelen Kutusu page draws the moment it is opened, rather than
   // waiting for the next message to arrive from Firebase.
   window.rdWrRefresh=function(){ try{ render(); }catch(e){} };
+
+  /* Send what reception typed. Nothing clever: the box is locked while it is
+     in flight so a double tap cannot send twice, the words are kept in the box
+     if it fails so nothing she wrote is lost, and a shut window is reported in
+     her language rather than as a status code. */
+  window.rdWrSend=function(id, phone){
+    var box=document.getElementById('wr-reply-'+id), say=document.getElementById('wr-reply-msg-'+id);
+    if(!box) return;
+    var text=String(box.value||'').trim();
+    var tell=function(msg,col){ if(say){ say.textContent=msg; say.style.color=col||'var(--muted)'; } };
+    if(!text){ tell('Önce bir şeyler yazın.', '#c4863a'); return; }
+    if(typeof rdWaOn==='function' && !rdWaOn()){ tell('Bu cihazda WhatsApp anahtarı yok — Ayarlar.', '#c0392b'); return; }
+    box.disabled=true; tell('Gönderiliyor…');
+    rdWaFetch('/wa/reply', { phone:String(phone||''), text:text })
+      .then(function(res){
+        if(res && res.ok){
+          box.value=''; box.disabled=false;
+          tell('✓ Gönderildi', '#1e7a44');
+          try{ toast('💬','Mesaj gönderildi', text.slice(0,120), 'g'); }catch(e){}
+          return;
+        }
+        box.disabled=false;
+        var e=(res&&res.error)||{};
+        if(res && res.closed){ tell('⏳ 24 saatlik pencere kapandı — müşteriyi arayın.', '#c4863a'); return; }
+        tell('✗ Gönderilemedi: '+(e.message||e.code||'bilinmeyen hata'), '#c0392b');
+      })
+      .catch(function(){ box.disabled=false; tell('✗ Sunucuya ulaşılamadı — tekrar deneyin.', '#c0392b'); });
+  };
   window.rdWrStripFor=function(appt){
     try{
       var c=rdWrClientFor({phone:(function(){
@@ -20054,6 +20107,38 @@ function rdWrCardHtml(r, cls, ix, total){
         return '<div style="margin-bottom:3px;">📆 '+esc(rdWrDayTR(d.slice(0,10)))+' '+esc(d.slice(11,16))+' · '+esc(a.staff||'—')+' · '+esc(a.service||'—')+'</div>';
       }).join('');
     }
+
+    /* ── the answer box ────────────────────────────────────────────────────
+       Reading her message was never the hard part. Answering was: reception
+       would read "saat 3'e alabilir miyiz" on this screen and then have to
+       pick up her own telephone, from a DIFFERENT number, to the customer's
+       confusion. This sends from the salon's own WhatsApp, in her own words.
+
+       WhatsApp only allows it inside the 24-hour window the customer opens by
+       writing. Piyzi puts the state of that window on every message, so the
+       box can say what is true BEFORE she types a paragraph into it, rather
+       than failing afterwards with a customer waiting. */
+    var win=rdWrWindow(r);
+    h+='<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">';
+    if(win.open){
+      h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">CEVAP YAZIN'
+        +(win.untilTxt?' <span style="color:#1e7a44;font-weight:700;letter-spacing:0;text-transform:none;">· '+esc(win.untilTxt)+'\'e kadar serbest yazabilirsiniz</span>':'')+'</div>'
+        +'<textarea id="wr-reply-'+esc(r.id)+'" rows="2" maxlength="4096" placeholder="Müşteriye yazın — salonun WhatsApp numarasından gider" '
+        +'onclick="event.stopPropagation()" '
+        +'style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:inherit;font-family:inherit;font-size:0.88rem;resize:vertical;"></textarea>'
+        +'<div style="display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap;">'
+        +'<button onclick="event.stopPropagation();rdWrSend(\''+esc(r.id)+'\',\''+esc(ph)+'\')" '
+        +'style="background:var(--wa);border:1px solid var(--wa);color:#fff;border-radius:9px;padding:8px 16px;font-weight:800;font-size:0.84rem;cursor:pointer;font-family:inherit;">➤ Gönder</button>'
+        +'<span id="wr-reply-msg-'+esc(r.id)+'" style="font-size:0.78rem;color:var(--muted);"></span>'
+        +'</div>';
+    }else{
+      // Not a failure to hide. If the window has shut, no typed message will
+      // reach her at all and the telephone is the only thing left — say so
+      // here, where she is about to start typing one.
+      h+='<div style="font-size:0.8rem;color:#c4863a;font-weight:700;">⏳ 24 saatlik yanıt penceresi kapalı — serbest metin gönderilemez.'
+        +'<span style="font-weight:400;color:var(--muted);"> Müşteri tekrar yazarsa pencere açılır. Şimdilik telefonla arayın.</span></div>';
+    }
+    h+='</div>';
 
     h+='<div style="margin-top:11px;padding-top:9px;border-top:1px dashed var(--border);color:var(--muted);font-size:0.76rem;">'
       +'Resepsiyonun Piyzi\'ye yazdığı cevaplar burada görünmez — onlar Piyzi\'de kalır. Tüm yazışmayı görmek için: '

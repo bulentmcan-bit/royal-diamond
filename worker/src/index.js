@@ -870,6 +870,46 @@ async function handleWa(req, env, ctx, url) {
     return waJson({ ok: true, messageUid });
   }
 
+  // ── POST /wa/reply — reception answers in her own words ──────────────────
+  // Not a template. A typed sentence, from the salon's own number, the way
+  // anyone else answers a WhatsApp message.
+  //
+  // This is the half of the two-number problem the inbox could not solve on
+  // its own. Reading the messages was never the hard part — Piyzi's webhook
+  // has been handing them over all along. Answering was: reception would read
+  // "saat 3'e alabilir miyiz" on the screen and then have to pick up her own
+  // telephone, from a DIFFERENT number, to the customer's confusion.
+  //
+  // WhatsApp allows this only inside the 24-hour service window, which the
+  // customer opens by writing. Şahin (Piyzi), 2 Ekim 2026, and their own
+  // documentation: POST /whatsapp/messages with { phone, text }. text and
+  // templateName may never travel together. Window shut → 409
+  // SERVICE_WINDOW_CLOSED, and then only an approved template will go.
+  if (route === '/wa/reply') {
+    const { phone, text } = b || {};
+    const msg = String(text == null ? '' : text).trim();
+    if (!msg) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'Need text' } }, 400);
+    // Piyzi's own ceiling. Cutting it here beats a 400 with the words lost.
+    if (msg.length > 4096) return waJson({ ok: false, error: { code: 'TOO_LONG', message: 'WhatsApp allows 4096 characters; this is ' + msg.length } }, 400);
+    const to = waPhone(phone);
+    if (!to) return waJson({ ok: false, error: { code: 'INVALID_PHONE', message: 'Not a Turkish mobile number after cleanup; nothing sent' } }, 400);
+    let r;
+    try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone: to, text: msg }); }
+    catch { return waJson({ ok: false, error: { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' } }, 502); }
+    const ok = !!(r.body && r.body.success);
+    const messageUid = ok && r.body.data ? r.body.data.messageUid : null;
+    const err = ok ? null : piyziErr(r);
+    waLog(env, ctx, { op: 'reply', to, uid: messageUid, chars: msg.length, outcome: ok ? 'sent' : 'failed:' + err.code });
+    if (ok) return waJson({ ok: true, messageUid });
+    // The one failure reception must be able to act on, told in her own words
+    // rather than as a code: the customer has gone quiet too long, and the
+    // only thing that will reach her now is a template or the telephone.
+    if (err.code === 'SERVICE_WINDOW_CLOSED' || r.status === 409) {
+      return waJson({ ok: false, closed: true, error: { code: 'SERVICE_WINDOW_CLOSED', message: 'Bu müşteriyle 24 saatlik yanıt penceresi kapandı — serbest metin gönderilemez. Müşteriyi arayın.' } }, 409);
+    }
+    return waJson({ ok: false, error: err }, r.status >= 400 ? r.status : 502);
+  }
+
   // ── POST /wa/gapfill-preview — what the gap-filler would do right now ─────
   // The plan only: reads the diary and the offers log, writes nothing, sends
   // nothing, whatever mode the config is in. The app panel's "Şimdi dene".
@@ -1685,7 +1725,17 @@ function hookParse(evt) {
   const d = evt.data || {}, m = d.message || {}, contact = d.contact || {};
   const text = String(m.text || (m.button && m.button.text) || '').trim();
   const at = Date.parse(m.timestamp || evt.timestamp || '') || Date.now();
+  // WhatsApp's 24-hour service window. It opens when the customer writes and
+  // it is the ONLY time a plain typed answer may be sent back; after it shuts,
+  // Piyzi answers 409 SERVICE_WINDOW_CLOSED and nothing but an approved
+  // template will go. Piyzi puts the state on every event, so the salon's
+  // inbox can say "you have until 18:04" instead of discovering it on a
+  // failed send with a customer waiting.
+  const win = d.serviceWindow || {};
+  const winUntil = Date.parse(win.expiresAt || '') || null;
   return {
+    winOpen: (win.open === true) || null,
+    winUntil,
     deliveryId: String(evt.deliveryId || '').replace(/[.#$\/\[\]]/g, '_').slice(0, 120),
     event: String(evt.event || ''),
     phone: waPhone(contact.phone),
