@@ -4009,6 +4009,7 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <hr class="sb-divider">
     <div class="sb-section" data-i18n="sec_comms">İletişim</div>
+    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;inbox&#39;,this)" onclick="goto(&#39;inbox&#39;,this)"><span class="nav-icon">📥</span><span>Gelen Kutusu</span><span class="nav-badge" id="wa-inbox-badge" style="display:none;background:#c0392b;color:#fff;">0</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;reviews&#39;,this)" onclick="goto(&#39;reviews&#39;,this)"><span class="nav-icon">⭐</span><span>Yorum İstekleri</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;settings&#39;,this)" onclick="goto(&#39;settings&#39;,this)"><span class="nav-icon">⚙️</span><span>Ayarlar</span></div>
@@ -4766,6 +4767,29 @@ p, span, div, label, h1, h2, h3, h4 {
     </div>
 
     <!-- ════ WHATSAPP PAGE ════ -->
+    <!-- ── GELEN KUTUSU ───────────────────────────────────────────────────
+         Every word a customer writes comes to 0539, the Piyzi number, and
+         reception works from 0548 and never saw any of it. Piyzi's own answer
+         to this (Şahin, 2 Ekim 2026) is that they already hand us every
+         incoming message by webhook — which they do, and we already store it.
+         It was simply never given a place of its own: it lived in a panel on
+         the dashboard that stayed shut until somebody clicked it, which is
+         exactly how "Hello ı cannot come today" went unread and cost two hours.
+
+         So it is a page now, with the salon's sidebar badge counting the ones
+         nobody has read, in red, where it cannot be walked past. ─────────── -->
+    <div class="page" id="page-inbox">
+      <div class="r24-panel" style="border-color:rgba(196,134,58,.55);">
+        <div class="r24-head">
+          <div class="r24-title">💬 Müşteri mesajları <span class="r24-count" id="inbox-count">0</span></div>
+        </div>
+        <div style="padding:10px 14px;font-size:0.8rem;color:var(--muted);border-bottom:1px solid var(--border);">
+          Müşteriler <b>0539 140 3333</b> numarasına yazıyor. Hepsi burada görünür — okunmayanlar en üstte.
+        </div>
+        <div id="inbox-list"><div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp'tan yazınca burada görünür.</div></div>
+      </div>
+    </div>
+
     <div class="page" id="page-whatsapp">
       <div class="wa-queue-banner">
         <div class="wa-q-icon">📋</div>
@@ -5902,6 +5926,7 @@ const PAGE_INFO={
   reception:["Resepsiyon Komisyon","Günlük hedef 30 — ayda 900 müşteri & net %2 komisyon"],
   advance:["Avans","Personele verilen avanslar — maaştan kesilir"],
   doviz:["Döviz & Kurlar","Merkez Bankası kurları, çevirici ve fiyat listesi"],
+  inbox:["Gelen Kutusu","Müşterilerin WhatsApp'tan yazdığı her mesaj — 0539'a gelir, burada görünür"],
   reviews:["Yorum İstekleri","Google yorumu istenecek müşteriler — haftalık iş"],
   settings:["Ayarlar","Yedekten geri yükleme ve cihaz ayarları — patron"],
 };
@@ -6188,6 +6213,7 @@ function _gotoActual(page,el){
   if(page==="advance"){ renderAdvancePage(); }
   if(page==="gapreport"){ renderGapReport(); }
   if(page==="reception"){ renderReception(); }
+  if(page==="inbox"){ try{ if(typeof rdWrRefresh==="function") rdWrRefresh(); }catch(e){} }
   if(window.innerWidth <= 768) closeSidebar();
 }
 
@@ -19929,6 +19955,9 @@ function rdWrCardHtml(r, cls, ix, total){
   // The diary needs to put a customer's own words on her appointment card, and
   // the replies live in here. Handed out read-only; nothing outside writes it.
   window.rdWrAll=function(){ return _wr; };
+  // So the Gelen Kutusu page draws the moment it is opened, rather than
+  // waiting for the next message to arrive from Firebase.
+  window.rdWrRefresh=function(){ try{ render(); }catch(e){} };
   window.rdWrStripFor=function(appt){
     try{
       var c=rdWrClientFor({phone:(function(){
@@ -20032,14 +20061,37 @@ function rdWrCardHtml(r, cls, ix, total){
     return h+'</div>';
   }
 
+  /* The sidebar's own count, in red, of the messages nobody has read.
+     Hidden at zero — a badge that always shows a number stops being a signal
+     and becomes part of the furniture. */
+  function paintInboxBadge(n){
+    var b=document.getElementById('wa-inbox-badge');
+    if(!b) return;
+    b.textContent=String(n);
+    b.style.display = n ? '' : 'none';
+  }
+
   function render(){
-    var list=document.getElementById('dash-wa-replies-list'), count=document.getElementById('dash-wa-replies-count');
+    var count=document.getElementById('dash-wa-replies-count');
     var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read; });
     if(count) count.textContent=String(unread.length);
-    if(!list) return;
+    var ic=document.getElementById('inbox-count'); if(ic) ic.textContent=String(unread.length);
+    paintInboxBadge(unread.length);
+    // The dashboard's panel and the Gelen Kutusu page draw the same rows from
+    // the same list — one renderer, so the page can never quietly fall behind
+    // the panel the way two copies of a thing always do.
+    var targets=[document.getElementById('dash-wa-replies-list'), document.getElementById('inbox-list')]
+                  .filter(function(el){ return !!el; });
+    if(!targets.length) return;
+    // Unread first, then the last thirty read ones. The page shows a longer
+    // tail than the dashboard panel: it is the place you go to look something
+    // up, not a thing glanced at between customers.
     var rows=unread.concat(all.filter(function(r){ return r.read; }).slice(0,30));
-    if(!rows.length){ list.innerHTML='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>'; return; }
-    list.innerHTML=rows.map(function(r){
+    if(!rows.length){
+      targets.forEach(function(el){ el.innerHTML='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>'; });
+      return;
+    }
+    var html=rows.map(function(r){
       var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
       var isOpen=(String(_open)===String(r.id));
       // The whole row opens. Reception is reaching for it with a customer on
@@ -20065,6 +20117,7 @@ function rdWrCardHtml(r, cls, ix, total){
         // The answer to "what is she replying to", right under the question.
         +(isOpen?rdWrPanel(r):'');
     }).join('');
+    targets.forEach(function(el){ el.innerHTML=html; });
   }
   /* ── the sound reception hears ──────────────────────────────────────────
      A corner toast is silent, and reception is not looking at the screen: a
