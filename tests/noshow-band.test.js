@@ -102,6 +102,11 @@ console.log('3. her words on her own card');
   is(/Konum atarmısın/.test(chat), true, '…but her words are still there');
   is(/#fdf3e0/.test(chat), true, '…quietly, in gold');
 
+  const yes = S(mk('Tamamdır geliyorum'), c, appt);
+  is(/GELİYOR/.test(yes), true, 'a confirmation says GELİYOR on the card');
+  is(/#1e7a44/.test(yes), true, '…in green');
+  is(/GELMİYOR/.test(yes), false, '…and never the red one');
+
   is(S({}, c, appt), '', 'nothing written, nothing shown');
   is(S(mk('   '), c, appt), '', 'a blank message is nothing');
   is(S(mk('<img src=x onerror=alert(1)>'), c, appt).indexOf('<img'), -1, 'and a customer cannot put HTML on the board');
@@ -115,10 +120,50 @@ console.log('4. the band');
   is(/function rdNoShowSaid\(\)/.test(html), true, 'it reads every upcoming appointment against what she wrote');
   is(/if\(!a \|\| a\.status==='cancelled' \|\| a\.status==='completed'\) return;/.test(html), true, '…skipping the already cancelled and the already done');
   is(/if\(!at \|\| at < now-6\*3600000\) return;/.test(html), true, '…and anything long past, where there is nothing left to save');
-  is(/⚠ '\+rows\.length\+' müşteri GELMİYORUM dedi — saati boşaltın/.test(html), true, 'the heading says how many and what to do');
+  is(/⚠ '\+t\.red\.length\+' müşteri GELMİYORUM dedi — saati boşaltın/.test(html), true, 'the red heading says how many and what to do');
+
+  /* THREE STATES, in the order a salon cares about them at eight in the
+     morning: free the hour, ring the silent one, leave the confirmed alone. */
+  is(/📞 '\+t\.amber\.length\+' müşteri hatırlatmaya cevap vermedi — arayıp teyit edin/.test(html), true,
+     "the amber heading — the owner's own ask, the ones who didn't reply");
+  is(/✅ '\+t\.green\.length\+' müşteri geleceğini onayladı — yapılacak bir şey yok/.test(html), true,
+     'the green heading says plainly that there is nothing to do');
+  is(/if\(t\.red\.length\)\{[\s\S]*?if\(t\.amber\.length\)\{[\s\S]*?if\(t\.green\.length\)\{/.test(html), true,
+     '…and they are drawn red, amber, green in that order');
+  is(/📞 Ara/.test(html), true, 'each silent customer has one tap to ring her');
+  is(/if\(t\.green\.length\)\{[\s\S]{0,900}rdNoShowCancel/.test(html), false,
+     'the green list has no buttons — it must never compete with the red one');
   is(/✕ İptal et — saati boşalt/.test(html), true, 'and each row has one tap that frees the hour');
   is(/📞 '\+esc\(x\.c\.phone\)/.test(html), true, '…beside her telephone, to ring her first');
   is(/el\.style\.display='none'/.test(html), true, 'and the band disappears entirely when nobody has written');
+}
+
+console.log('4b. who lands in which list');
+{
+  const C = ctx.rdWrIsConfirm;
+  ['Tamam', 'tamamdır', 'Evet', 'olur', 'geliyorum', 'geleceğim', 'görüşürüz',
+   'yes', 'OK', 'okay', 'coming', 'see you', 'confirmed', 'Peki'].forEach(t =>
+    is(C(t), true, 'confirms: “' + t + '”'));
+
+  /* A confirmation caught by mistake is worse than a cancellation caught by
+     mistake: the row turns green, everybody relaxes, and the one customer who
+     was actually asking a question never gets rung. So this is narrow. */
+  ['tamam mı', 'geliyor muyum', 'saat kaçta?', 'olur mu acaba',
+   'Konum atarmısın', 'başka saat', 'iptal edelim tamam mı', ''].forEach(t =>
+    is(C(t), false, 'does NOT confirm: “' + t + '”'));
+  is(C('iptal, tamam mı'), false, 'a cancellation with "tamam" in it is still a cancellation');
+  is(/if\(t\.indexOf\('\?'\)!==-1\) return false;/.test(html), true, '…and a question mark is never a yes');
+  is(/if\(rdWrIsCancel\(t\)\) return false;/.test(html), true, '…and iptal always wins over tamam');
+
+  // Amber is only claimed where a reminder really went.
+  is(/if\(!\(a\.r24 \|\| a\.r1\)\) return;/.test(html), true, 'nobody is called "no answer" unless a reminder actually went to her');
+  is(/if\(at > now\+36\*3600000\) return;/.test(html), true, '…and only for today and tomorrow, not next week');
+  is(/if\(typeof rdIsBlocker==='function' && rdIsBlocker\(a\.clientId\)\) return;/.test(html), true,
+     'a held hour is not a person and never appears in any of the three');
+  is(/if\(r\) return;\s+\/\/ she wrote something else/.test(html), true,
+     'a customer who wrote something else is in none of them — her words are on her card');
+  is(/\(\^\|\\s\)\(mi\|mu\|ma\|me\)/.test(html), true,
+     'and a Turkish question with no question mark — "tamam mı", "olur mu" — is not read as a yes');
 }
 
 console.log('5. nothing is cancelled on its own');

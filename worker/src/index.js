@@ -580,7 +580,9 @@ function gfDayWord(slotYmd, todayYmd) {
 }
 
 function waFill(spec, vals) {
-  const sub = s => String(s).replace(/\{(name|service|dateLong|date|time|when|apptId|day)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
+  // {who} and {said} belong to the forward template (WA_FORWARD): the customer
+  // who wrote, and what she wrote. Every other placeholder is an appointment's.
+  const sub = s => String(s).replace(/\{(name|service|dateLong|date|time|when|apptId|day|who|said)\}/g, (_, k) => vals[k] != null ? String(vals[k]) : '');
   const parameters = {};
   if (Array.isArray(spec.header) && spec.header.length) parameters.header = spec.header.map(sub);
   if (Array.isArray(spec.body) && spec.body.length) parameters.body = spec.body.map(sub);
@@ -1765,11 +1767,74 @@ async function handleHook(req, env, ctx, url) {
     }
     waLog(env, ctx, { op: 'hook-reply', apptId: 'wr-' + r.deliveryId, to: r.phone, outcome: hit ? 'kept:offer-' + hit[0] : 'kept:no-offer' });
     console.log('[hook] reply kept from', r.phone, hit ? '→ offer ' + hit[0] : '(no offer matched)');
+    // …and onto reception's own telephone. See hookForward().
+    try { await hookForward(env, ctx, rec); } catch (e) { console.log('[hook] forward failed:', String(e)); }
     return hookText('ok', 200);
   } catch (e) {
     console.log('[hook] store failed — Piyzi will retry:', String(e));
     return hookText('store failed', 503);
   }
+}
+
+/* ── EVERY REPLY ONTO RECEPTION'S OWN TELEPHONE ─────────────────────────────
+
+   The salon has two numbers and that is the whole of this problem. Reception
+   works from 0548 893 33 33, the WhatsApp on her own phone. Every reminder,
+   offer and review request goes out from 0539 140 3333, the Piyzi number, so
+   that is where customers reply — and 0548 never sees a word of it.
+
+   A customer wrote "Hello I cannot come today" to 0539. Reception, looking at
+   0548 all day, saw nothing. The owner rang her the next morning to ask if she
+   was coming and she said she had already cancelled. The hour had sat in the
+   diary the whole time, so it could not be sold either. Two hours gone from one
+   message that went to the other phone.
+
+   WhatsApp will not divert one number to another — there is no such thing. So
+   the worker does it: it already receives every reply the instant it lands,
+   and it now sends each one straight on to 0548 as a WhatsApp message. The
+   phone in reception's hand buzzes with the customer's name and her words.
+
+   WHY A TEMPLATE. 0548 never writes to 0539, so there is no open 24-hour
+   window between them and a free-text message would be refused. One approved
+   template with two variables — who, and what she said — carries every
+   forward. worker/templates/forward-reply.md holds it.
+
+   THE SAME CONTRACT AS EVERY OTHER TEMPLATE HERE: an empty or broken
+   WA_FORWARD means this does nothing at all and says so in the log. It never
+   guesses a template name, and a reply is NEVER lost because the forward
+   failed — it is already in Firebase and on the dashboard by the time this
+   runs, and this throws nothing back at the caller. */
+async function hookForward(env, ctx, rec) {
+  const to = String(env.WA_FORWARD_TO || '').replace(/\D/g, '');
+  const spec = waSpec(env.WA_FORWARD);
+  if (!to || !spec) {
+    console.log('[hook] forward not configured — set WA_FORWARD and WA_FORWARD_TO to send replies on to reception');
+    return;
+  }
+  // Never forward the salon's own number to itself: a loop would be a loop.
+  if (String(rec.phone || '').replace(/\D/g, '') === to) return;
+
+  const who = String(rec.name || '').trim() || ('+' + String(rec.phone || ''));
+  // Meta rejects a parameter containing a newline or a run of spaces, and a
+  // customer's message has both. Flattened, and cut to something a phone
+  // notification can actually show.
+  let said = String(rec.text || '').replace(/\s+/g, ' ').trim();
+  if (!said) said = '(mesaj metni yok)';
+  if (said.length > 300) said = said.slice(0, 297) + '…';
+
+  let r = null, err = null;
+  try {
+    r = await piyziCall(env, 'POST', '/whatsapp/messages', {
+      phone: to,
+      ...waFill(spec, { who, said }),
+    });
+  } catch (e) { err = 'PIYZI_UNREACHABLE'; }
+  if (!err && r && !r.ok) err = (r.error && r.error.code) || ('HTTP_' + r.status);
+  waLog(env, ctx, {
+    op: 'hook-forward', apptId: 'wr-' + rec.id, to,
+    outcome: err ? ('failed:' + err) : 'sent',
+  });
+  console.log('[hook] forward to', to, err ? 'FAILED ' + err : 'sent', '—', who);
 }
 
 // Exported for the fixture tests beside this file — the workers runtime

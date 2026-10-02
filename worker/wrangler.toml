@@ -106,6 +106,19 @@ WA_GAPFILL = '{"templateName":"bosluk_teklifi","languageCode":"tr","body":[]}'
 # and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
 WA_REVIEW = '{"templateName":"pyz_google_yorum_istegi","languageCode":"tr","body":[]}'
 
+# EVERY REPLY ONTO RECEPTION'S OWN TELEPHONE.
+# The salon has two numbers: reception works from 0548 893 33 33 (ordinary
+# WhatsApp, on her phone) and everything automatic goes out from 0539 140 3333
+# (Piyzi), so that is where customers reply — and 0548 never sees it. A
+# customer cancelled to 0539 and nobody saw it for a day; the hour could not be
+# sold either. WhatsApp cannot divert one number to another, so /wa/hook
+# forwards each reply itself (hookForward) as the template in
+# templates/forward-reply.md: UTILITY, tr, two body variables, {who} and
+# {said}. Empty = off, logged, never guessed — the same contract as the rest.
+# Fill both in and `wrangler deploy` once Meta approves `musteri_yazdi`.
+WA_FORWARD = ''
+WA_FORWARD_TO = '905488933333'
+
 # The Piyzi webhook (/wa/hook) is signed with the whsec_… key Piyzi shows
 # ONCE when the webhook is registered. It is the wrangler secret
 # PIYZI_WEBHOOK_SECRET — never here. Without it the route answers 503 and

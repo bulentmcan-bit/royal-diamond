@@ -13483,51 +13483,128 @@ function rdRenderClosedPanel(bad){
    guess, and a guess must not empty a chair on its own — reception reads the
    six words she wrote and decides. The band's job is that nobody can fail to
    see them. */
-function rdNoShowSaid(){
-  var out=[];
+/* Every upcoming appointment, sorted into the only three states that matter
+   to a salon at eight in the morning:
+
+     RED    she has said she is not coming  → free the hour
+     GREEN  she has said she is coming      → leave her alone
+     AMBER  a reminder went and she has said NOTHING → ring her
+
+   The owner asked for the amber one himself — "leave the ones that don't
+   reply for us to call and check up with" — and it is the one that holds the
+   money. A silence after a reminder is the no-show you have not had yet.
+
+   Amber is only claimed where a reminder actually WENT: the appointment's own
+   r24 or r1 flag. Calling it "no answer" when nothing was ever asked would
+   put the whole of a quiet Tuesday on the list and the list would be ignored
+   by Wednesday. */
+function rdWrTriage(){
+  var red=[], green=[], amber=[];
   try{
     var map=(typeof rdWrAll==='function')?rdWrAll():null;
-    if(!map) return out;
     var now=Date.now();
     (appointments||[]).forEach(function(a){
       if(!a || a.status==='cancelled' || a.status==='completed') return;
+      if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return;   // a held hour, not a person
       var at=new Date(String(a.datetime||'')).getTime();
       if(!at || at < now-6*3600000) return;         // long past — nothing to save
       if(at > now+14*86400000) return;              // a fortnight is far enough
       var c=(clients||[]).filter(function(x){ return String(x.id)===String(a.clientId); })[0];
       if(!c) return;
-      var r=rdWrLatestFor(map, c, a);
-      if(!r || !rdWrIsCancel(r.text)) return;
-      out.push({a:a, c:c, r:r, at:at});
+      var r=map?rdWrLatestFor(map, c, a):null;
+      var row={a:a, c:c, r:r, at:at};
+      if(r && rdWrIsCancel(r.text)){ red.push(row); return; }
+      if(r && rdWrIsConfirm(r.text)){ green.push(row); return; }
+      if(r) return;                                 // she wrote something else — her words are on her card
+      // Nothing from her. Only chase where we actually asked, and only for
+      // today and tomorrow: a reminder for next week has not gone yet.
+      if(!(a.r24 || a.r1)) return;
+      if(at > now+36*3600000) return;
+      amber.push(row);
     });
   }catch(e){}
-  return out.sort(function(x,y){ return x.at-y.at; });
+  var byTime=function(x,y){ return x.at-y.at; };
+  return { red:red.sort(byTime), green:green.sort(byTime), amber:amber.sort(byTime) };
 }
+// Kept: the red list on its own, which is what the band was built around.
+function rdNoShowSaid(){ try{ return rdWrTriage().red; }catch(e){ return []; } }
 function rdRenderNoShowBand(){
   var el=document.getElementById('dash-noshow-band');
   if(!el) return;
-  var rows=[];
-  try{ rows=rdNoShowSaid(); }catch(e){}
-  if(!rows.length){ el.style.display='none'; el.innerHTML=''; return; }
+  var t={red:[],green:[],amber:[]};
+  try{ t=rdWrTriage(); }catch(e){}
+  if(!t.red.length && !t.green.length && !t.amber.length){ el.style.display='none'; el.innerHTML=''; return; }
   var esc=(typeof rdWrEsc==='function')?rdWrEsc:function(x){ return String(x==null?'':x); };
-  var html='<div style="border:3px solid #c0392b;border-radius:12px;background:#fdecea;overflow:hidden;">'
-    +'<div style="background:#c0392b;color:#fff;padding:11px 14px;font-weight:800;font-size:1rem;letter-spacing:.02em;">'
-    +'⚠ '+rows.length+' müşteri GELMİYORUM dedi — saati boşaltın</div>';
-  rows.forEach(function(x){
-    var d=String(x.a.datetime||''), when=(typeof rdWrDayTR==='function')?rdWrDayTR(d.slice(0,10)):d.slice(0,10);
-    var ph=String(x.c.phone||'').replace(/\s/g,'');
-    html+='<div style="padding:11px 14px;border-top:1px solid #f5c6c0;">'
-      +'<div style="font-weight:800;font-size:0.98rem;color:#8e2f23;">'+esc(x.c.name||'Müşteri')+'</div>'
-      +'<div style="font-size:0.84rem;color:#8e2f23;margin-top:2px;">'+esc(when)+' '+esc(d.slice(11,16))
-      +(x.a.staff?' · '+esc(x.a.staff):'')+(x.a.service?' · '+esc(x.a.service):'')+'</div>'
-      +'<div style="margin-top:5px;font-size:0.9rem;font-weight:700;color:#c0392b;">“'+esc(String(x.r.text||'').slice(0,160))+'”'
-      +' <span style="font-weight:400;opacity:.7;">'+esc((typeof rdWrClock==='function')?rdWrClock(x.r.ts):'')+'</span></div>'
-      +'<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">'
-      +(ph?'<a href="tel:'+esc(ph)+'" style="padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #c0392b;color:#c0392b;font-weight:800;text-decoration:none;font-size:0.86rem;">📞 '+esc(x.c.phone)+'</a>':'')
-      +'<button onclick="rdNoShowCancel('+x.a.id+')" style="padding:8px 14px;border-radius:8px;background:#c0392b;border:1px solid #c0392b;color:#fff;font-weight:800;font-family:inherit;font-size:0.86rem;cursor:pointer;">✕ İptal et — saati boşalt</button>'
-      +'</div></div>';
-  });
-  el.innerHTML=html+'</div>';
+  var when=function(a){
+    var d=String(a.datetime||'');
+    return ((typeof rdWrDayTR==='function')?rdWrDayTR(d.slice(0,10)):d.slice(0,10))+' '+d.slice(11,16);
+  };
+  var tel=function(c){ return String(c.phone||'').replace(/\s/g,''); };
+  var html='';
+
+  /* RED first, and loudest. She has said she is not coming and the hour is
+     still in the diary: until somebody presses ✕ it cannot be sold to anyone
+     else, which is how one unread message cost two hours. */
+  if(t.red.length){
+    html+='<div style="border:3px solid #c0392b;border-radius:12px;background:#fdecea;overflow:hidden;margin-bottom:12px;">'
+      +'<div style="background:#c0392b;color:#fff;padding:11px 14px;font-weight:800;font-size:1rem;">'
+      +'⚠ '+t.red.length+' müşteri GELMİYORUM dedi — saati boşaltın</div>';
+    t.red.forEach(function(x){
+      html+='<div style="padding:11px 14px;border-top:1px solid #f5c6c0;">'
+        +'<div style="font-weight:800;font-size:0.98rem;color:#8e2f23;">'+esc(x.c.name||'Müşteri')+'</div>'
+        +'<div style="font-size:0.84rem;color:#8e2f23;margin-top:2px;">'+esc(when(x.a))
+        +(x.a.staff?' · '+esc(x.a.staff):'')+(x.a.service?' · '+esc(x.a.service):'')+'</div>'
+        +'<div style="margin-top:5px;font-size:0.9rem;font-weight:700;color:#c0392b;">“'+esc(String(x.r.text||'').slice(0,160))+'”'
+        +' <span style="font-weight:400;opacity:.7;">'+esc(rdWrClock(x.r.ts))+'</span></div>'
+        +'<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">'
+        +(tel(x.c)?'<a href="tel:'+esc(tel(x.c))+'" style="padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #c0392b;color:#c0392b;font-weight:800;text-decoration:none;font-size:0.86rem;">📞 '+esc(x.c.phone)+'</a>':'')
+        +'<button onclick="rdNoShowCancel('+x.a.id+')" style="padding:8px 14px;border-radius:8px;background:#c0392b;border:1px solid #c0392b;color:#fff;font-weight:800;font-family:inherit;font-size:0.86rem;cursor:pointer;">✕ İptal et — saati boşalt</button>'
+        +'</div></div>';
+    });
+    html+='</div>';
+  }
+
+  /* AMBER. The owner's own words: "leave the ones that don't reply for us to
+     call and check up with." A reminder went to her and she has said nothing,
+     and her hour is today or tomorrow. This is the no-show you have not had
+     yet, and it is the list worth working. One tap rings her. */
+  if(t.amber.length){
+    html+='<div style="border:2px solid #c4863a;border-radius:12px;background:#fdf6ea;overflow:hidden;margin-bottom:12px;">'
+      +'<div style="background:#c4863a;color:#fff;padding:10px 14px;font-weight:800;font-size:0.95rem;">'
+      +'📞 '+t.amber.length+' müşteri hatırlatmaya cevap vermedi — arayıp teyit edin</div>';
+    t.amber.forEach(function(x){
+      html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid #efe0c4;">'
+        +'<span style="font-weight:800;color:#8a6420;min-width:92px;">'+esc(when(x.a))+'</span>'
+        +'<span style="font-weight:800;">'+esc(x.c.name||'Müşteri')+'</span>'
+        +(x.a.staff?'<span style="color:var(--muted);font-size:0.82rem;">'+esc(x.a.staff)+'</span>':'')
+        +(tel(x.c)
+           ?'<a href="tel:'+esc(tel(x.c))+'" style="margin-left:auto;padding:6px 12px;border-radius:8px;background:#c4863a;color:#fff;font-weight:800;text-decoration:none;font-size:0.84rem;">📞 Ara</a>'
+           :'<span style="margin-left:auto;color:#c0392b;font-weight:800;font-size:0.82rem;">telefon yok</span>')
+        +'</div>';
+    });
+    html+='</div>';
+  }
+
+  /* GREEN. Nothing to do, and that is the point of it: she has answered, she
+     is coming, and nobody needs to ring her. One line each, no buttons —
+     the moment a green list grows buttons it starts competing with the red
+     one for attention, and the red one must always win. */
+  if(t.green.length){
+    html+='<div style="border:2px solid #1e7a44;border-radius:12px;background:#eef8f1;overflow:hidden;">'
+      +'<div style="background:#1e7a44;color:#fff;padding:10px 14px;font-weight:800;font-size:0.95rem;">'
+      +'✅ '+t.green.length+' müşteri geleceğini onayladı — yapılacak bir şey yok</div>';
+    t.green.forEach(function(x){
+      html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-top:1px solid #cfe7d8;font-size:0.88rem;">'
+        +'<span style="font-weight:800;color:#1e7a44;min-width:92px;">'+esc(when(x.a))+'</span>'
+        +'<span style="font-weight:700;">'+esc(x.c.name||'Müşteri')+'</span>'
+        +(x.a.staff?'<span style="color:var(--muted);font-size:0.8rem;">'+esc(x.a.staff)+'</span>':'')
+        +'<span style="margin-left:auto;color:#1e7a44;font-size:0.8rem;">“'+esc(String(x.r.text||'').slice(0,40))+'”</span>'
+        +'</div>';
+    });
+    html+='</div>';
+  }
+
+  el.innerHTML=html;
   el.style.display='';
 }
 /* One tap frees the hour. It asks first, because cancelling the wrong booking
@@ -19730,6 +19807,31 @@ function rdWrIsCancel(text){
   return /iptal|gelemiyorum|gelemiycem|gelemiyecem|gelemeyecegim|gelemeyecem|gelmiyorum|gelemem|gelemeyiz|gelmeyecegim|katilamiyorum|vazgec/.test(t)
       || /cannot come|can not come|can'?t come|not coming|wont come|won'?t come|wont make it|won'?t make it|unable to come|have to cancel|want to cancel|need to cancel|cancel my|cancelling|canceling/.test(t);
 }
+/* Does this message say she IS coming?
+
+   Narrower than the cancellation test, and deliberately so. A cancellation
+   caught by mistake costs reception six words of reading; a CONFIRMATION
+   caught by mistake is worse — the row turns green, everybody relaxes, and
+   nobody rings the one customer who was actually asking a question. So this
+   matches a plain yes and nothing clever: tamam, evet, geliyorum, olur,
+   görüşürüz, yes, ok, coming, see you. A message with a question mark in it
+   is never a confirmation, whatever else it says. */
+function rdWrIsConfirm(text){
+  var t=String(text||'').toLowerCase()
+    .replace(/i̇/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ı/g,'i')
+    .replace(/ö/g,'o').replace(/ü/g,'u').replace(/ç/g,'c').trim();
+  if(!t) return false;
+  if(t.indexOf('?')!==-1) return false;          // a question is not a yes
+  /* …and Turkish asks questions without one. "tamam mı", "olur mu acaba",
+     "geliyor muyum" are questions, and every one of them contains a word that
+     starts with the question particle. Reading them as a yes is the worst
+     mistake this function can make: the row goes green, everybody relaxes,
+     and the one customer who was actually asking never gets rung. */
+  if(/(^|\s)(mi|mu|ma|me)([a-z]*)?(\s|$)/.test(t)) return false;
+  if(rdWrIsCancel(t)) return false;              // "iptal" wins over "tamam"
+  return /\b(tamam|tamamdir|tamamdır|evet|olur|peki|geliyorum|gelecegim|gelicem|gelirim|gorusuruz|gorusmek uzere|oldu|uygun|onayliyorum|kabul)\b/.test(t)
+      || /\b(yes|ok|okay|okey|sure|confirmed|confirm|coming|i'?ll be there|see you|fine)\b/.test(t);
+}
 /* The newest thing this customer has said, near this appointment.
 
    "Near" is from two days before the booking to the hour after it: a message
@@ -19767,8 +19869,13 @@ function rdWrApptStrip(map, client, appt){
   if(!r) return '';
   var esc=rdWrEsc, txt=String(r.text||'').trim();
   if(!txt) return '';
-  var cancel=rdWrIsCancel(txt), when=rdWrClock(r.ts);
+  var cancel=rdWrIsCancel(txt), confirm=rdWrIsConfirm(txt), when=rdWrClock(r.ts);
   if(txt.length>90) txt=txt.slice(0,88)+'…';
+  if(confirm && !cancel){
+    return '<div style="background:#1e7a44;color:#fff;border-radius:5px;padding:3px 6px;margin-bottom:4px;font-size:0.62rem;line-height:1.35;">'
+      +'<b style="letter-spacing:.06em;">✅ GELİYOR</b> <span style="opacity:.85;">'+esc(when)+'</span>'
+      +'<div style="font-weight:700;margin-top:1px;">“'+esc(txt)+'”</div></div>';
+  }
   if(cancel){
     return '<div style="background:#c0392b;color:#fff;border-radius:5px;padding:3px 6px;margin-bottom:4px;font-size:0.62rem;line-height:1.35;">'
       +'<b style="letter-spacing:.06em;">⚠ GELMİYOR</b> <span style="opacity:.85;">'+esc(when)+'</span>'
