@@ -1,7 +1,11 @@
 # WhatsApp template — "Randevu onayı" (the reminder that DEMANDS an answer)
 
-Written 2 Ekim 2026. **NOT yet submitted to Meta.** Nothing sends under this
-name until it is approved and `WA_R24` / `WA_R1` are pointed at it.
+Written and **SUBMITTED to Meta on 2 Ekim 2026** through Piyzi (Kampanyalar →
+Şablonlar → Yeni Şablon → WhatsApp → Yeni WhatsApp Şablonu). Meta template id
+`856231290849449`, status **PENDING** at the time of writing.
+
+Nothing sends under this name until Meta approves it and `WA_R24` / `WA_R1`
+are pointed at it. Check the status in Piyzi, or with `GET /wa/templates`.
 
 ## Why this exists
 
@@ -20,8 +24,8 @@ This template replaces the ask. Two taps, no typing:
 
 | | |
 |---|---|
-| **✅ Geleceğim / Yes** | she is coming |
-| **❌ Gelemiyorum / No** | she is not |
+| **Geleceğim / Yes** | she is coming |
+| **Gelemiyorum / No** | she is not |
 
 ## Why those exact words
 
@@ -34,9 +38,17 @@ Both labels were checked against the live `rdWrIsConfirm` / `rdWrIsCancel`
 functions in `index.html` before this file was written:
 
 ```
-"✅ Geleceğim / Yes"     17 chars   confirm=true  cancel=false
-"❌ Gelemiyorum / No"    18 chars   confirm=false cancel=true
+"Geleceğim / Yes"      15 chars   confirm=true  cancel=false
+"Gelemiyorum / No"     16 chars   confirm=false cancel=true
 ```
+
+**No emoji.** The first submission carried a ✅ and a ❌ and Meta refused it
+outright, through Piyzi, with:
+
+> Buttons can't have any variables, newlines, emojis or formatting characters.
+
+That rule is Meta's and it is absolute, so the ticks live in the dashboard's
+own bands instead, where they cost nothing.
 
 Both are inside Piyzi's 25-character button limit (the limit that forced
 `bosluk_teklifi`'s button down from "Evet, isterim / Yes please" to
@@ -44,8 +56,9 @@ Both are inside Piyzi's 25-character button limit (the limit that forced
 check** — change "Geleceğim" to "Tamam" and the green band goes blind.
 
 A tap therefore lands straight in the right band with nobody doing anything:
-✅ → the green band, ❌ → the red band with ✕ İptal et beside it. Anyone who
-still says nothing falls into the amber band to be telephoned.
+"Geleceğim" → the green band, "Gelemiyorum" → the red band with ✕ İptal et
+beside it. Anyone who still says nothing falls into the amber band to be
+telephoned.
 
 | Field | Value |
 |---|---|
@@ -55,7 +68,7 @@ still says nothing falls into the amber band to be telephoned.
 | Header | none |
 | Body variables | **2** · `{{1}}` the Turkish long date ("3 Ekim Cumartesi"), `{{2}}` the hour ("14:00") |
 | Footer | none (UTILITY needs no opt-out line) |
-| Buttons | 2 · Quick reply `✅ Geleceğim / Yes` · Quick reply `❌ Gelemiyorum / No` |
+| Buttons | 2 · Quick reply `Geleceğim / Yes` · Quick reply `Gelemiyorum / No` — plain text, no emoji, which Meta refuses |
 
 ## Body (paste exactly — blank lines are the paragraph breaks)
 
@@ -75,16 +88,18 @@ Your appointment: {{1}} at {{2}}
 Please tap one of the buttons below to answer.
 ```
 
-## Submitting it
+## How it was submitted
 
 Piyzi → Kampanyalar → Şablonlar → Yeni Şablon → WhatsApp → Yeni WhatsApp
-Şablonu. Category **Hizmet / Utility**, language Türkçe, no header, the body
-above, two **quick reply** buttons with the labels exactly as written.
+Şablonu. Category **Bilgilendirme** (which Piyzi sends as UTILITY), language
+Türkçe, "Meta kategoriyi düzeltebilsin" left ON, no header, the body above,
+the two example values, and two **quick reply** buttons.
 
-Custom templates do work through Piyzi: `bosluk_teklifi` was submitted this
-way on 11 Eylül 2026 and approved on 14 Eylül, and it carries a quick-reply
-button, so the shape is proven. Approval has taken from a few minutes to
-three days.
+Piyzi's form shows no error when Meta refuses the template — the dialog simply
+stays open. The reason only appears in the POST to
+`api.piyzi.com/api/messaging/whatsapp/templates`, which answers 400 with a
+`WHATSAPP_TEMPLATE_CREATE_FAILED` message carrying Meta's own words. If a
+future submission seems to do nothing, that response is where to look.
 
 ## Wiring it, once Meta approves
 

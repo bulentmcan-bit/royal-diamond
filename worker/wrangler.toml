@@ -85,10 +85,11 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 # customer to answer — their only button is a "Detaylar / Details" link — which
 # is why twenty-five reminders went out and twenty-five customers said nothing.
 # templates/reminder-confirm.md is the replacement: the same reminder with two
-# quick-reply buttons, "✅ Geleceğim / Yes" and "❌ Gelemiyorum / No", whose
-# labels the dashboard's own rdWrIsConfirm/rdWrIsCancel already read. Submit it
-# as `randevu_onay`, check the name and variable order against GET /wa/templates,
-# then replace BOTH lines above with these and deploy:
+# quick-reply buttons, "Geleceğim / Yes" and "Gelemiyorum / No", whose
+# labels the dashboard's own rdWrIsConfirm/rdWrIsCancel already read. SUBMITTED
+# to Meta 2 Ekim 2026 as `randevu_onay` (id 856231290849449), PENDING. Once it
+# is APPROVED, check the variable order against GET /wa/templates, then replace
+# BOTH lines above with these and deploy:
 #
 #   WA_R24 = '{"templateName":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
 #   WA_R1  = '{"templateName":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
