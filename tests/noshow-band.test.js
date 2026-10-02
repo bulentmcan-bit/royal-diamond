@@ -119,7 +119,16 @@ console.log('4. the band');
   is(/<div id="dash-noshow-band"[\s\S]{0,120}<div id="dash-actions"/.test(html), true, '…ABOVE the actions list, not under it');
   is(/function rdNoShowSaid\(\)/.test(html), true, 'it reads every upcoming appointment against what she wrote');
   is(/if\(!a \|\| a\.status==='cancelled' \|\| a\.status==='completed'\) return;/.test(html), true, '…skipping the already cancelled and the already done');
-  is(/if\(!at \|\| at < now-6\*3600000\) return;/.test(html), true, '…and anything long past, where there is nothing left to save');
+  // The owner watched a band of 25 at ten to six and the top of it was a five
+  // o'clock that had already come and gone. "Don't show the ones where their
+  // time has passed." An hour that is behind you cannot be sold, confirmed or
+  // usefully telephoned about — it is only in the way of the ones that can.
+  is(/if\(!at \|\| at < now\) return;/.test(html), true, 'an appointment whose hour has passed is gone from all three bands');
+  is(/at < now-6\*3600000/.test(html), false, '…not kept for six hours afterwards, as it once was');
+  // And the clock has to keep moving while nobody touches the page.
+  is(/setInterval\(function\(\)\{[\s\S]{0,400}?rdRenderNoShowBand\(\);[\s\S]{0,60}?\}, 60000\);/.test(html), true,
+     'the bands redraw once a minute, so a passed hour drops off on its own');
+  is(/el\.offsetParent===null\) return;/.test(html), true, '…and do nothing at all while the band is off screen');
   is(/⚠ '\+t\.red\.length\+' müşteri GELMİYORUM dedi — saati boşaltın/.test(html), true, 'the red heading says how many and what to do');
 
   /* THREE STATES, in the order a salon cares about them at eight in the

@@ -13507,7 +13507,7 @@ function rdWrTriage(){
       if(!a || a.status==='cancelled' || a.status==='completed') return;
       if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return;   // a held hour, not a person
       var at=new Date(String(a.datetime||'')).getTime();
-      if(!at || at < now-6*3600000) return;         // long past — nothing to save
+      if(!at || at < now) return;                   // her hour has gone — nothing left to save
       if(at > now+14*86400000) return;              // a fortnight is far enough
       var c=(clients||[]).filter(function(x){ return String(x.id)===String(a.clientId); })[0];
       if(!c) return;
@@ -13621,6 +13621,19 @@ window.rdNoShowCancel=function(id){
     setTimeout(function(){ try{ rdRenderNoShowBand(); }catch(e){} }, 200);
   }catch(e){ console.warn('[noshow]', e); }
 };
+
+/* Reception leaves this screen open from morning to night, and the bands are
+   read against the clock: an hour that was still ahead at nine is behind us by
+   six. Without this, a five o'clock sits in the amber band all evening and the
+   list the owner is meant to work is half rubbish by teatime. Once a minute,
+   quietly, and only while the band is on screen. */
+setInterval(function(){
+  try{
+    var el=document.getElementById('dash-noshow-band');
+    if(!el || el.offsetParent===null) return;      // not on screen — nothing to redraw
+    rdRenderNoShowBand();
+  }catch(e){}
+}, 60000);
 
 function rdDashActions(){
   try{ rdRenderNoShowBand(); }catch(e){}
