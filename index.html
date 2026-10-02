@@ -4069,6 +4069,13 @@ p, span, div, label, h1, h2, h3, h4 {
            (a hidden panel below, or the page that owns the job). If the
            day is clean the screen is nearly empty, on purpose. -->
       <div id="dash-big-tiles" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;"></div>
+      <!-- GELMİYOR — the loudest thing on the page, above everything.
+           A customer wrote "Hello I cannot come today" and it sat in a panel
+           below the fold until the owner rang her the next day to ask. The
+           hour was never released either, so nobody else could have it. This
+           band is the answer: her words, her hour, her telephone, and one
+           button that frees the slot. -->
+      <div id="dash-noshow-band" style="display:none;margin-bottom:16px;"></div>
       <div id="dash-actions" style="margin-bottom:16px;"></div>
       <!-- Çağrı: reception calls a technician out loud — pick her name, then
            the minutes, and the room hears Emel say "Helen, on dakika" (the
@@ -6496,6 +6503,9 @@ function renderDashGrid(){
       html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+((typeof rdWaPhoneMark==='function')?rdWaPhoneMark(a.clientId):'')+((typeof rdOnlineMark==='function')?rdOnlineMark(a,true):'')+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
       html += '<div style="font-size:0.63rem;color:#6b8c70;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;">'+a.service+'</div>';
+      // What SHE said, on her own row. See rdWrApptStrip: a cancellation is red
+      // and says GELMİYOR, anything else is a quiet gold line with her words.
+      try{ html += (typeof rdWrStripFor==='function') ? rdWrStripFor(a) : ''; }catch(e){}
       // Unpaid old debt on this customer — one small line so reception knows
       // before the customer reaches the till (the till itself asks at her last
       // appointment of the day).
@@ -13454,7 +13464,89 @@ function rdRenderClosedPanel(bad){
   }).join('');
 }
 
+/* ── "GELMİYOR" — the band that cannot be missed ────────────────────────────
+
+   The staff call this a stupid system, and on this they were right. A customer
+   said she was not coming; the message went into a list; the list is below the
+   fold; nobody looked; the owner rang her the next day and she told him she
+   had already cancelled. The hour stayed in the diary all that time, so it
+   could not be sold to anybody else either. Two losses from one unread line.
+
+   So it is not a line any more. Every appointment from today onwards is read
+   against what that customer has actually written (rdWrLatestFor), and anyone
+   whose own words say she is not coming goes into a red band at the very top
+   of the dashboard — above the takings, above everything. Her words, her hour,
+   her technician, her telephone to tap, and ✕ İptal et, which cancels the
+   booking and frees the hour so the gap-filler can sell it.
+
+   Nothing is cancelled automatically. A machine reading "cannot come" is a
+   guess, and a guess must not empty a chair on its own — reception reads the
+   six words she wrote and decides. The band's job is that nobody can fail to
+   see them. */
+function rdNoShowSaid(){
+  var out=[];
+  try{
+    var map=(typeof rdWrAll==='function')?rdWrAll():null;
+    if(!map) return out;
+    var now=Date.now();
+    (appointments||[]).forEach(function(a){
+      if(!a || a.status==='cancelled' || a.status==='completed') return;
+      var at=new Date(String(a.datetime||'')).getTime();
+      if(!at || at < now-6*3600000) return;         // long past — nothing to save
+      if(at > now+14*86400000) return;              // a fortnight is far enough
+      var c=(clients||[]).filter(function(x){ return String(x.id)===String(a.clientId); })[0];
+      if(!c) return;
+      var r=rdWrLatestFor(map, c, a);
+      if(!r || !rdWrIsCancel(r.text)) return;
+      out.push({a:a, c:c, r:r, at:at});
+    });
+  }catch(e){}
+  return out.sort(function(x,y){ return x.at-y.at; });
+}
+function rdRenderNoShowBand(){
+  var el=document.getElementById('dash-noshow-band');
+  if(!el) return;
+  var rows=[];
+  try{ rows=rdNoShowSaid(); }catch(e){}
+  if(!rows.length){ el.style.display='none'; el.innerHTML=''; return; }
+  var esc=(typeof rdWrEsc==='function')?rdWrEsc:function(x){ return String(x==null?'':x); };
+  var html='<div style="border:3px solid #c0392b;border-radius:12px;background:#fdecea;overflow:hidden;">'
+    +'<div style="background:#c0392b;color:#fff;padding:11px 14px;font-weight:800;font-size:1rem;letter-spacing:.02em;">'
+    +'⚠ '+rows.length+' müşteri GELMİYORUM dedi — saati boşaltın</div>';
+  rows.forEach(function(x){
+    var d=String(x.a.datetime||''), when=(typeof rdWrDayTR==='function')?rdWrDayTR(d.slice(0,10)):d.slice(0,10);
+    var ph=String(x.c.phone||'').replace(/\s/g,'');
+    html+='<div style="padding:11px 14px;border-top:1px solid #f5c6c0;">'
+      +'<div style="font-weight:800;font-size:0.98rem;color:#8e2f23;">'+esc(x.c.name||'Müşteri')+'</div>'
+      +'<div style="font-size:0.84rem;color:#8e2f23;margin-top:2px;">'+esc(when)+' '+esc(d.slice(11,16))
+      +(x.a.staff?' · '+esc(x.a.staff):'')+(x.a.service?' · '+esc(x.a.service):'')+'</div>'
+      +'<div style="margin-top:5px;font-size:0.9rem;font-weight:700;color:#c0392b;">“'+esc(String(x.r.text||'').slice(0,160))+'”'
+      +' <span style="font-weight:400;opacity:.7;">'+esc((typeof rdWrClock==='function')?rdWrClock(x.r.ts):'')+'</span></div>'
+      +'<div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">'
+      +(ph?'<a href="tel:'+esc(ph)+'" style="padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #c0392b;color:#c0392b;font-weight:800;text-decoration:none;font-size:0.86rem;">📞 '+esc(x.c.phone)+'</a>':'')
+      +'<button onclick="rdNoShowCancel('+x.a.id+')" style="padding:8px 14px;border-radius:8px;background:#c0392b;border:1px solid #c0392b;color:#fff;font-weight:800;font-family:inherit;font-size:0.86rem;cursor:pointer;">✕ İptal et — saati boşalt</button>'
+      +'</div></div>';
+  });
+  el.innerHTML=html+'</div>';
+  el.style.display='';
+}
+/* One tap frees the hour. It asks first, because cancelling the wrong booking
+   is worse than leaving it, and it goes through dashCancelAppt so the slot is
+   released exactly the way reception's own ✕ releases it — the gap-filler can
+   then sell the hour like any other. */
+window.rdNoShowCancel=function(id){
+  try{
+    var a=(appointments||[]).filter(function(x){ return String(x.id)===String(id); })[0];
+    var c=a?(clients||[]).filter(function(x){ return String(x.id)===String(a.clientId); })[0]:null;
+    var nm=c?(c.name||'Bu müşteri'):'Bu müşteri';
+    if(!confirm(nm+' için randevu iptal edilsin ve saat boşaltılsın mı?')) return;
+    if(typeof dashCancelAppt==='function') dashCancelAppt(id);
+    setTimeout(function(){ try{ rdRenderNoShowBand(); }catch(e){} }, 200);
+  }catch(e){ console.warn('[noshow]', e); }
+};
+
 function rdDashActions(){
+  try{ rdRenderNoShowBand(); }catch(e){}
   const el=document.getElementById('dash-actions'); if(!el) return;
   const items=[]; const now=Date.now();
   // kapalı güne düşen randevu: a customer to RING — the loudest line, first
@@ -19600,6 +19692,91 @@ function rdWrReminderLine(x){
     + rdWrDayTR(d.slice(0,10))+' '+d.slice(11,16)
     + (a.staff?' · '+a.staff:'') + (a.service?' · '+a.service:'');
 }
+/* ── HER MESSAGE, ON HER OWN ROW ────────────────────────────────────────────
+   A customer wrote "Hello I cannot come today" at 16:03. It went into the
+   replies panel, which is a list below the fold, and nobody saw it. The owner
+   rang her the next day to ask whether she was coming, and she told him she
+   had already cancelled. The hour was never released, so nobody else could
+   have it either. That is the whole cost of a message living in a list.
+
+   A message belongs on the appointment it is about. Reception looks at the
+   day's columns all day long; she does not go looking in a panel. So the
+   customer's own words now sit on her card, in her column, at her hour — and
+   when those words say she is not coming, the card says GELMİYOR in red and
+   cannot be mistaken for anything else.
+
+   This reads the replies that are already on the device. Nothing is fetched,
+   nothing is written, and the panel below carries on exactly as it was. */
+
+/* Does this message say she is not coming?
+
+   Turkish and English, and the broken typing of a real phone — "gelemiycem",
+   "gelemiyecem", "iptal edelim", "cannot come", "wont make it". It is matched
+   loosely ON PURPOSE: the cost of marking a doubtful message as a possible
+   cancellation is that reception reads six words and rings her; the cost of
+   missing one is an empty chair nobody could fill and a customer who thinks
+   she told you.
+
+   The guard against crying wolf is the opposite list: "gelemedim" (I could
+   not come, past tense, about a visit already missed) and a question like
+   "gelemez miyim" are not cancellations of a future booking. */
+function rdWrIsCancel(text){
+  var t=String(text||'').toLowerCase()
+    .replace(/i̇/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ı/g,'i')
+    .replace(/ö/g,'o').replace(/ü/g,'u').replace(/ç/g,'c');
+  if(!t.trim()) return false;
+  // past tense or a question — not a cancellation of something still to come
+  if(/gelemedim|gelememistim|gelemez miyim|gelebilir miyim/.test(t)) return false;
+  return /iptal|gelemiyorum|gelemiycem|gelemiyecem|gelemeyecegim|gelemeyecem|gelmiyorum|gelemem|gelemeyiz|gelmeyecegim|katilamiyorum|vazgec/.test(t)
+      || /cannot come|can not come|can'?t come|not coming|wont come|won'?t come|wont make it|won'?t make it|unable to come|have to cancel|want to cancel|need to cancel|cancel my|cancelling|canceling/.test(t);
+}
+/* The newest thing this customer has said, near this appointment.
+
+   "Near" is from two days before the booking to the hour after it: a message
+   from last month is not about today, and one that lands while she is sitting
+   in the chair ("I'm outside") still is. Newest wins, because what she said
+   last is what she means. */
+function rdWrLatestFor(map, client, appt){
+  if(!client || !appt) return null;
+  var at=new Date(String(appt.datetime||'')).getTime();
+  if(!at) return null;
+  var from=at-2*86400000, to=at+3600000;
+  var want=rdWrPhoneKey(client.phone||'');
+  if(!want) return null;
+  var best=null;
+  rdWrList(map||{}).forEach(function(r){
+    if(rdWrPhoneKey(r.phone)!==want) return;
+    var ts=Number(r.ts)||0;
+    if(ts<from || ts>to) return;
+    if(!best || ts>(Number(best.ts)||0)) best=r;
+  });
+  return best;
+}
+// "16:03" — the clock on a message, nothing else.
+function rdWrClock(ts){
+  if(!ts) return '';
+  var d=new Date(Number(ts)), p=function(n){ return (n<10?'0':'')+n; };
+  return p(d.getHours())+':'+p(d.getMinutes());
+}
+/* The strip that goes on the appointment card. Red and shouting when she has
+   said she is not coming, quiet and gold when she has merely written. Either
+   way her own words are on it: a mark that says "she wrote something" would
+   send reception looking for it again, which is the thing that failed. */
+function rdWrApptStrip(map, client, appt){
+  var r=rdWrLatestFor(map, client, appt);
+  if(!r) return '';
+  var esc=rdWrEsc, txt=String(r.text||'').trim();
+  if(!txt) return '';
+  var cancel=rdWrIsCancel(txt), when=rdWrClock(r.ts);
+  if(txt.length>90) txt=txt.slice(0,88)+'…';
+  if(cancel){
+    return '<div style="background:#c0392b;color:#fff;border-radius:5px;padding:3px 6px;margin-bottom:4px;font-size:0.62rem;line-height:1.35;">'
+      +'<b style="letter-spacing:.06em;">⚠ GELMİYOR</b> <span style="opacity:.85;">'+esc(when)+'</span>'
+      +'<div style="font-weight:700;margin-top:1px;">“'+esc(txt)+'”</div></div>';
+  }
+  return '<div style="background:#fdf3e0;border:1px solid #e8cf9a;color:#7a5a12;border-radius:5px;padding:3px 6px;margin-bottom:4px;font-size:0.62rem;line-height:1.35;">'
+    +'💬 <span style="opacity:.75;">'+esc(when)+'</span> <span style="font-weight:700;">“'+esc(txt)+'”</span></div>';
+}
 // The full-screen reception card, in the call alert's own clothes.
 function rdWrCardHtml(r, cls, ix, total){
   var esc=rdWrEsc, nm=rdWrNameFor(r, cls), ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,'');
@@ -19629,6 +19806,19 @@ function rdWrCardHtml(r, cls, ix, total){
   window.rdWrToggle=function(id){ _open=(_open===String(id)?null:String(id)); render(); };
   function cls(){ try{ return clients||[]; }catch(e){ return []; } }
   window.rdWrUnread=function(){ return rdWrUnreadOf(_wr); };
+  // The diary needs to put a customer's own words on her appointment card, and
+  // the replies live in here. Handed out read-only; nothing outside writes it.
+  window.rdWrAll=function(){ return _wr; };
+  window.rdWrStripFor=function(appt){
+    try{
+      var c=rdWrClientFor({phone:(function(){
+        var cl=(clients||[]).filter(function(x){ return String(x.id)===String(appt&&appt.clientId); })[0];
+        return cl?cl.phone:'';
+      })()}, cls());
+      if(!c) return '';
+      return rdWrApptStrip(_wr, c, appt);
+    }catch(e){ return ''; }
+  };
   window.rdWrMarkRead=function(id, v){
     var role=''; try{ role=localStorage.getItem('rdns_msg_role')||''; }catch(e){}
     try{ _fbDb.ref('rdns_wa_replies_v1/'+String(id).replace(/[.#$\/\[\]]/g,'_')).update(v?{read:true, readAt:Date.now(), readBy:role}:{read:false, readAt:null, readBy:null}); }
@@ -19799,6 +19989,9 @@ function rdWrCardHtml(r, cls, ix, total){
     _seen={}; list.forEach(function(r){ _seen[r.id]=1; });
     render();
     try{ if(typeof rdDashActions==='function') rdDashActions(); }catch(e){}
+    // …and the day's columns, so her words land on her own card the moment
+    // they arrive rather than at whatever makes the grid redraw next.
+    try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
     // Reception's card, now — not at the next half-minute tick.
     try{ if(typeof rdCallTick==='function') rdCallTick(); }catch(e){}
   }
