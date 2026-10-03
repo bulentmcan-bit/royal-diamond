@@ -2788,10 +2788,10 @@
       let cl=(clients||[]).find(c=>c&&c.phone&&reqDigits&&digits(c.phone)===reqDigits);
       if(!cl){
         const cleanPhone=(typeof normalizeWaPhone==='function')?normalizeWaPhone(String(req.phone||'')):String(req.phone||'');
-        cl={id:Date.now()+Math.floor(Math.random()*999),name:(req.name||'Online Müşteri').trim(),phone:cleanPhone,notes:'🌐 Online randevu sayfasından kayıt',visits:0};
+        cl={id:rdNewId(),name:(req.name||'Online Müşteri').trim(),phone:cleanPhone,notes:'🌐 Online randevu sayfasından kayıt',visits:0};
         clients.push(cl);
       }
-      const a={id:Date.now()+Math.floor(Math.random()*999),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true,
+      const a={id:rdNewId(),clientId:cl.id,service:req.service||'Online Randevu',datetime:req.date+'T'+req.time,duration:_reqDur,price:0,staff:staffPick,status:'confirmed',r24:false,r1:false,autoRebooked:false,parentId:null,online:true,
         // Where she came from, carried over from the booking page. The page reads
         // it off its own address -- booking.html?src=instagram -- so a link in an
         // ad, a bio or a QR code can each be told apart. It used to stop at the
@@ -2801,7 +2801,7 @@
       appointments.push(a);
       try{ _rdLogApptCreate(a,'online-booking'); }catch(e){}
       _obMarkProcessed(id);
-      try{saveAll();}catch(e){try{syncPush('rdns_main_v1',{clients,appointments,payments});}catch(_){}}
+      try{saveAll();}catch(e){try{dbSave();}catch(_){}}
       // 🤖 An online booking earns the same WhatsApp reminders as a desk one.
       // Only the device that claimed the request schedules — no doubles.
       try{ rdWaSchedule(a); }catch(e){}
@@ -7029,10 +7029,13 @@ function diAutoAdd(staffName, amount, datetime, apptId){
         // Staff picked on the appointment (e.g. "Manager"/"Nihal") has no
         // card on the Daily Takings page yet — create one on the fly rather
         // than silently dropping the money.
-        dtState.operators.push({name:staffName, entries:[]});
+        dtState.operators.push({id:Date.now(), name:staffName, entries:[], active:true});
         opIdx = dtState.operators.length-1;
         console.warn('diAutoAdd: created new Daily Takings card for staff', staffName);
       }
+      // An inactive card is left out of the day total and the archive —
+      // money landing on it would vanish at the rollover.
+      dtState.operators[opIdx].active = true;
       const now = new Date();
       const time = String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
       // Pull the customer's name + service from the appointment so it shows
@@ -11654,6 +11657,9 @@ function confirmImport(){
     });
     added++;
   });
+  // Write them down — without this the imported clients lived only in this
+  // tab and vanished on the next reload or cloud snapshot.
+  if(added) saveAll();
   closeModal('mImport');
   resetImport();
   toast('✅',`${added} Clients Imported!`,'All clients added to your directory.','g');
@@ -13813,7 +13819,7 @@ window.rdBandSaidYes=function(id){
     if(!a) return;
     a.rdCall='yes'; a.rdCallAt=Date.now();
     try{ a.rdCallBy=localStorage.getItem('rdns_msg_role')||''; }catch(e){ a.rdCallBy=''; }
-    try{ saveAll(); }catch(e){ try{ syncPush('rdns_main_v1',{clients,appointments,payments}); }catch(_){} }
+    try{ saveAll(); }catch(e){ try{ dbSave(); }catch(_){} }
     try{ rdRenderNoShowBand(); }catch(e){}
     try{ renderDashGrid(); }catch(e){}
   }catch(e){ console.warn('[band]', e); }
@@ -13828,7 +13834,7 @@ window.rdBandUndoCall=function(id){
     var a=(appointments||[]).filter(function(x){ return String(x.id)===String(id); })[0];
     if(!a) return;
     delete a.rdCall; delete a.rdCallAt; delete a.rdCallBy;
-    try{ saveAll(); }catch(e){ try{ syncPush('rdns_main_v1',{clients,appointments,payments}); }catch(_){} }
+    try{ saveAll(); }catch(e){ try{ dbSave(); }catch(_){} }
     try{ rdRenderNoShowBand(); }catch(e){}
     try{ renderDashGrid(); }catch(e){}
   }catch(e){ console.warn('[band]', e); }
@@ -18757,7 +18763,11 @@ function rvSend(clientId){
   var c = clients.find(function(x){return String(x.id)===String(clientId);});
   if(!c || !c.phone) return;
   var p = (typeof normalizeWaPhone==='function') ? normalizeWaPhone(String(c.phone)) : String(c.phone).replace(/\D/g,'');
-  window.open('https://wa.me/'+p+'?text='+encodeURIComponent(rvMsg(c.name)), '_blank');
+  var w = window.open('https://wa.me/'+p+'?text='+encodeURIComponent(rvMsg(c.name)), '_blank');
+  // The browser blocks every pop-up after the first from one tap (Tümünü
+  // Gönder): a blocked one must not mark her as asked, or she drops off the
+  // card without ever getting the message.
+  if(!w){ toast('⚠️','WhatsApp açılamadı', rvEsc(c.name)+' — tarayıcı pencereyi engelledi, tek tek gönderin.','r'); return; }
   c.reviewAskedTs = Date.now();
   if(typeof saveAll==='function') saveAll();
   renderReviewCard();
@@ -18923,10 +18933,12 @@ function rvAutoAsked(c){
 (function(){
   // The roster, read when asked (crown-config.js loads further down the
   // file, so never at parse time) — never a list of names.
-  const TECHS=()=>rdStaffOn(new Date());
+  // The roster of the booking's own day — today's roster left the part-timers
+  // out of the check on every day they were not working today.
+  const TECHS=(d)=>rdStaffOn(d||new Date());
   function _ap(){try{return appointments||[];}catch(e){return[];}}
   function _cl(){try{return clients||[];}catch(e){return[];}}
-  function techOf(st){const s=String(st||'').toLowerCase();return TECHS().find(t=>s.includes(t.toLowerCase()))||null;}
+  function techOf(st,d){const s=String(st||'').toLowerCase();return TECHS(d).find(t=>s.includes(t.toLowerCase()))||null;}
   function cname(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.name:'Müşteri';}
   function cphone(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.phone:null;}
   function fmtDT(d){return d.toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long'})+' '+d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});}
@@ -18938,7 +18950,7 @@ function rvAutoAsked(c){
       if(!a||a.status==='cancelled')return;
       const t=new Date(a.datetime).getTime(); if(isNaN(t)||t<now)return;
       if(!a.online && a.duration) return;          // elle girilenlere dokunma
-      const want=(typeof rdSvcDur==='function')?rdSvcDur(a.service):null;
+      const want=(typeof rdSvcDur==='function')?rdSvcDur(a.service,a.staff):null;
       if(want && parseInt(a.duration)!==want){a.duration=want;fixed++;}
     });
     if(fixed){try{saveAll();}catch(e){} try{publishAvailability();}catch(e){}}
@@ -18960,9 +18972,12 @@ function rvAutoAsked(c){
       if(!a||a.status==='cancelled')return;
       const t=new Date(a.datetime).getTime(); if(isNaN(t)||t<=now)return;
       const d=parseInt(a.duration);
-      if(d>60){
-        try{ if(typeof apptDropLog==='function') apptDropLog(a, a.id, "süre 60'a çekildi", d+' dk → 60 dk'); }catch(e){}
-        a.duration=60; capped++;
+      // A technician's own figure in crown-config (Beyhan's 90-minute
+      // microblading) is real and is not cut down to 60.
+      let cap=60; try{ const own=(typeof rdSvcDur==='function')?rdSvcDur(a.service,a.staff):0; if(own>cap) cap=own; }catch(e){}
+      if(d>cap){
+        try{ if(typeof apptDropLog==='function') apptDropLog(a, a.id, "süre "+cap+"'a çekildi", d+' dk → '+cap+' dk'); }catch(e){}
+        a.duration=cap; capped++;
       }
     });
     if(capped){
@@ -18984,17 +18999,21 @@ function rvAutoAsked(c){
     const list=_ap().filter(a=>{
       if(!a||a.status==='cancelled')return false;
       const t=new Date(a.datetime).getTime();
-      return !isNaN(t)&&t>=now-3600000&&t<=horizon&&techOf(a.staff);
+      return !isNaN(t)&&t>=now-3600000&&t<=horizon&&techOf(a.staff,new Date(a.datetime));
     });
-    TECHS().forEach(t=>{
-      const mine=list.filter(a=>techOf(a.staff)===t)
+    const names=[...new Set(list.map(a=>techOf(a.staff,new Date(a.datetime))))];
+    names.forEach(t=>{
+      const mine=list.filter(a=>techOf(a.staff,new Date(a.datetime))===t)
         .sort((x,y)=>new Date(x.datetime)-new Date(y.datetime));
-      for(let i=0;i<mine.length-1;i++){
-        const a=mine[i], b=mine[i+1];
-        const as=new Date(a.datetime).getTime(), ae=as+(parseInt(a.duration)||60)*60000;
+      // Compare each booking with the one that runs LATEST so far, not just
+      // its neighbour: a long job can overlap two bookings after it.
+      let prev=null, prevEnd=0;
+      mine.forEach(b=>{
         const bs=new Date(b.datetime).getTime();
-        if(bs<ae) out.push({tech:t,a:a,b:b,overlapMin:Math.round((ae-bs)/60000)});
-      }
+        if(prev && bs<prevEnd) out.push({tech:t,a:prev,b:b,overlapMin:Math.round((prevEnd-bs)/60000)});
+        const be=bs+(parseInt(b.duration)||60)*60000;
+        if(be>prevEnd){ prevEnd=be; prev=b; }
+      });
     });
     return out;
   };
@@ -19085,11 +19104,14 @@ function rvAutoAsked(c){
   // Who is ACTIVE is the roster in crown-config.js, read when asked (it
   // loads further down the file) — never a list of names. Add a technician
   // there and her bookings stop being "old staff" bookings here by themselves.
-  const ACTIVE=()=>rdStaffOn(new Date());
+  // Judged against the roster of the BOOKING'S OWN day: a part-timer (Zara,
+  // Beyhan) is not on today's roster on her days off, and her real future
+  // bookings were listed here — and deletable — as "old staff".
+  const ACTIVE=(d)=>rdStaffOn(d||new Date());
   function _ap(){try{return appointments||[];}catch(e){return[];}}
   function _cl(){try{return clients||[];}catch(e){return[];}}
-  function isActive(st){const s=String(st||'').toLowerCase().trim();
-    return ACTIVE().some(t=>s.indexOf(t.toLowerCase())!==-1);}
+  function isActive(st,d){const s=String(st||'').toLowerCase().trim();
+    return ACTIVE(d).some(t=>s.indexOf(t.toLowerCase())!==-1);}
   function cname(id){const c=_cl().find(x=>String(x.id)===String(id));return c?c.name:'Müşteri';}
   function fmt(d){return d.toLocaleDateString('tr-TR',{day:'numeric',month:'short'})+' '+
     d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});}
@@ -19101,7 +19123,7 @@ function rvAutoAsked(c){
       if(!a||a.status==='cancelled')return false;
       const t=new Date(a.datetime).getTime();
       if(isNaN(t)||t<now)return false;          // geçmiş = tarihî kayıt, ASLA dokunulmaz
-      return !isActive(a.staff);                 // sadece gelecekteki, personelsiz kayıtlar
+      return !isActive(a.staff, new Date(a.datetime)); // sadece gelecekteki, personelsiz kayıtlar
     }).sort((x,y)=>new Date(x.datetime)-new Date(y.datetime));
   };
 
@@ -19169,7 +19191,7 @@ function rvAutoAsked(c){
         +' <span style="background:rgba(196,134,58,.18);color:#c4863a;border-radius:6px;padding:1px 7px;font-size:0.7rem;font-weight:700;">'+(a.staff||'personel yok')+'</span>'
         +' <span style="background:rgba(120,120,120,.18);color:var(--muted);border-radius:6px;padding:1px 7px;font-size:0.68rem;font-weight:700;">'+(a.status||'')+'</span></div>'
         +'<div style="display:flex;gap:5px;">'
-        + ACTIVE().map(t=>'<button onclick="rdOrphanMove(\''+a.id+'\',\''+t+'\')" style="background:rgba(30,163,79,.14);border:1px solid rgba(30,163,79,.45);color:#1ea34f;border-radius:7px;padding:4px 9px;font-size:0.72rem;font-weight:700;cursor:pointer;">→ '+t+'</button>').join('')
+        + ACTIVE(new Date(a.datetime)).map(t=>'<button onclick="rdOrphanMove(\''+a.id+'\',\''+t+'\')" style="background:rgba(30,163,79,.14);border:1px solid rgba(30,163,79,.45);color:#1ea34f;border-radius:7px;padding:4px 9px;font-size:0.72rem;font-weight:700;cursor:pointer;">→ '+t+'</button>').join('')
         +'<button onclick="rdOrphanDelete(\''+a.id+'\')" style="background:rgba(227,73,72,.14);border:1px solid rgba(227,73,72,.45);color:#e34948;border-radius:7px;padding:4px 10px;font-size:0.72rem;font-weight:700;cursor:pointer;">🗑</button>'
         +'</div></div>';
     });

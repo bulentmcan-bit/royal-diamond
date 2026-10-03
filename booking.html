@@ -340,6 +340,9 @@ function send(){
   if(!nm){alert('Lütfen adınızı yazın. / Please enter your name.');return;}
   if(!ph||ph.replace(/\D/g,'').length<7){alert('Lütfen geçerli bir telefon yazın. / Please enter a valid phone.');return;}
   if(slotState(selDay,selTime)==='full'){alert('Bu saat az önce doldu, lütfen başka bir müsait saat seçin. / This slot just filled up.');selTime=null;renderTimes();return;}
+  // The chips are only redrawn when new data arrives — a page left open can
+  // still hold a time that has since passed (or is now under 30 minutes away).
+  if(slotState(selDay,selTime)==='past'){alert('Bu saat artık geçti, lütfen başka bir müsait saat seçin. / This time has passed, please choose another.');selTime=null;renderTimes();return;}
   const tarih=gunler[selDay.getDay()]+', '+selDay.getDate()+' '+aylar[selDay.getMonth()]+' '+selDay.getFullYear();
   const btn=document.getElementById('go');btn.disabled=true;btn.textContent='Kaydediliyor…';
   const req={name:nm,phone:ph,date:dKey(selDay),time:selTime,
