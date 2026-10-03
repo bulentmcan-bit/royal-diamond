@@ -11214,11 +11214,24 @@ Sign off exactly as:\nRoyal Diamond Nail Studio 👑\nRoyal Palace Hotel, Gönye
   return prompts[key]||prompts["promo_"];
 }
 
+// AI message text comes from our own Netlify function (netlify/functions/ai-message.mjs),
+// which holds the Anthropic key on the server. Throws on any failure so callers fall
+// back to their ready-made Turkish template; tells the user once per session why.
+let _aiMsgWarned=false;
+async function aiMsgText(prompt,maxTokens){
+  let d={};
+  try{
+    const res=await fetch("/.netlify/functions/ai-message",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt,maxTokens})});
+    d=await res.json().catch(()=>({}));
+    if(res.ok&&d.text) return d.text;
+  }catch(e){}
+  if(!_aiMsgWarned){_aiMsgWarned=true;try{toast("ℹ️","Yapay zekâ kapalı",d.message||"Yapay zekâ mesajı şu an kullanılamıyor. Hazır şablon kullanıldı — mesajı elle düzenleyebilirsiniz.");}catch(e){}}
+  throw new Error(d.error||"ai_unavailable");
+}
+
 async function genMsg(entry){
   try{
-    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,messages:[{role:"user",content:waPrompt(entry)}]})});
-    const d=await res.json();
-    return d.content?.[0]?.text||"Hi! A message from Royal Diamond Nail Studio 💅";
+    return await aiMsgText(waPrompt(entry),300);
   }catch{return `Değerli müşterimiz, Royal Diamond Nail Studio'dan selamlar! 💅 Sizi yakında aramızda görmekten mutluluk duyarız. 📞 0548 893 3333`;}
 }
 
@@ -12652,13 +12665,7 @@ Royal Palace Hotel, Gönyeli K.K.T.C.
 📞 0548 893 3333`;
 
   try{
-    const res = await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,messages:[{role:"user",content:prompt}]})
-    });
-    const d = await res.json();
-    const text = d.content?.[0]?.text || "";
+    const text = await aiMsgText(prompt,400);
     dash24hMessages[key] = {text, status:"ready", phone:c.phone, apptIds:group.map(a=>a.id)};
   }catch{
     const dayRef = isApptToday ? "bugün" : dateStr;
