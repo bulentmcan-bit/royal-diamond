@@ -6590,7 +6590,14 @@ function renderDashGrid(){
       const needsAttention = isDone && !isMoneyOk;
       const doneBg = isMoneyOk ? 'rgba(232,132,122,0.16)' : 'rgba(230,168,80,0.16)';
       const doneBorder = isMoneyOk ? 'rgba(232,132,122,0.4)' : 'rgba(230,168,80,0.45)';
-      html += '<div style="background:'+(isDone?doneBg:isPast?'rgba(255,255,255,0.04)':'rgba(37,211,102,0.13)')+';border:1px solid '+(isDone?doneBorder:isPast?'rgba(255,255,255,0.1)':'rgba(37,211,102,0.25)')+';border-left:3px solid '+col+';border-radius:6px;padding:6px 7px;margin-bottom:5px;'+(isDone?'opacity:0.85;':'')+'">';
+      /* A HARD BLACK EDGE on every booking.
+         The border used to be a quarter-opacity green on a pale green card,
+         which is the same thing as no border: on the owner's screen a column
+         of eight customers read as one long smear and he could not tell where
+         one appointment stopped and the next began. A diary is a list of
+         separate hours and it has to LOOK like separate hours.
+         The technician's colour keeps the left edge, where it still reads. */
+      html += '<div style="background:'+(isDone?doneBg:isPast?'rgba(255,255,255,0.04)':'rgba(37,211,102,0.13)')+';border:1.5px solid #1f1f1f;border-left:4px solid '+col+';border-radius:6px;padding:6px 7px;margin-bottom:8px;'+(isDone?'opacity:0.85;':'')+'">';
       const isBday = (a.birthday || (typeof isBirthdayAppt==='function' && isBirthdayAppt(a.clientId, a.datetime)));
       html += '<div style="font-weight:700;font-size:0.75rem;color:'+(isBday?'#c94040':'#1a1a1a')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:1px;">'+(isBday?'🎂 ':'')+atime+' '+cname+((typeof rdWaAnsMark==='function')?rdWaAnsMark(a,true):'')+((typeof rdWaPhoneMark==='function')?rdWaPhoneMark(a.clientId):'')+((typeof rdOnlineMark==='function')?rdOnlineMark(a,true):'')+'</div>';
       if(isBday) html += '<div style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:5px;padding:1px 5px;display:inline-block;margin-bottom:3px;">DOĞUM GÜNÜ · %25 İNDİRİM</div>';
