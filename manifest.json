@@ -1,5 +1,6 @@
 {
-  "name": "Royal Diamond Nail Studio",
+  "id": "/",
+  "name": "Royal Diamond",
   "short_name": "Royal Diamond",
   "description": "Royal Diamond Nail Studio — randevu, müşteri ve salon yönetim sistemi. Gönyeli, K.K.T.C.",
   "lang": "tr",
@@ -13,16 +14,28 @@
   "categories": ["business", "productivity", "lifestyle"],
   "icons": [
     {
-      "src": "/crown-gold.png",
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/crown.png",
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -30,19 +43,22 @@
       "name": "Randevu Al",
       "short_name": "Randevu",
       "description": "Yeni randevu oluştur",
-      "url": "/booking.html"
+      "url": "/booking.html",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Station Timers",
       "short_name": "Timers",
       "description": "İstasyon zamanlayıcıları",
-      "url": "/timers.html"
+      "url": "/timers.html",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Resepsiyon Komisyon",
       "short_name": "Resepsiyon",
       "description": "Resepsiyon komisyon takibi",
-      "url": "/reception.html"
+      "url": "/reception.html",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }
