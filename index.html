@@ -10104,7 +10104,7 @@ function rdFinalizeCompletion(a){
     // them. Points and tier are the loyalty side: behind the flag, neither is
     // calculated, and the stored figures sleep untouched in the record.
     const prevLastVisit=clients[ci].lastVisit;
-    clients[ci]={...clients[ci],visits:clients[ci].visits+1,lastVisit:new Date().toISOString().slice(0,10)};
+    clients[ci]={...clients[ci],visits:clients[ci].visits+1,lastVisit:dtLocal(new Date()).slice(0,10)};
     a._prevLastVisit=prevLastVisit;
     if(uiOn('loyalty')){
       const ptsAdded=Math.floor((a.price||200)/10);
@@ -11821,7 +11821,7 @@ function calDayClick(isoStr){
   if(appts.length===0){
     // Pre-fill date in booking modal
     openModal('mAppt');
-    const dt = d.toISOString().slice(0,10)+'T09:00';
+    const dt = dtLocal(d).slice(0,10)+'T09:00';
     setTimeout(()=>{ const el=document.getElementById('a-dt'); if(el)el.value=dt; },80);
     return;
   }
@@ -12028,7 +12028,7 @@ function openBookFromGrid(tech, hour){
     const today = new Date();
     today.setHours(hour, 0, 0, 0);
     const dtInput = document.getElementById("a-dt");
-    if(dtInput) dtInput.value = today.toISOString().slice(0,16);
+    if(dtInput) dtInput.value = dtLocal(today);
   }, 80);
 }
 
@@ -15916,7 +15916,7 @@ let dtViewDate = null; // null = today (live, editable). Otherwise a "YYYY-MM-DD
 function dtGoDay(delta){
   const cur = dtViewDate ? new Date(dtViewDate+"T00:00:00") : new Date();
   cur.setDate(cur.getDate()+delta);
-  const newKey = cur.toISOString().slice(0,10);
+  const newKey = dtLocal(cur).slice(0,10);
   const todayKey = dtDateKey();
   dtViewDate = (newKey === todayKey) ? null : newKey;
   dtRender();
@@ -16874,9 +16874,9 @@ function dtInitPastEntry(){
   if(dateInput){
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    dateInput.max = yesterday.toISOString().slice(0,10);
+    dateInput.max = dtLocal(yesterday).slice(0,10);
     // Default to yesterday if not set
-    if(!dateInput.value) dateInput.value = yesterday.toISOString().slice(0,10);
+    if(!dateInput.value) dateInput.value = dtLocal(yesterday).slice(0,10);
   }
   // Seed with current operator names
   if(dtPastOps.length === 0){
@@ -17025,7 +17025,7 @@ function dtFindNextMissingDay(fromDate){
   const d = new Date(fromDate);
   for(let i = 0; i < 60; i++){
     d.setDate(d.getDate() + 1);
-    const key = d.toISOString().slice(0,10);
+    const key = dtLocal(d).slice(0,10);
     if(key >= dtDateKey()) return null; // reached today
     const hasEntry = (dtState.history||[]).some(h => h.date === key);
     if(!hasEntry) return key;
@@ -17100,7 +17100,7 @@ function mUpdateAllTryHints(){
 
 // ── helpers ────────────────────────────────────────────────────
 function mCurrentMonth(){
-  return new Date().toISOString().slice(0,7);
+  return dtLocal(new Date()).slice(0,7);
 }
 
 function mFmtMonth(ym){
@@ -17484,7 +17484,7 @@ function renderMonthly(){
   if(heroTotal) heroTotal.textContent = mFmtTRY(total);
   if(heroMeta)  heroMeta.textContent  = days.length+' '+_('m_day_records')+' · '+_('m_breakeven_label')+': '+mFmtTRY(c.breakeven);
   if(isCurrentMonth){
-    const dom = parseInt(new Date().toISOString().slice(8,10),10);
+    const dom = new Date().getDate();
     const est  = total>0 ? (total/Math.max(dom,1))*mDaysInMonth(mViewMonth) : 0;
     if(projected) projected.textContent = est>0 ? mFmtTRY(est) : '—';
   } else {
