@@ -13708,10 +13708,17 @@ function rdRenderNoShowBand(){
      the moment a green list grows buttons it starts competing with the red
      one for attention, and the red one must always win. */
   if(t.green.length){
+    /* SHUT, unless somebody opens it. "I don't need to see this" — and he is
+       right: nine rows of people who need nothing done are nine rows between
+       him and the two who do. The count is the whole message; the names are
+       there for the one morning somebody asks "did she confirm?".
+       Whichever way he leaves it is how he finds it. */
+    var gOpen=false; try{ gOpen=localStorage.getItem('rdns_green_open_v1')==='1'; }catch(e){}
     html+='<div style="border:2px solid #1e7a44;border-radius:12px;background:#eef8f1;overflow:hidden;">'
-      +'<div style="background:#1e7a44;color:#fff;padding:10px 14px;font-weight:800;font-size:0.95rem;">'
-      +'✅ '+t.green.length+' müşteri geleceğini onayladı — yapılacak bir şey yok</div>';
-    t.green.forEach(function(x){
+      +'<div onclick="rdBandGreenToggle()" style="background:#1e7a44;color:#fff;padding:10px 14px;font-weight:800;font-size:0.95rem;cursor:pointer;display:flex;align-items:center;gap:8px;">'
+      +'<span>✅ '+t.green.length+' müşteri geleceğini onayladı — yapılacak bir şey yok</span>'
+      +'<span style="margin-left:auto;font-weight:400;opacity:.85;font-size:0.82rem;">'+(gOpen?'▴ gizle':'▾ göster')+'</span></div>';
+    if(gOpen) t.green.forEach(function(x){
       html+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-top:1px solid #cfe7d8;font-size:0.88rem;">'
         +'<span style="font-weight:800;color:#1e7a44;min-width:92px;">'+esc(when(x.a))+'</span>'
         +'<span style="font-weight:700;">'+esc(x.c.name||'Müşteri')+'</span>'
@@ -13772,6 +13779,14 @@ window.rdBandUndoCall=function(id){
     try{ saveAll(); }catch(e){ try{ syncPush('rdns_main_v1',{clients,appointments,payments}); }catch(_){} }
     try{ rdRenderNoShowBand(); }catch(e){}
     try{ renderDashGrid(); }catch(e){}
+  }catch(e){ console.warn('[band]', e); }
+};
+/* Open or shut the green list, and remember which. */
+window.rdBandGreenToggle=function(){
+  try{
+    var on=false; try{ on=localStorage.getItem('rdns_green_open_v1')==='1'; }catch(e){}
+    try{ localStorage.setItem('rdns_green_open_v1', on?'0':'1'); }catch(e){}
+    rdRenderNoShowBand();
   }catch(e){ console.warn('[band]', e); }
 };
 window.rdNoShowCancel=function(id){

@@ -220,6 +220,27 @@ console.log('7. a finished appointment wears nothing');
      'the bands skip them too, so the card and the band tell the same story');
 }
 
+console.log('8. the green list is shut');
+{
+  /* "I don't need to see this." Nine rows of customers who need nothing done
+     are nine rows between the owner and the two who DO. The count is the whole
+     message — the names only matter on the morning somebody asks "did she
+     confirm?". So the band keeps its green line and folds the list away. */
+  is(/var gOpen=false; try\{ gOpen=localStorage\.getItem\('rdns_green_open_v1'\)==='1'; \}catch\(e\)\{\}/.test(html), true,
+     'the green list remembers whether it was left open');
+  is(/if\(gOpen\) t\.green\.forEach\(function\(x\)\{/.test(html), true, '…and draws its rows ONLY when it is');
+  is(/onclick="rdBandGreenToggle\(\)"/.test(html), true, '…the whole green header opens and shuts it');
+  is(/\(gOpen\?'▴ gizle':'▾ göster'\)/.test(html), true, '…and says which it will do');
+  // Shut is the DEFAULT: a missing key must read as closed, not open.
+  is(/localStorage\.getItem\('rdns_green_open_v1'\)==='1'/.test(html), true,
+     '…and a device that has never been told reads as SHUT, not open');
+  // The red and amber bands must never gain this. They are the work.
+  const band = html.slice(html.indexOf('function rdRenderNoShowBand'), html.indexOf('window.rdBandGreenToggle'));
+  is((band.match(/rdBandGreenToggle/g) || []).length, 1, 'only the green band folds — red and amber are the job and stay open');
+  is(/t\.red\.forEach\(function\(x\)\{/.test(band), true, '…red still lists every one');
+  is(/t\.amber\.forEach\(function\(x\)\{/.test(band), true, '…and so does amber');
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);
