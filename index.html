@@ -20333,20 +20333,35 @@ function rdWrWindow(r, now){
     if(count) count.textContent=String(unread.length);
     var ic=document.getElementById('inbox-count'); if(ic) ic.textContent=String(unread.length);
     paintInboxBadge(unread.length);
-    // The dashboard's panel and the Gelen Kutusu page draw the same rows from
-    // the same list — one renderer, so the page can never quietly fall behind
-    // the panel the way two copies of a thing always do.
-    var targets=[document.getElementById('dash-wa-replies-list'), document.getElementById('inbox-list')]
-                  .filter(function(el){ return !!el; });
-    if(!targets.length) return;
-    // Unread first, then the last thirty read ones. The page shows a longer
-    // tail than the dashboard panel: it is the place you go to look something
-    // up, not a thing glanced at between customers.
-    var rows=unread.concat(all.filter(function(r){ return r.read; }).slice(0,30));
-    if(!rows.length){
-      targets.forEach(function(el){ el.innerHTML='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>'; });
-      return;
-    }
+    /* TWO LISTS NOW, and on purpose.
+
+       The dashboard's panel is a glance between customers. Three days of
+       "Evet / Yes please" and "Tmm çok teşekkür ederim", every one of them
+       already read and answered, is traffic — it buries today under last
+       Thursday. So the panel shows TODAY.
+
+       Plus anything unread, whatever day it is from. That exception is not
+       tidiness, it is the whole reason the bands exist: an unread message is
+       a customer waiting, and hiding one because the clock passed midnight is
+       how "Hello ı cannot come today" went unread and cost two hours. Nothing
+       unread is ever out of sight.
+
+       The Gelen Kutusu page keeps the lot. That is where you go to look
+       something up, and a page you opened deliberately can afford a tail. */
+    var dashEl=document.getElementById('dash-wa-replies-list');
+    var pageEl=document.getElementById('inbox-list');
+    if(!dashEl && !pageEl) return;
+    var today=''; try{ today=(typeof todayStr==='function')?todayStr():new Date().toISOString().slice(0,10); }catch(e){ today=new Date().toISOString().slice(0,10); }
+    var isToday=function(r){
+      if(r && r.day) return String(r.day)===today;              // the worker stamps the salon's own day
+      try{ return new Date(Number(r.ts)).toDateString()===new Date().toDateString(); }catch(e){ return false; }
+    };
+    var pageRows=unread.concat(all.filter(function(r){ return r.read; }).slice(0,30));
+    var dashRows=all.filter(function(r){ return !r.read || isToday(r); });
+    var empty='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>';
+    var emptyToday='<div class="r24-empty">Bugün yanıt yok. Öncekiler için 📥 Gelen Kutusu.</div>';
+    var draw=function(el, rows, blank){ if(el) el.innerHTML = rows.length ? build(rows) : blank; };
+    function build(rows){
     var html=rows.map(function(r){
       var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
       var isOpen=(String(_open)===String(r.id));
@@ -20373,7 +20388,10 @@ function rdWrWindow(r, now){
         // The answer to "what is she replying to", right under the question.
         +(isOpen?rdWrPanel(r):'');
     }).join('');
-    targets.forEach(function(el){ el.innerHTML=html; });
+      return html;
+    }
+    draw(dashEl, dashRows, emptyToday);
+    draw(pageEl, pageRows, empty);
   }
   /* ── the sound reception hears ──────────────────────────────────────────
      A corner toast is silent, and reception is not looking at the screen: a
