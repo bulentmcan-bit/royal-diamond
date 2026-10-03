@@ -1,0 +1,8 @@
+{
+  "name": "royal-diamond",
+  "private": true,
+  "description": "Royal Diamond Nail Studio app. The only dependency is for the Netlify function netlify/functions/ai-message.mjs.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0"
+  }
+}
