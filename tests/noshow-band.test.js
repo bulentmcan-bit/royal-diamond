@@ -196,6 +196,30 @@ console.log('6. it appears the moment she writes');
   is(/window\.rdWrStripFor=function\(appt\)\{/.test(html), true, '…and ask for one appointment’s strip');
 }
 
+console.log('7. a finished appointment wears nothing');
+{
+  /* The owner, looking at his board at half past ten with most of the morning
+     already done: "to save it from being an eyesore, for the ones which have
+     completed we can take the green off."
+
+     He is right, and it is not only tidiness. GELİYOR on a customer who has
+     been and gone is a question nobody is asking any more, and eight bright
+     green bars down a column bury the two customers who ARE still to come —
+     which is the only thing these strips were ever for. */
+  const fn = /window\.rdWrStripFor=function\(appt\)\{([\s\S]*?)\n  \};/.exec(html);
+  const b = fn ? fn[1] : '';
+  is(/var st=String\(\(appt&&appt\.status\)\|\|''\);/.test(b), true, 'the strip looks at the booking’s state first');
+  is(/if\(st==='completed'\|\|st==='cancelled'\|\|st==='noshow'\) return '';/.test(b), true,
+     '…and a completed, cancelled or no-show booking gets no strip at all');
+  // It must be judged BEFORE the telephone mark, or a confirmed customer would
+  // keep her green bar all afternoon after she had already been seen.
+  is(b.indexOf("st==='completed'") < b.indexOf("appt.rdCall==='yes'"), true,
+     '…decided before the telephone confirmation, which would otherwise outlive the visit');
+  // And the bands agree: rdWrTriage has always skipped these.
+  is(/if\(!a \|\| a\.status==='cancelled' \|\| a\.status==='completed'\) return;/.test(html), true,
+     'the bands skip them too, so the card and the band tell the same story');
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);

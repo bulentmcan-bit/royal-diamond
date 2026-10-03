@@ -20150,6 +20150,13 @@ function rdWrWindow(r, now){
   };
   window.rdWrStripFor=function(appt){
     try{
+      /* She has been and gone. "GELİYOR" on a finished appointment is a
+         question nobody is asking any more, and a column of eight completed
+         customers wearing eight bright green bars is an eyesore that buries
+         the two who ARE still to come — which is the only thing these strips
+         were ever for. Her message is still on her row in Gelen Kutusu. */
+      var st=String((appt&&appt.status)||'');
+      if(st==='completed'||st==='cancelled'||st==='noshow') return '';
       /* Rung and confirmed. The same green mark the card gets for a written
          "tamam", because to the technician looking at her column there is no
          difference worth drawing — the customer is coming. A written
