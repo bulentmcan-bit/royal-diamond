@@ -20324,7 +20324,35 @@ function rdWrWindow(r, now){
       if(_started) return;
       if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled) return;
       _started=true; clearInterval(_timer);
-      _fbDb.ref('rdns_wa_replies_v1').limitToLast(100).on('value', function(s){ onData(s.val()); }, function(e){ console.warn('[wr] replies read denied:', e); });
+      /* ORDERED BY TIME, not by key — and this one line was hiding more than
+         half the customers' messages.
+
+         Firebase's limitToLast() takes the last children BY KEY. Under a push
+         id that is the newest, because push ids climb with the clock. These
+         are not push ids: the worker keys every reply by Piyzi's own
+         deliveryId, 'evt_' and twenty-four RANDOM hex characters, so there is
+         no relationship between a key and when it arrived.
+
+         So limitToLast(100) was handing back the hundred keys that sort
+         highest in the ALPHABET. On 3 Ekim the salon held exactly a hundred,
+         running evt_88… to evt_fe…, and every message whose id happened to
+         begin evt_0… through evt_87… had never once been seen — close to half
+         of everything customers had written, including a "gelemiyorum" that
+         cost two hours and three messages from a lady asking for a lash
+         appointment. Not late. Not lost. Simply never asked for.
+
+         Ordering by the ts we write on every record asks the real question.
+         Firebase wants an index for that (".indexOn": ["ts"] on this node in
+         the Rules); without one it still returns the RIGHT messages, sorting
+         them on the way in and printing a warning, so this is correct the
+         moment it ships and merely cheaper once the index is added. */
+      _fbDb.ref('rdns_wa_replies_v1').orderByChild('ts').limitToLast(300)
+        .on('value', function(s){
+          // A query snapshot's object has no guaranteed order; rdWrList sorts
+          // by ts regardless, so the map is all this needs.
+          var m={}; try{ s.forEach(function(c){ m[c.key]=c.val(); }); }catch(e){ m=s.val()||{}; }
+          onData(m);
+        }, function(e){ console.warn('[wr] replies read denied:', e); });
     }catch(e){ console.warn('[wr] start:', e); }
   }
   _timer=setInterval(start, 3000);
