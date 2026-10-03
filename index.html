@@ -7102,6 +7102,30 @@ function diAutoAdd(staffName, amount, datetime, apptId){
   }catch(e){ console.warn('diAutoAdd error:',e); }
 }
 
+// Take `amount` off this appointment's till entries — not the whole entry.
+// A price corrected from ₺1,700 to ₺1,500 removes ₺200; it used to delete
+// the full ₺1,700 entry because the id matched. Newest entries go first; an
+// entry that is only partly covered is reduced. With no id match, the old
+// fallback stands: remove the newest entry of exactly that amount.
+function diTakeOff(entries, amount, apptId){
+  if(!Array.isArray(entries)) return;
+  let left = amount||0, hit = false;
+  if(apptId!=null){
+    for(let i=entries.length-1; i>=0 && left>0; i--){
+      const e = entries[i];
+      if(!e || String(e.apptId)!==String(apptId)) continue;
+      hit = true;
+      const a = e.amount||0;
+      if(a > left){ e.amount = a - left; left = 0; }
+      else { left -= a; entries.splice(i,1); }
+    }
+  }
+  if(!hit){
+    const idx = entries.map(function(e){return e&&e.amount;}).lastIndexOf(amount);
+    if(idx>=0) entries.splice(idx,1);
+  }
+}
+
 // Reverse a previously auto-added daily-takings entry (used by Undo)
 function diAutoRemove(staffName, amount, datetime, apptId){
   try{
@@ -7116,9 +7140,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       // Prefer an exact match by appointment id; fall back to matching by
       // amount (searching from the end, since that's most likely the one
       // just added) if no id was recorded.
-      let idx = apptId!=null ? entries.findIndex(function(e){return e.apptId===apptId;}) : -1;
-      if(idx<0) idx = entries.map(function(e){return e.amount;}).lastIndexOf(amount);
-      if(idx>=0) entries.splice(idx,1);
+      diTakeOff(entries, amount, apptId);
       dtSaveState();
       if(typeof renderDashTakings==='function') renderDashTakings();
       if(typeof dtRender==='function') dtRender();
@@ -7134,9 +7156,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       // recompute the scalar from what is left, so an undo of a backdated
       // completion leaves entries and total agreeing.
       if(Array.isArray(op.entries)){
-        let idx = apptId!=null ? op.entries.findIndex(function(e){return e&&String(e.apptId)===String(apptId);}) : -1;
-        if(idx<0) idx = op.entries.map(function(e){return e&&e.amount;}).lastIndexOf(amount);
-        if(idx>=0) op.entries.splice(idx,1);
+        diTakeOff(op.entries, amount, apptId);
         op.total = op.entries.reduce(function(s,e){return s+((e&&e.amount)||0);},0);
       } else {
         op.total = Math.max(0, op.total - amount);
@@ -8982,25 +9002,33 @@ function diSaveDay(){
   if(!dtState){ toast('⚠','Error','System not ready.','r'); return; }
   if(!dtState.history) dtState.history=[];
 
-  // Build ops array with commission
-  const ops = DI_STAFF
-    .filter(function(s){ return (diValues[s.name]||0)>0; })
-    .map(function(s){
-      const total = diValues[s.name];
-      const commission = commPausedOn(s.name, diCurrentDate) ? 0
-        : Math.round(total*s.commRate + (s.extraOnWorkDay&&total>0?s.extraOnWorkDay:0));
-      return {name:s.name, total:total, count:1, commission:commission};
-    });
+  if(!DI_STAFF.some(function(s){ return (diValues[s.name]||0)>0; })){ toast('⚠','No Data','Please enter at least one income figure.','r'); return; }
 
-  if(!ops.length){ toast('⚠','No Data','Please enter at least one income figure.','r'); return; }
+  // MERGE into the day that is already saved — never replace it wholesale.
+  // The form only shows DI_STAFF, so anyone else on that day (a card created
+  // on the fly, e.g. "Manager") is kept as she is, and a technician whose
+  // figure was not changed keeps her till entries (Kasa Kontrol reads those).
+  const prev = dtState.history.find(function(h){return h.date===diCurrentDate;});
+  const prevOps = (prev&&prev.ops)||[];
+  const ops = prevOps.filter(function(o){
+    return o && o.name && !DI_STAFF.some(function(s){return s.name===o.name;});
+  });
+  DI_STAFF.forEach(function(s){
+    const total = diValues[s.name]||0;
+    if(!(total>0)) return;
+    const old = prevOps.find(function(o){return o&&o.name===s.name;});
+    if(old && old.total===total){ ops.push(old); return; }   // unchanged
+    const commission = commPausedOn(s.name, diCurrentDate) ? 0
+      : Math.round(total*s.commRate + (s.extraOnWorkDay&&total>0?s.extraOnWorkDay:0));
+    ops.push({name:s.name, total:total, count:(old&&old.count)||1, commission:commission});
+  });
 
-  const dayTotal = ops.reduce(function(s,o){return s+o.total;},0);
+  const dayTotal = ops.reduce(function(s,o){return s+((o&&o.total)||0);},0);
 
-  // Remove existing entry for this date if any
+  // Swap the day for its merged version, stamped so this edit wins the
+  // per-day newest-edit-wins merge on the other devices.
   dtState.history = dtState.history.filter(function(h){return h.date!==diCurrentDate;});
-
-  // Add new entry
-  dtState.history.unshift({date:diCurrentDate, ops:ops, total:dayTotal, sent:false, manual:true});
+  dtState.history.unshift({date:diCurrentDate, ops:ops, total:dayTotal, sent:!!(prev&&prev.sent), manual:true, ts:Date.now()});
   dtState.history.sort(function(a,b){return b.date.localeCompare(a.date);});
 
   dtSaveState();
@@ -9403,6 +9431,7 @@ function showClientDetail(id){
   }
   const stat=(v,l)=>'<div style="text-align:center;min-width:72px;"><div style="font-weight:800;font-size:.95rem;">'+v+'</div><div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">'+l+'</div></div>';
   document.getElementById("cd-title").textContent="👤 "+c.name;
+  _cdClientId=c.id;   // Düzenle looks her up by id — two customers can share a name
   document.getElementById("cd-body").innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:9px;padding:11px 13px;font-size:.84rem;">
       <span>📞 ${eh(c.phone||'—')}${typeof rdWaPhoneMark==='function'?rdWaPhoneMark(c.id):''}</span>
@@ -9707,7 +9736,7 @@ function renderGapReport(){
       else {totalEmpty++; emptyMin+=SLOTLEN[t];}
     });
   });
-  const util = Math.round((totalBooked/totalSlots)*100);
+  const util = totalSlots>0 ? Math.round((totalBooked/totalSlots)*100) : 0;
   const lostRev = Math.round(emptyMin/60*AVG_REV).toLocaleString();
 
   // KPIs
@@ -9903,11 +9932,11 @@ function renderAppts(){
       <td>${a.autoRebooked?'<span class="badge badge-mint">🔄Auto</span>':'<span class="badge badge-muted">Manual</span>'}</td>
       <td>${a.noShow?'<span class="badge badge-muted">🚫 gelmedi</span>':statusBadge(a.status)}</td>
       <td><div style="display:flex;gap:4px">
-        ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${a.id})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${a.id})">✕</button><button class="btn btn-sm" style="background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="noShowAppt(${a.id})">🚫 Gelmedi</button>`:""}
-        ${a.status!=="cancelled"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dashEditAppt(${a.id})">✏ Düzenle</button>`:""}
-        ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dpFromAppt(${a.id})">📆 Vadeli</button>`:""}
-        ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(150,150,150,0.15);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="undoComplete(${a.id})">↩ Undo</button>`:""}
-        ${(a.status==="cancelled"||a.status==="completed")?`<button class="btn btn-red btn-sm" style="opacity:0.7" onclick="deleteAppt(${a.id})">🗑 Delete</button>`:""}
+        ${a.status==="confirmed"?`<button class="btn btn-green btn-sm" onclick="completeAppt(${rdIdArg(a.id)})">✓Done</button><button class="btn btn-red btn-sm" onclick="cancelAppt(${rdIdArg(a.id)})">✕</button><button class="btn btn-sm" style="background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="noShowAppt(${rdIdArg(a.id)})">🚫 Gelmedi</button>`:""}
+        ${a.status!=="cancelled"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dashEditAppt(${rdIdArg(a.id)})">✏ Düzenle</button>`:""}
+        ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.35);color:var(--gold)" onclick="dpFromAppt(${rdIdArg(a.id)})">📆 Vadeli</button>`:""}
+        ${a.status==="completed"?`<button class="btn btn-sm" style="background:rgba(150,150,150,0.15);border:1px solid rgba(150,150,150,0.3);color:#666" onclick="undoComplete(${rdIdArg(a.id)})">↩ Undo</button>`:""}
+        ${(a.status==="cancelled"||a.status==="completed")?`<button class="btn btn-red btn-sm" style="opacity:0.7" onclick="deleteAppt(${rdIdArg(a.id)})">🗑 Delete</button>`:""}
       </div></td>
     </tr>`;
   }).join("");
@@ -10524,7 +10553,10 @@ function rdCheckoutDone(){
   // the question is asked exactly once, on the pass that actually writes.
   if(price>0 && !appt._takingsAmount && !rdPriceConfirm(price)) return;
   // Money — unchanged path; diAutoAdd asks the ödeme question (pmAsk) itself.
-  if(price>0){ appt.price=price; appt._pts=Date.now(); }
+  // Once money is in the till the price is fixed here — a different figure
+  // typed now would leave the appointment and the till disagreeing. A
+  // correction goes through ✏ Düzenle, which adjusts the till as well.
+  if(price>0 && !appt._takingsAmount){ appt.price=price; appt._pts=Date.now(); }
   if(price>0 && appt.staff && !appt._takingsAmount){ diAutoAdd(appt.staff, price, appt.datetime, appt.id); appt._takingsAmount=price; appt._pts=Date.now(); }
   if(price>0) priceOvrSet(appt);
   // Completion — the Done path lands here still 'confirmed'; the ✏ Fiyat path
@@ -10752,8 +10784,8 @@ function rbReportText(){
   }catch(e){ return ''; }
 }
 
-function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>x.id===id);if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);try{rdWaCancel(a);}catch(e){}saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
-function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;try{rdWaCancel(appointments.find(x=>x.id===id));}catch(e){}apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>x.id!==id);priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
+function cancelAppt(id){const auth=cancelAuth();if(!auth)return;const a=appointments.find(x=>String(x.id)===String(id));if(!a)return;if(a.status==='completed'){toast('⚠️','Önce ↩ Undo','Bu randevu tamamlanmış ve ücreti girilmiş. İptal etmeden önce ↩ Undo ile geri alın.','r');renderAppts();return;}a.status="cancelled";apptTouch(a);priceOvrSealCancel(a);cancelLogAdd(a,auth.role);try{rdWaCancel(a);}catch(e){}saveAll();renderAppts();renderDash();updateApptBadge();toast("❌","Cancelled","Appointment cancelled. ("+auth.role+")","r");}
+function deleteAppt(id){if(!ownerPin())return;if(!confirm("Permanently delete this appointment?"))return;try{rdWaCancel(appointments.find(x=>String(x.id)===String(id)));}catch(e){}apptTombAdd(id,'deleted by hand (deleteAppt)');appointments=appointments.filter(x=>String(x.id)!==String(id));priceOvrDrop(id);saveAll();renderAppts();renderDash();updateApptBadge();toast("🗑","Deleted","Appointment permanently deleted.","r");}
 function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)el.textContent=appointments.filter(a=>a.status==="confirmed"&&hrs(a.datetime)>0).length;}
 
 // ══════════════════════════════════════════════════════════════
@@ -10761,6 +10793,14 @@ function updateApptBadge(){const el=document.getElementById("appt-badge");if(el)
 // ══════════════════════════════════════════════════════════════
 let _editClientId = null;
 
+// The referrer picked in the form, as her real id. parseInt cut an old decimal
+// id down to a number that matches nobody, so the referral was lost.
+function rdRefIdFromSel(){
+  const v=(document.getElementById("c-ref")?.value)||"";
+  if(!v) return null;
+  const r=cObj(v);
+  return r ? r.id : null;
+}
 function saveClient(){
   const name=document.getElementById("c-name").value.trim();
   const phone=normalizeWaPhone(document.getElementById("c-phone").value.trim());
@@ -10778,15 +10818,16 @@ function saveClient(){
   }catch(e){}
   if(_editClientId !== null){
     // EDIT MODE — update existing client
-    const idx = clients.findIndex(x=>x.id===_editClientId);
+    const idx = clients.findIndex(x=>String(x.id)===String(_editClientId));
     if(idx !== -1){
       clients[idx].name    = name;
       clients[idx].phone   = phone;
       clients[idx].birthday= document.getElementById("c-bday").value;
       clients[idx].notes   = document.getElementById("c-notes").value.trim();
-      clients[idx].points  = parseInt(document.getElementById("c-points").value)||clients[idx].points;
+      const _pts = parseInt(document.getElementById("c-points").value);
+      clients[idx].points  = isNaN(_pts) ? clients[idx].points : _pts;   // 0 is a real answer
       clients[idx].tier    = document.getElementById("c-tier").value;
-      clients[idx].referredBy = parseInt(document.getElementById("c-ref")?.value)||null;
+      clients[idx].referredBy = rdRefIdFromSel();
       // Where she heard of us. Only stamp the date the FIRST time an answer is
       // given — srcAt is when we learned it, and a later correction of a typo
       // must not make an old customer look like this week's arrival.
@@ -10806,7 +10847,7 @@ function saveClient(){
     toast("✅","Client Updated!",name+" has been updated.","g");
   } else {
     // ADD MODE — new client
-    const c={id:Date.now(),name,phone,birthday:document.getElementById("c-bday").value,visits:0,points:parseInt(document.getElementById("c-points").value)||0,tier:document.getElementById("c-tier").value,lastVisit:"—",notes:document.getElementById("c-notes").value.trim(),referredBy:parseInt(document.getElementById("c-ref")?.value)||null};
+    const c={id:Date.now(),name,phone,birthday:document.getElementById("c-bday").value,visits:0,points:parseInt(document.getElementById("c-points").value)||0,tier:document.getElementById("c-tier").value,lastVisit:"—",notes:document.getElementById("c-notes").value.trim(),referredBy:rdRefIdFromSel()};
     // Ad spend is only measurable if someone asks. Blank is honest — it means
     // nobody asked — and is counted separately from "Diğer", which is an answer.
     c.src = (document.getElementById("c-src")?.value)||"";
@@ -10824,9 +10865,9 @@ function saveClient(){
 }
 
 function openEditClient(id){
-  const c = clients.find(x=>x.id===id);
+  const c = cObj(id);
   if(!c) return;
-  _editClientId = id;
+  _editClientId = c.id;
   document.getElementById("modal-client-title").textContent = "✏️ Edit Client";
   document.getElementById("btn-save-client").textContent = "✓ Save Changes";
   document.getElementById("c-name").value   = c.name;
@@ -10841,10 +10882,11 @@ function openEditClient(id){
   const _rf=document.getElementById("c-ref");if(_rf)_rf.value=c.referredBy||"";
 }
 
+let _cdClientId=null;
 function editClientFromDetail(){
-  // Get client id from the currently open detail modal title
+  // The id remembered by showClientDetail; the title is only a fallback.
   const title = document.getElementById("cd-title").textContent.replace("👤 ","");
-  const c = clients.find(x=>x.name===title);
+  const c = (_cdClientId!=null ? cObj(_cdClientId) : null) || clients.find(x=>x.name===title);
   if(!c) return;
   closeModal("mClientDetail");
   openEditClient(c.id);
