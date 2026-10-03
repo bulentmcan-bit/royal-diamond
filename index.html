@@ -2653,14 +2653,80 @@
         console.log('[OB] request received:',snap.key,req);
         if(!req||req.handled)return;
         if(_obProcessedIds().includes(snap.key)){console.log('[OB] already processed locally, skipping:',snap.key);return;}
-        setTimeout(()=>{ try{_obProcessRequest(snap.key,req);}catch(e){console.warn('OB process error:',e);} },2500);
+        _obQueue(snap.key, req);
       }catch(e){console.warn('OB listener error:',e);}
     });
   }
+  /* ── one request at a time ──────────────────────────────────────────────
+     Two requests used to be handed to setTimeout side by side and then both
+     waited on Firebase, so both read the diary BEFORE either had written to
+     it. Each saw the hour free, each booked it, and the salon got two
+     customers in one chair — which is exactly what happened on 3 Ekim, when
+     the same lady landed at 14:00 twice for the same full set.
+
+     The handled flag never covered this. It stops a SECOND DEVICE picking up
+     a request that is already done; it cannot stop one device processing two
+     requests in parallel, because neither of them is finished when the other
+     looks.
+
+     So they go through a chain, one after another. Each one therefore reads a
+     diary that already contains the one before it. A failure never stops the
+     queue — the catch keeps the chain alive, or one bad request would wedge
+     every booking behind it. */
+  let _obChain = Promise.resolve();
+  function _obQueue(id, req){
+    _obChain = _obChain
+      .then(function(){ return new Promise(function(r){ setTimeout(r, 2500); }); })
+      .then(function(){ return _obProcessRequest(id, req); })
+      .catch(function(e){ console.warn('OB process error:', e); });
+  }
+
+  /* Has this customer already got this exact hour?
+
+     The booking page disables its button and hides its form, but none of that
+     survives a reload, a back button or a tapped-twice link on a bad
+     connection — and the salon has no way of telling a determined second tap
+     from a second customer. What it CAN tell is that the same telephone
+     number is already in the book at the same minute, and that is never a
+     real second booking.
+
+     Matched on the telephone, not the name: "beyza soydemir" and "Beyza
+     Soydemir" are the same woman, and the number is what the reminders and
+     the WhatsApp replies key on anyway. A client with no number at all is not
+     matched — guessing from a name would merge two different people, which is
+     a worse mistake than this one. */
+  function _obDuplicateOf(req){
+    try{
+      const digits=p=>String(p||'').replace(/\D/g,'').slice(-9);
+      const want=digits(req&&req.phone);
+      if(!want) return null;
+      const when=String(req.date)+'T'+String(req.time);
+      return (appointments||[]).find(function(a){
+        if(!a || a.status==='cancelled') return false;
+        if(String(a.datetime||'').slice(0,16)!==when) return false;
+        const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+        return !!(c && c.phone && digits(c.phone)===want);
+      }) || null;
+    }catch(e){ return null; }
+  }
+
   function _obProcessRequest(id,req){
     if(!req||!req.date||!req.time)return;
-    _fbDb.ref('rdns_booking_requests/'+id+'/handled').once('value').then(hs=>{
+    // RETURNED, so the queue above actually waits for this one to finish
+    // writing before it lets the next request read the diary. Without the
+    // return the chain races exactly as it did before.
+    return _fbDb.ref('rdns_booking_requests/'+id+'/handled').once('value').then(hs=>{
       if(hs.val())return;
+      // The same telephone, already in the book at the same minute. Not a
+      // second customer — a second tap. Refused here, and reception is told
+      // so it is her decision whether to ring, rather than a silent drop.
+      const dup=_obDuplicateOf(req);
+      if(dup){
+        _obMarkProcessed(id);
+        _fbDb.ref('rdns_booking_requests/'+id).update({handled:'duplicate',handledAt:Date.now(),apptId:dup.id}).catch(e=>console.warn('[OB] handled-flag write error:',e));
+        try{toast('🌐','AYNI RANDEVU İKİNCİ KEZ GELDİ',(req.name||'Müşteri')+' → '+req.date+' '+req.time+' zaten defterde. İkincisi kaydedilmedi. Tel: '+(req.phone||'—'),'a');}catch(e){}
+        return;
+      }
       // A stale cached booking page can still ask for a closed day — the
       // request is refused HERE, never written into the diary, and reception
       // is told to ring with another day.
