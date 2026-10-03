@@ -4076,7 +4076,17 @@ p, span, div, label, h1, h2, h3, h4 {
     <hr class="sb-divider">
     <div class="sb-section" data-i18n="sec_comms">İletişim</div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;inbox&#39;,this)" onclick="goto(&#39;inbox&#39;,this)"><span class="nav-icon">📥</span><span>Gelen Kutusu</span><span class="nav-badge" id="wa-inbox-badge" style="display:none;background:#c0392b;color:#fff;">0</span></div>
-    <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
+    <!-- WhatsApp Merkezi — HIDDEN, not deleted.
+         This is the hand-cranked reminder queue from before the reminders were
+         automatic. They are automatic now: checked on the live salon, 28 of
+         today's 30 appointments already had their 24-hour message sent and
+         every one of them carries the worker's own scheduled-message record.
+         So the page offers work that is already done, its badge makes it look
+         like something is waiting, and pressing Generate would send a customer
+         a SECOND message. "The less traffic the better."
+         The page itself stays: gotoWAfor() still opens it from a client card,
+         and nothing that links to it breaks. -->
+    <div class="nav-item" style="display:none;" ontouchstart="event.stopPropagation();goto(&#39;whatsapp&#39;,this)" onclick="goto(&#39;whatsapp&#39;,this)"><span class="nav-icon">💬</span><span data-i18n="nav_whatsapp">WhatsApp Merkezi</span><span class="nav-badge" id="wa-badge">0</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;reviews&#39;,this)" onclick="goto(&#39;reviews&#39;,this)"><span class="nav-icon">⭐</span><span>Yorum İstekleri</span></div>
     <div class="nav-item" ontouchstart="event.stopPropagation();goto(&#39;settings&#39;,this)" onclick="goto(&#39;settings&#39;,this)"><span class="nav-icon">⚙️</span><span>Ayarlar</span></div>
     <!-- Boss ↔ reception messages. Hidden until this device has been given a
