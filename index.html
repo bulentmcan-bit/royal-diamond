@@ -13605,6 +13605,16 @@ function rdWrTriage(){
       if(!c) return;
       var r=map?rdWrLatestFor(map, c, a):null;
       var row={a:a, c:c, r:r, at:at};
+      /* Reception rang her and she said yes. That is better evidence than any
+         message — somebody spoke to her — so it is read FIRST, and it moves
+         her out of the list of people still to chase and into the green one.
+         Her own written words, if she sends any afterwards, still win: a
+         customer who rings off saying "see you at two" and then writes
+         "gelemiyorum" is not coming, whatever she said on the telephone. */
+      if(a.rdCall==='yes' && !(r && rdWrIsCancel(r.text))){
+        green.push({a:a, c:c, at:at, r:{ text:'📞 Telefonla teyit edildi'+(a.rdCallBy?' ('+a.rdCallBy+')':''), ts:a.rdCallAt||at }, byCall:true});
+        return;
+      }
       if(r && rdWrIsCancel(r.text)){ red.push(row); return; }
       if(r && rdWrIsConfirm(r.text)){ green.push(row); return; }
       if(r) return;                                 // she wrote something else — her words are on her card
@@ -13669,9 +13679,18 @@ function rdRenderNoShowBand(){
         +'<span style="font-weight:800;color:#8a6420;min-width:92px;">'+esc(when(x.a))+'</span>'
         +'<span style="font-weight:800;">'+esc(x.c.name||'Müşteri')+'</span>'
         +(x.a.staff?'<span style="color:var(--muted);font-size:0.82rem;">'+esc(x.a.staff)+'</span>':'')
+        /* Ring her, then say what she said. Reception is standing at the desk
+           with the telephone in her hand and the next customer waiting, so
+           the answer has to be one tap, not a trip into the booking screen —
+           which is the trip nobody makes, which is why the hour stays in the
+           diary after the customer has already said no. */
+        +'<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">'
         +(tel(x.c)
-           ?'<a href="tel:'+esc(tel(x.c))+'" style="margin-left:auto;padding:6px 12px;border-radius:8px;background:#c4863a;color:#fff;font-weight:800;text-decoration:none;font-size:0.84rem;">📞 Ara</a>'
-           :'<span style="margin-left:auto;color:#c0392b;font-weight:800;font-size:0.82rem;">telefon yok</span>')
+           ?'<a href="tel:'+esc(tel(x.c))+'" style="padding:6px 12px;border-radius:8px;background:#c4863a;color:#fff;font-weight:800;text-decoration:none;font-size:0.84rem;">📞 Ara</a>'
+           :'<span style="color:#c0392b;font-weight:800;font-size:0.82rem;align-self:center;">telefon yok</span>')
+        +'<button onclick="rdBandSaidYes('+x.a.id+')" title="Aradım, geleceğini söyledi" style="padding:6px 12px;border-radius:8px;background:#1e7a44;border:1px solid #1e7a44;color:#fff;font-weight:800;font-size:0.84rem;cursor:pointer;font-family:inherit;">✅ Geliyor</button>'
+        +'<button onclick="rdBandSaidNo('+x.a.id+')" title="Aradım, gelemeyeceğini söyledi — saati boşalt" style="padding:6px 12px;border-radius:8px;background:#c0392b;border:1px solid #c0392b;color:#fff;font-weight:800;font-size:0.84rem;cursor:pointer;font-family:inherit;">✕ Gelmiyor</button>'
+        +'</span>'
         +'</div>';
     });
     html+='</div>';
@@ -13691,6 +13710,9 @@ function rdRenderNoShowBand(){
         +'<span style="font-weight:700;">'+esc(x.c.name||'Müşteri')+'</span>'
         +(x.a.staff?'<span style="color:var(--muted);font-size:0.8rem;">'+esc(x.a.staff)+'</span>':'')
         +'<span style="margin-left:auto;color:#1e7a44;font-size:0.8rem;">“'+esc(String(x.r.text||'').slice(0,40))+'”</span>'
+        // Only what reception marked by telephone can be unmarked. A customer's
+        // own written "tamam" is hers, and no button here should rub it out.
+        +(x.byCall?'<button onclick="rdBandUndoCall('+x.a.id+')" title="Yanlışlıkla işaretlendi — geri al" style="margin-left:8px;padding:4px 9px;border-radius:7px;background:transparent;border:1px solid rgba(30,122,68,0.45);color:#1e7a44;font-weight:700;font-size:0.76rem;cursor:pointer;font-family:inherit;">↺ Geri al</button>':'')
         +'</div>';
     });
     html+='</div>';
@@ -13703,6 +13725,48 @@ function rdRenderNoShowBand(){
    is worse than leaving it, and it goes through dashCancelAppt so the slot is
    released exactly the way reception's own ✕ releases it — the gap-filler can
    then sell the hour like any other. */
+/* ── what she said on the telephone ────────────────────────────────────────
+
+   The amber band is the list of people who were sent a reminder and said
+   nothing, and the owner's instruction for it was always "leave the ones that
+   don't reply for us to call". Ringing them was never the hard part. Writing
+   down the answer was: it meant leaving the band, finding her in the diary,
+   and doing something there — so it did not get done, and the band showed the
+   same twenty-two names tomorrow whether or not anybody had spoken to them.
+
+   Two buttons on the row instead. Green keeps her hour and moves her into the
+   confirmed list. Red asks once and then frees the hour, exactly as the red
+   band's own ✕ does, so the gap-filler can sell it.
+
+   Marked, not guessed: the appointment carries who said so and when, and it
+   is a plain flag on the booking that syncs like everything else, so the desk
+   and the owner's phone agree about who has been rung. */
+window.rdBandSaidYes=function(id){
+  try{
+    var a=(appointments||[]).filter(function(x){ return String(x.id)===String(id); })[0];
+    if(!a) return;
+    a.rdCall='yes'; a.rdCallAt=Date.now();
+    try{ a.rdCallBy=localStorage.getItem('rdns_msg_role')||''; }catch(e){ a.rdCallBy=''; }
+    try{ saveAll(); }catch(e){ try{ syncPush('rdns_main_v1',{clients,appointments,payments}); }catch(_){} }
+    try{ rdRenderNoShowBand(); }catch(e){}
+    try{ renderDashGrid(); }catch(e){}
+  }catch(e){ console.warn('[band]', e); }
+};
+/* She told reception she is not coming. Same ending as the red band: ask
+   once, then release the hour through dashCancelAppt so it is freed exactly
+   the way reception's own ✕ frees it. */
+window.rdBandSaidNo=function(id){ try{ rdNoShowCancel(id); }catch(e){} };
+/* Pressed by mistake. Clearing the flag drops her back where she was. */
+window.rdBandUndoCall=function(id){
+  try{
+    var a=(appointments||[]).filter(function(x){ return String(x.id)===String(id); })[0];
+    if(!a) return;
+    delete a.rdCall; delete a.rdCallAt; delete a.rdCallBy;
+    try{ saveAll(); }catch(e){ try{ syncPush('rdns_main_v1',{clients,appointments,payments}); }catch(_){} }
+    try{ rdRenderNoShowBand(); }catch(e){}
+    try{ renderDashGrid(); }catch(e){}
+  }catch(e){ console.warn('[band]', e); }
+};
 window.rdNoShowCancel=function(id){
   try{
     var a=(appointments||[]).filter(function(x){ return String(x.id)===String(id); })[0];
@@ -20079,6 +20143,18 @@ function rdWrWindow(r, now){
   };
   window.rdWrStripFor=function(appt){
     try{
+      /* Rung and confirmed. The same green mark the card gets for a written
+         "tamam", because to the technician looking at her column there is no
+         difference worth drawing — the customer is coming. A written
+         cancellation still overrules it below. */
+      if(appt && appt.rdCall==='yes'){
+        var cc=(clients||[]).filter(function(x){ return String(x.id)===String(appt.clientId); })[0];
+        var rr=cc?rdWrLatestFor(_wr, cc, appt):null;
+        if(!(rr && rdWrIsCancel(rr.text))){
+          return '<div style="margin-top:5px;padding:5px 9px;border-radius:7px;background:#1e7a44;color:#fff;font-weight:800;font-size:0.78rem;">'
+            +'✅ GELİYOR <span style="font-weight:400;opacity:.85;">📞 telefonla teyit edildi</span></div>';
+        }
+      }
       var c=rdWrClientFor({phone:(function(){
         var cl=(clients||[]).filter(function(x){ return String(x.id)===String(appt&&appt.clientId); })[0];
         return cl?cl.phone:'';
