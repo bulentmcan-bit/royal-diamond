@@ -4427,7 +4427,7 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="page" id="page-deductions">
       <div style="margin-bottom:20px;">
         <div style="font-weight:700;font-size:1.1rem;color:var(--gold);margin-bottom:4px;">✂️ Kesintiler — Komisyon Kuralları</div>
-        <div style="font-size:0.78rem;color:#666;">Geç kalma / 1.5 saat aşımı / müşteri memnun değil → komisyon iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
+        <div style="font-size:0.78rem;color:#666;">Komisyon yalnızca ▶ Başladı zamanında + çıkışta 😊 Memnun ise · Geç / memnun değil / sorulmadı → otomatik iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
       </div>
       <div id="ded-form-box" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;"></div>
       <div id="ded-summary" style="margin-bottom:18px;"></div>
@@ -6628,6 +6628,7 @@ function renderDashGrid(){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 44px;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
       } else if(!isDone){
+        html += commStartBtn(a);
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
         html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:#2f7fe0;border:1px solid #2f7fe0;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
@@ -6638,6 +6639,7 @@ function renderDashGrid(){
         html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       } else {
         html += '<span style="font-size:0.68rem;font-weight:800;color:#c9584a;padding:2px 4px;">✓ Completed</span>';
+        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span>'; }catch(e){}
         // A completed appointment used to lose its Edit button, so a price that
         // went in wrong could never be corrected from here.
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;margin-left:auto;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fiyat</button>';
@@ -7392,9 +7394,87 @@ function dedAmountOf(item){
 }
 function dedItemsForMonth(monthKey){
   if(typeof dedState==='undefined' || !dedState) return [];
-  return (dedState.items||[]).filter(function(it){
+  const stored = (dedState.items||[]).filter(function(it){
     return it && !it.removed && (it.date||'').slice(0,7)===monthKey;
   });
+  // …plus every job THE RULE took commission off by itself (see commAutoItems).
+  // A job someone already marked by hand is counted once, as the hand record.
+  const marked = {};
+  stored.forEach(function(it){ if(it.apptId!=null) marked[String(it.apptId)] = 1; });
+  return stored.concat(commAutoItems(monthKey).filter(function(it){ return !marked[String(it.apptId)]; }));
+}
+
+// ── THE RULE — commission comes from the system, not from anyone's say-so ──
+// From 5 Oct 2026 a technician on the scheme (DED_RATES) earns commission on a
+// job only if she started it on time AND the customer was happy. Both answers
+// are already recorded by the app itself:
+//   on time → a.startedAt, stamped by ▶ Başladı on the dashboard card; more
+//             than COMM_LATE_GRACE_MIN after the booked time is late
+//   happy   → a.sat, the mandatory question at checkout (😊 Memnun)
+// Strict mode (Bülent, 5 Oct): no ▶ Başladı tap at all, or "Sormadım" at
+// checkout, is not proof — that job earns nothing either.
+// The ▶ button only arrived mid-day on the 5th, so "no tap" counts from the 6th.
+const COMM_RULE_FROM = '2026-10-05';
+const COMM_START_TAP_FROM = '2026-10-06';
+const COMM_LATE_GRACE_MIN = 10;
+const COMM_STRICT = true;
+DED_TYPES.nostart  = {label:'▶ Başladı işaretlenmedi — komisyon yok', full:false, auto:true};
+DED_TYPES.notasked = {label:'❔ Memnuniyet sorulmadı — komisyon yok', full:false, auto:true};
+// Minutes after the booked time she actually started; null if never tapped.
+function commLateMin(a){
+  if(!a || !a.startedAt || !a.datetime) return null;
+  const booked = new Date(String(a.datetime).slice(0,16)).getTime();
+  if(isNaN(booked)) return null;
+  return Math.round((Number(a.startedAt) - booked) / 60000);
+}
+// Why this job earns no commission — or null when it earns it.
+function commVerdict(a){
+  if(!a || a.status!=='completed' || !a.staff || DED_RATES[a.staff]===undefined) return null;
+  const day = String(a.datetime||'').slice(0,10);
+  if(!day || day < COMM_RULE_FROM) return null;
+  try{ if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return null; }catch(e){}
+  if(a.sat==='unhappy') return 'unsat';
+  const late = commLateMin(a);
+  if(late!==null && late > COMM_LATE_GRACE_MIN) return 'late';
+  if(COMM_STRICT && late===null && day >= COMM_START_TAP_FROM) return 'nostart';
+  if(COMM_STRICT && a.sat==='not_asked') return 'notasked';
+  return null;
+}
+function commAutoItems(monthKey){
+  if(typeof appointments==='undefined' || !Array.isArray(appointments)) return [];
+  const out = [];
+  appointments.forEach(function(a){
+    if(!a || String(a.datetime||'').slice(0,7)!==monthKey) return;
+    const why = commVerdict(a); if(!why) return;
+    const late = commLateMin(a);
+    out.push({id:'auto_'+a.id, auto:true, apptId:a.id, tech:a.staff, type:why,
+      date:String(a.datetime).slice(0,10), time:String(a.datetime).slice(11,16),
+      service:a.service||'', amount:0,
+      note:(why==='late' ? late+' dk geç başladı' : '')});
+  });
+  return out;
+}
+// ▶ Başladı — the tap that makes "on time" a fact instead of an opinion.
+function commMarkStart(id){
+  const a = appointments.find(function(x){ return String(x.id)===String(id); });
+  if(!a) return;
+  if(a.startedAt){
+    if(!confirm('Başlama saati silinsin mi?')) return;
+    delete a.startedAt;
+  }else{
+    a.startedAt = Date.now();
+    const late = commLateMin(a);
+    if(late!==null && late > COMM_LATE_GRACE_MIN && DED_RATES[a.staff]!==undefined)
+      toast('⏰','Geç başladı — '+late+' dk', a.staff+' — bu işten komisyon yazılmaz.','r');
+  }
+  saveAll(); renderDash();
+}
+function commStartBtn(a){
+  if(!a || !a.startedAt)
+    return '<button onclick="commMarkStart('+a.id+')" title="Teknisyen müşteriye başladığında dokunun" style="flex:0 0 auto;padding:2px 6px;background:#3f6e50;border:1px solid #3f6e50;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">▶ Başladı</button>';
+  const late = commLateMin(a), bad = late!==null && late > COMM_LATE_GRACE_MIN;
+  const t = new Date(Number(a.startedAt)), hm = String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  return '<button onclick="commMarkStart('+a.id+')" title="'+(bad?late+' dk geç — komisyon yok':'Zamanında başladı')+'" style="flex:0 0 auto;padding:2px 5px;background:'+(bad?'rgba(201,64,64,0.12)':'rgba(63,110,80,0.12)')+';border:1px solid '+(bad?'#c94040':'#3f6e50')+';border-radius:4px;color:'+(bad?'#c94040':'#3f6e50')+';font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">'+(bad?'⏰ ':'▶ ')+hm+'</button>';
 }
 // Salary cuts only — the free-redo type, where the salon took no money at all.
 function dedTotalsForMonth(monthKey){
@@ -8146,7 +8226,7 @@ function renderDeductionsPage(){
   const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
   // Form
   let opts=''; Object.keys(DED_RATES).forEach(t=>{opts+='<option value="'+t+'">'+t+' (%'+Math.round(DED_RATES[t]*100)+')</option>';});
-  let topts=''; Object.keys(DED_TYPES).forEach(k=>{topts+='<option value="'+k+'">'+DED_TYPES[k].label+'</option>';});
+  let topts=''; Object.keys(DED_TYPES).forEach(k=>{if(DED_TYPES[k].auto)return;topts+='<option value="'+k+'">'+DED_TYPES[k].label+'</option>';});
   const inpCss='padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;';
   const nowTime=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const clientOpts=dedClientLabels().map(function(l){ return '<option value="'+dtEscHtml(l)+'"></option>'; }).join('');
@@ -8213,7 +8293,7 @@ function renderDeductionsPage(){
       '<span style="font-size:0.78rem;color:#666;">Hizmet: '+(pending?'<i style="color:#c98a2e;">fiyat bekleniyor</i>':'₺'+amt.toLocaleString('tr-TR'))+'</span>'+
       '<b style="color:#c94040;" title="'+(full?'Maaştan kesilir':'Bu işin komisyonu verilmez')+'">'+
         (full?'−₺'+dedAmountOf(it).toLocaleString('tr-TR')+' maaştan':'komisyon yok −₺'+dedAmountOf(it).toLocaleString('tr-TR'))+'</b>'+
-      '<button onclick="dedDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button></div>';
+      (it.auto?'<span title="Kural otomatik uyguladı" style="font-size:0.7rem;color:#888;">otomatik</span>':'<button onclick="dedDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button>')+'</div>';
   });
   // Per-technician record — what each of them was NOT paid commission on.
   let perTech='';
