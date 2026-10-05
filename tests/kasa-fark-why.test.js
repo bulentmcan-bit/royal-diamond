@@ -29,8 +29,11 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
 console.log('1. the explanation is built from the rows themselves');
 {
-  is(/const _ccOrph=list\.filter\(r=>r\.orphan\), _ccNoTill=list\.filter\(r=>r\.noTill\);/.test(html), true,
-     'it reads the two kinds of row that create a Fark');
+  is(/const _ccOrph=list\.filter\(r=>r\.orphan\), _ccNoTill=list\.filter\(r=>r\.noTill\), _ccDupe=list\.filter\(r=>r\.dupe\);/.test(html), true,
+     'it reads the three kinds of row that create a Fark');
+  // The one the owner spotted himself, and the likeliest of the three.
+  is(/if\(diff>0\.5 && _ccDupe\.length\)/.test(html), true, '…including the same money entered twice');
+  is(/çift girilmiş: /.test(html), true, '…named as such, ahead of the others');
   is(/const _ccWhy=\(function\(\)\{/.test(html), true, '…and turns them into a sentence');
   is(/↳ '\+_ccWhy\+'/.test(html), true, '…printed under the staff name, where there is room');
 }

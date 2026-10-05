@@ -15357,12 +15357,52 @@ function renderCashCheck(){
       // archived transactions are what fill in the ÖDEME column and put the
       // walk-ins back on the list. Days archived before this was recorded carry
       // no entries and simply behave as they always did.
+      /* A till entry can be put in TWICE for the same appointment — the owner's
+         own reading of it: "I think we just put it in twice." It is an easy
+         thing to do at a busy desk, and until now it was invisible. The second
+         entry matched the same appointment row, handed over its payment method
+         and returned, leaving no trace at all — while the Kasa figure, summed
+         from the entries, counted it twice. That is the whole of a Fark of
+         +₺2,100 against Helen and +₺2,000 against Lissa: in each case exactly
+         one of that person's own charges, counted a second time.
+         The first entry for an appointment is the real one. Every one after it
+         gets a row of its own, so it can be seen, named in the Fark line, and
+         removed from Günü Düzelt. */
+      const _ccSeen=new Set();
       (hd.ops||[]).forEach(o=>{(o.entries||[]).forEach((e,i)=>{
         if(!e) return;
         if(e.apptId!=null){
+          const _k=String(e.apptId);
+          if(_ccSeen.has(_k)){
+            rows.push({rid:"d"+o.name+"_"+i, apptId:null, time:e.time||"",
+              client:(e.service||"Çift giriş"),
+              service:"(Aynı randevu için ikinci kasa girişi)",
+              staff:o.name, amount:e.amount||0, pay:e.pay||null, splits:e.splits||null,
+              payNote:e.payNote||null, dupe:true, archived:true, dupeIdx:i});
+            return;
+          }
+          _ccSeen.add(_k);
           const r=rows.find(x=>String(x.apptId)===String(e.apptId));
           // The record's own method wins — it can have been corrected since.
-          if(r){ if(!r.pay&&e.pay){r.pay=e.pay;r.splits=e.splits||null;r.payNote=e.payNote||null;} return; }
+          // AND SO DOES ITS AMOUNT. This line is why Kasa Kontrol showed a Fark
+          // nobody could explain. The Kasa figure is built by summing these
+          // archived entries (ccPastDayTotals: "the entries are the truth"),
+          // but the row beside it kept showing the price written on the
+          // APPOINTMENT. Correct a price at the desk — ₺2,100 charged as
+          // ₺4,200, a tip added, a discount given — and the two sides were
+          // reading different numbers for the same customer, for ever. The
+          // live-day branch above has always taken the till's amount; the
+          // archived day simply never did, so the Fark appeared the morning
+          // after and could not be cleared.
+          if(r){
+            if(!r.pay&&e.pay){r.pay=e.pay;r.splits=e.splits||null;r.payNote=e.payNote||null;}
+            if(e.amount){
+              // Kept, so the row can say what the appointment thought it was.
+              if(Number(e.amount)!==Number(r.amount)) r.apptAmount=r.amount;
+              r.amount=e.amount;
+            }
+            return;
+          }
         }
         rows.push({rid:"h"+o.name+"_"+i, apptId:null, time:e.time||"",
           client:(e.service||"Elden giriş"),
@@ -15391,7 +15431,7 @@ function renderCashCheck(){
   // Orphans are deliberately NOT counted here. They have no appointment behind
   // them, so leaving them out is what keeps the Fark showing — the flagged row
   // below is the explanation for it rather than a figure that hides it.
-  const grand=rows.reduce((s,r)=>s+(r.orphan?0:r.amount),0);
+  const grand=rows.reduce((s,r)=>s+((r.orphan||r.dupe)?0:r.amount),0);
   const dtGrand=dtTotals?Object.values(dtTotals).reduce((s,v)=>s+v,0):null;
   const ticked=rows.filter(r=>ticks.has(r.rid)).length;
 
@@ -15403,7 +15443,7 @@ function renderCashCheck(){
 
   staffNames.forEach(st=>{
     const list=(byStaff[st]||[]).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
-    const sub=list.reduce((s,r)=>s+(r.orphan?0:r.amount),0);
+    const sub=list.reduce((s,r)=>s+((r.orphan||r.dupe)?0:r.amount),0);
     const dtv=dtTotals&&(st in dtTotals)?dtTotals[st]:null;
     const diff=(dtv!==null)?(dtv-sub):null;
     /* WHY the Fark, not just how much.
@@ -15415,9 +15455,11 @@ function renderCashCheck(){
        badges were already on the rows. Nobody connects a number at the top of
        a table to a badge eleven lines down, so the number now says the name
        and the figure itself. */
-    const _ccOrph=list.filter(r=>r.orphan), _ccNoTill=list.filter(r=>r.noTill);
+    const _ccOrph=list.filter(r=>r.orphan), _ccNoTill=list.filter(r=>r.noTill), _ccDupe=list.filter(r=>r.dupe);
     const _ccWhy=(function(){
       const bits=[];
+      if(diff>0.5 && _ccDupe.length)
+        bits.push('çift girilmiş: '+_ccDupe.map(r=>r.client+' ₺'+r.amount.toLocaleString()).join(', '));
       if(diff>0.5 && _ccOrph.length)
         bits.push('karşılıksız: '+_ccOrph.map(r=>r.client+' ₺'+r.amount.toLocaleString()).join(', '));
       if(diff<-0.5 && _ccNoTill.length)
@@ -15443,13 +15485,17 @@ function renderCashCheck(){
     if(list.length){
       html+='<table class="tbl"><thead><tr><th style="width:36px;">✔</th><th>Saat</th><th>Müşteri</th><th>Hizmet</th><th>Tutar</th><th>Ödeme</th><th style=\"width:150px;\"></th></tr></thead><tbody>';
       list.forEach(r=>{
-        html+='<tr style="'+(ticks.has(r.rid)?"opacity:0.5;":"")+(r.walkin?"background:rgba(122,170,232,0.06);":"")+(r.orphan?"background:rgba(217,83,79,0.09);":"")+'">'
+        html+='<tr style="'+(ticks.has(r.rid)?"opacity:0.5;":"")+(r.walkin?"background:rgba(122,170,232,0.06);":"")+((r.orphan||r.dupe)?"background:rgba(217,83,79,0.09);":"")+'">'
           +'<td><input type="checkbox" style="width:17px;height:17px;accent-color:var(--gold);cursor:pointer;" '+(ticks.has(r.rid)?"checked":"")+' onclick="ccToggle(\''+r.rid+'\')"></td>'
           +'<td style="font-size:0.8rem;color:var(--muted)">'+(r.time||"—")+'</td>'
           +'<td style="font-weight:600;">'+r.client
             +(r.walkin?' <span class="badge badge-blue" style="font-size:0.6rem;">Elden</span>':'')
             +(r.orphan?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Bu paranın randevusu silinmiş. Kasa toplamına giriyor ama randevu toplamına girmiyor — Fark bu yüzden oluşuyor. Silmek için 🗑">⚠️ Karşılıksız</span>':'')
+            +(r.dupe?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Bu randevu için kasaya ikinci kez para girilmiş. Kasa toplamına giriyor ama randevu toplamına girmiyor — Fark bu yüzden oluşuyor. Günlük Kasa → o gün → Günü Düzelt ekranından silin.">⚠️ Çift giriş</span>':'')
             +(r.noTill?' <span class="badge badge-rose" style="font-size:0.6rem;" title="Randevu tamamlanmış ama o günün kasa kayıtlarında bu paranın girişi yok — Fark bu yüzden eksik gösteriyor ve ödeme yöntemi kayıtsız. Para gerçekten alındıysa kasa kaydı elle tamamlanmalı.">⚠️ Kasa kaydı yok</span>':'')
+            // The till and the appointment disagreed on the price. The till wins,
+            // and the old figure is shown rather than quietly dropped.
+            +(r.apptAmount!=null?' <span class="badge" style="font-size:0.6rem;background:rgba(122,170,232,0.18);color:#2f6ea8;border:1px solid rgba(122,170,232,0.5);" title="Kasada girilen tutar randevudaki fiyattan farklı. Kasa esas alınır.">₺ kasada düzeltildi · randevu ₺'+Number(r.apptAmount).toLocaleString()+'</span>':'')
             +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
