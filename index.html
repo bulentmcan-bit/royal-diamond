@@ -6619,7 +6619,7 @@ function renderDashGrid(){
       // before the customer reaches the till (the till itself asks at her last
       // appointment of the day).
       try{ html += (typeof dpDebtBadge==='function') ? dpDebtBadge(a.clientId) : ''; }catch(e){}
-      html += '<div style="display:flex;gap:3px;">';
+      html += '<div style="display:flex;gap:3px;flex-wrap:wrap;">';
       const _isBlk = (typeof rdIsBlocker==='function') && rdIsBlocker(a.clientId);
       if(_isBlk){
         // A held hour, not a customer: it can be moved (✏) or released (✕) —
@@ -6638,7 +6638,7 @@ function renderDashGrid(){
         html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       } else {
         html += '<span style="font-size:0.68rem;font-weight:800;color:#c9584a;padding:2px 4px;">✓ Completed</span>';
-        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span>'; }catch(e){}
+        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span><div style="flex-basis:100%;font-size:0.6rem;font-weight:700;color:#c94040;">'+dtEscHtml(commReasonShort(a))+'</div>'; }catch(e){}
         // A completed appointment used to lose its Edit button, so a price that
         // went in wrong could never be corrected from here.
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;margin-left:auto;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fiyat</button>';
@@ -7472,6 +7472,16 @@ function commVerdict(a){
   }
   if(COMM_STRICT && a.sat==='not_asked') return 'notasked';
   return null;
+}
+// The reason in a few words, with the Crown Board's own times, so the red mark
+// on the card answers "why?" without anyone having to ask.
+function commReasonShort(a){
+  const why = commVerdict(a); if(!why) return '';
+  const hm = function(ms){ const d=new Date(Number(ms)); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+  const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
+  if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç)';
+  if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk (sınır '+(s.limitMin||60)+')';
+  return {nostart:'Crown Board\u2019da başlatılmadı', unsat:'müşteri memnun değil', notasked:'memnuniyet sorulmadı'}[why] || '';
 }
 function commAutoItems(monthKey){
   if(typeof appointments==='undefined' || !Array.isArray(appointments)) return [];
@@ -16275,7 +16285,8 @@ function dtRenderEntries(op, opIdx){
     try{ if(!e.ded && e.apptId!=null && typeof commVerdict==='function') _autoV = commVerdict(dedApptById(e.apptId)); }catch(_e){}
     const noPay = !e.ded && !e.pay;
     const isDed = !!e.ded || !!_autoV;
-    const dedLbl = isDed ? (e.ded==='redo' ? 'KESİNTİ' : 'KOMİSYON YOK') : '';
+    let dedLbl = isDed ? (e.ded==='redo' ? 'KESİNTİ' : 'KOMİSYON YOK') : '';
+    try{ if(_autoV){ const _rs = commReasonShort(dedApptById(e.apptId)); if(_rs) dedLbl += ' · '+dtEscHtml(_rs); } }catch(_e){}
     return `
     <div class="entry-row ${noPay?'pm-untagged':''}" style="${isDed?'background:rgba(201,64,64,0.10);border:1px solid rgba(201,64,64,0.35);border-radius:8px;':(noPay?'background:rgba(232,122,122,0.08);border:1px dashed rgba(232,122,122,0.45);border-radius:8px;':'')}">
       <span class="entry-service" style="${isDed?'color:#c94040;':''}">${dtEscHtml(e.service||'Service')}${isDed?' <b style=\'font-size:0.6rem;background:#c94040;color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;\'>✂ '+dedLbl+'</b>':''} ${pmChip(e,opIdx,i)}</span>
