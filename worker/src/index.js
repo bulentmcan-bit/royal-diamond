@@ -560,6 +560,31 @@ function waSpec(raw) {
   } catch { return null; }
 }
 
+// The reminder that asks for an answer ("Geleceğim / Gelemiyorum") switches
+// itself on. WA_CONFIRM names the button template; until Meta approves it,
+// Piyzi's GET /whatsapp/templates (approved templates only) does not list it,
+// and the reminders keep going out under WA_R24 / WA_R1 exactly as before.
+// The moment it is listed, both reminders use it — no edit, no redeploy.
+// The answer is kept in KV for an hour so a busy day asks Piyzi ~once an hour.
+async function waConfirmLive(env, spec) {
+  if (!spec) return false;
+  const key = 'tpl:live:' + spec.templateName + '/' + (spec.languageCode || 'tr');
+  if (env.RD_WA) {
+    try { const c = await env.RD_WA.get(key); if (c === '1' || c === '0') return c === '1'; } catch { /* ask Piyzi */ }
+  }
+  let live = false;
+  try {
+    const r = await piyziCall(env, 'GET', '/whatsapp/templates');
+    if (!(r && r.body && r.body.success)) return false;   // unsure → the old reminder, and ask again next time
+    const list = (r.body.data && r.body.data.templates) || [];
+    live = list.some(t => t && t.name === spec.templateName && (!t.language || t.language === (spec.languageCode || 'tr'))
+      && t.sendable !== false && (!t.status || String(t.status).toUpperCase() === 'APPROVED'));
+  } catch { return false; }
+  if (env.RD_WA) { try { await env.RD_WA.put(key, live ? '1' : '0', { expirationTtl: 3600 }); } catch { /* cache only */ } }
+  console.log('[wa] confirm template', spec.templateName, live ? 'LIVE' : 'not approved yet');
+  return live;
+}
+
 // The spec's placeholders → this appointment's values, shaped exactly like
 // the documented POST /whatsapp/messages parameters block. Fields the spec
 // leaves out are not sent at all — Piyzi rejects a parameters block whose
@@ -777,7 +802,12 @@ async function handleWa(req, env, ctx, url) {
 
     const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
     if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
-    const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
+    const vals = { name: name || '', service: service || '', date: dateISO, dateLong: rDateStr(dateISO), time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
+    // Once Meta approves the button template, both reminders ask for an answer.
+    // The old spec stays as the fallback if Piyzi refuses the new one.
+    const confirm = waSpec(env.WA_CONFIRM);
+    const fallback = { r24: specs.r24, r1: specs.r1 };
+    if (confirm && await waConfirmLive(env, confirm)) { specs.r24 = confirm; specs.r1 = confirm; }
     const plan = waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
 
     const scheduled = [], failed = [];
@@ -786,6 +816,15 @@ async function handleWa(req, env, ctx, url) {
       let r = null, uid = null, err = null;
       try { r = await piyziCall(env, 'POST', '/whatsapp/messages', payload); } catch { /* err set below */ }
       if (r && r.body && r.body.success) uid = r.body.data && r.body.data.scheduledMessage && r.body.data.scheduledMessage.uid;
+      if (!uid && specs[kind] !== fallback[kind] && r && r.status >= 400 && r.status < 500) {
+        // Piyzi refused the button template (a variable mismatch, say): send the
+        // old reminder instead — one nobody answers beats one that never goes.
+        console.log('[wa] confirm template refused, falling back:', JSON.stringify(piyziErr(r)));
+        const p2 = { phone: to, ...waFill(fallback[kind], vals), scheduledAt: payload.scheduledAt };
+        r = null;
+        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', p2); } catch { /* err set below */ }
+        if (r && r.body && r.body.success) uid = r.body.data && r.body.data.scheduledMessage && r.body.data.scheduledMessage.uid;
+      }
       if (uid) scheduled.push({ kind, uid });
       else { err = r ? piyziErr(r) : { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' }; failed.push({ kind, error: err }); }
       waLog(env, ctx, { op: 'schedule', apptId, kind, uid: uid || null, to, at: new Date(at).toISOString(), outcome: uid ? 'scheduled' : 'failed:' + (err && err.code) });
@@ -1985,7 +2024,7 @@ async function handleCall(req, env, url) {
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
-         raConfig, raPlan, runReviewAsk,
+         raConfig, raPlan, runReviewAsk, waConfirmLive,
          hookSign, hookVerify, hookParse, hookMatchOffer, handleHook,
          CALL_SAY, callAsk, callAnswer, handleCall };
 

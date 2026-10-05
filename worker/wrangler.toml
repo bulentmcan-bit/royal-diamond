@@ -95,6 +95,14 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 #   WA_R1  = '{"templateName":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
 #
 # Not before. A reminder that fails to send is worse than one nobody answers.
+#
+# RESUBMITTED 5 Ekim 2026 as `randevu_onay2` (the first name could not be
+# reused), PENDING. No edit is needed when Meta approves it: the worker asks
+# Piyzi's approved-template list (cached an hour) on each /wa/schedule and,
+# once randevu_onay2 is listed, sends BOTH reminders under the spec below
+# instead of WA_R24 / WA_R1 — falling back to them if Piyzi refuses it.
+# Empty this line to switch the automatic change off.
+WA_CONFIRM = '{"templateName":"randevu_onay2","languageCode":"tr","body":["{dateLong}","{time}"]}'
 
 # The booking confirmation, sent the MOMENT a booking is made (no scheduledAt)
 # via POST /wa/confirm-booking. pyz_appointment_booked_v2 carries two body
