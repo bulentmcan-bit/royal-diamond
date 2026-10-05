@@ -539,9 +539,12 @@ function waNeedsR1(hhmm, openHHMM) {
 // left undefined it sends, the old contract). One already in the past is
 // normal for a same-day booking, not an error — Piyzi refuses anything
 // nearer than 2 minutes, so the line is drawn at 3 to not race it.
-function waReminders(apptUtc, now, needR1) {
+// r1Min moves the short reminder: 120 (two hours) by default; the button
+// reminder uses WA_CONFIRM_MIN instead (see /wa/schedule).
+function waReminders(apptUtc, now, needR1, r1Min) {
   const due = [], skipped = [];
-  for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', apptUtc - 2 * 3600e3]]) {
+  const r1At = apptUtc - (Number(r1Min) > 0 ? Number(r1Min) : 120) * 60e3;
+  for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', r1At]]) {
     if (kind === 'r1' && needR1 === false) { skipped.push({ kind, why: 'call-covers' }); continue; }
     if (at < now + 3 * 60e3) skipped.push({ kind, why: 'past' });
     else due.push({ kind, at });
@@ -558,6 +561,31 @@ function waSpec(raw) {
     const s = JSON.parse(raw || '');
     return s && typeof s.templateName === 'string' && s.templateName ? s : null;
   } catch { return null; }
+}
+
+// The reminder that asks for an answer ("Geleceğim / Gelemiyorum") switches
+// itself on. WA_CONFIRM names the button template; until Meta approves it,
+// Piyzi's GET /whatsapp/templates (approved templates only) does not list it,
+// and the reminders keep going out under WA_R24 / WA_R1 exactly as before.
+// The moment it is listed, both reminders use it — no edit, no redeploy.
+// The answer is kept in KV for an hour so a busy day asks Piyzi ~once an hour.
+async function waConfirmLive(env, spec) {
+  if (!spec) return false;
+  const key = 'tpl:live:' + spec.templateName + '/' + (spec.languageCode || 'tr');
+  if (env.RD_WA) {
+    try { const c = await env.RD_WA.get(key); if (c === '1' || c === '0') return c === '1'; } catch { /* ask Piyzi */ }
+  }
+  let live = false;
+  try {
+    const r = await piyziCall(env, 'GET', '/whatsapp/templates');
+    if (!(r && r.body && r.body.success)) return false;   // unsure → the old reminder, and ask again next time
+    const list = (r.body.data && r.body.data.templates) || [];
+    live = list.some(t => t && t.name === spec.templateName && (!t.language || t.language === (spec.languageCode || 'tr'))
+      && t.sendable !== false && (!t.status || String(t.status).toUpperCase() === 'APPROVED'));
+  } catch { return false; }
+  if (env.RD_WA) { try { await env.RD_WA.put(key, live ? '1' : '0', { expirationTtl: 3600 }); } catch { /* cache only */ } }
+  console.log('[wa] confirm template', spec.templateName, live ? 'LIVE' : 'not approved yet');
+  return live;
 }
 
 // The spec's placeholders → this appointment's values, shaped exactly like
@@ -777,8 +805,20 @@ async function handleWa(req, env, ctx, url) {
 
     const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
     if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
-    const vals = { name: name || '', service: service || '', date: dateISO, time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
-    const plan = waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
+    const vals = { name: name || '', service: service || '', date: dateISO, dateLong: rDateStr(dateISO), time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
+    // Once Meta approves the button template, both reminders ask for an answer.
+    // The old spec stays as the fallback if Piyzi refuses the new one.
+    const confirm = waSpec(env.WA_CONFIRM);
+    const fallback = { r24: specs.r24, r1: specs.r1 };
+    const live = !!(confirm && await waConfirmLive(env, confirm));
+    if (live) { specs.r24 = confirm; specs.r1 = confirm; }
+    // With the buttons live, EVERY customer also gets the short reminder, close
+    // to the hour (WA_CONFIRM_MIN before, default 90) — a lot can change in a
+    // day. Whoever has not tapped by the hour still gets reception's 1 SAAT
+    // KALA call. Before that, the short one stays early-morning only.
+    const plan = live
+      ? waReminders(apptUtc, Date.now(), true, Number(env.WA_CONFIRM_MIN) || 90)
+      : waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
 
     const scheduled = [], failed = [];
     for (const { kind, at } of plan.due) {
@@ -786,6 +826,15 @@ async function handleWa(req, env, ctx, url) {
       let r = null, uid = null, err = null;
       try { r = await piyziCall(env, 'POST', '/whatsapp/messages', payload); } catch { /* err set below */ }
       if (r && r.body && r.body.success) uid = r.body.data && r.body.data.scheduledMessage && r.body.data.scheduledMessage.uid;
+      if (!uid && specs[kind] !== fallback[kind] && r && r.status >= 400 && r.status < 500) {
+        // Piyzi refused the button template (a variable mismatch, say): send the
+        // old reminder instead — one nobody answers beats one that never goes.
+        console.log('[wa] confirm template refused, falling back:', JSON.stringify(piyziErr(r)));
+        const p2 = { phone: to, ...waFill(fallback[kind], vals), scheduledAt: payload.scheduledAt };
+        r = null;
+        try { r = await piyziCall(env, 'POST', '/whatsapp/messages', p2); } catch { /* err set below */ }
+        if (r && r.body && r.body.success) uid = r.body.data && r.body.data.scheduledMessage && r.body.data.scheduledMessage.uid;
+      }
       if (uid) scheduled.push({ kind, uid });
       else { err = r ? piyziErr(r) : { code: 'PIYZI_UNREACHABLE', message: 'Piyzi did not answer within the timeout, twice' }; failed.push({ kind, error: err }); }
       waLog(env, ctx, { op: 'schedule', apptId, kind, uid: uid || null, to, at: new Date(at).toISOString(), outcome: uid ? 'scheduled' : 'failed:' + (err && err.code) });
@@ -1887,13 +1936,107 @@ async function hookForward(env, ctx, rec) {
   console.log('[hook] forward to', to, err ? 'FAILED ' + err : 'sent', '—', who);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// The robot confirmation call — DEMO ONLY (5 Ekim 2026).
+//
+// One hour before the appointment a phone call asks the customer to press 1
+// (geliyorum) or 2 (gelemeyeceğim). This is the demo the owner asked for: it
+// rings ONE number, speaks the agreed script with Twilio's Turkish voice
+// (Polly.Filiz — Emel's own recordings replace it later), and answers each
+// key. It writes NOTHING to Firebase: no appointment turns green or red yet.
+//
+//   GET /call/demo?k=<DEMO_KEY or BTN_KEY>&to=90533…&t=14:30   rings the phone
+//   /call/start                                    Twilio, when the call connects
+//   POST /call/answer                              Twilio, after a key press
+//
+// /call/start and /call/answer are public because Twilio holds no key; they only return
+// spoken words, never reads or writes anything. The Twilio credentials are
+// wrangler secrets — TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM (the number the
+// call comes from) — never written here. Without them /call/demo says so.
+// ═══════════════════════════════════════════════════════════════════════════
+const CALL_VOICE = 'Polly.Filiz';
+const CALL_SAY = {
+  ask:   t => `Merhaba, Royal Diamond Nail Studio'dan Emel. Bugün saat ${t}'da randevunuz var. Geliyorsanız 1'e, gelemeyecekseniz 2'ye basın.`,
+  again: () => `Lütfen geliyorsanız 1'e, gelemeyecekseniz 2'ye basın.`,
+  yes:   () => `Teşekkürler, sizi bekliyoruz. Görüşmek üzere!`,
+  no:    () => `Bilgi verdiğiniz için teşekkürler. Yeni bir randevu için sizi arayacağız. İyi günler.`,
+  none:  () => `Size ulaşamadık, salon sizi arayacak. İyi günler.`,
+};
+
+const callXml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+const callSay = text => `<Say language="tr-TR" voice="${CALL_VOICE}">${callXml(text)}</Say>`;
+const callTime = t => (/^([01]\d|2[0-3]):[0-5]\d$/.test(t || '') ? t : '14:30');
+
+// One question: the words inside a Gather, then — if no key comes — on to
+// /call/answer with no digits, which counts as a wrong key.
+function callAsk(origin, text, tries) {
+  const next = callXml(`${origin}/call/answer?n=${tries}`);
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>`
+    + `<Gather numDigits="1" timeout="6" method="POST" action="${next}">${callSay(text)}</Gather>`
+    + `<Redirect method="POST">${next}</Redirect></Response>`;
+}
+
+// What the call says after a key (or silence). 1 and 2 end the call; anything
+// else repeats the question ONCE, then gives up politely.
+function callAnswer(origin, digits, tries) {
+  const end = text => `<?xml version="1.0" encoding="UTF-8"?><Response>${callSay(text)}<Hangup/></Response>`;
+  if (digits === '1') return end(CALL_SAY.yes());
+  if (digits === '2') return end(CALL_SAY.no());
+  if (tries < 2) return callAsk(origin, CALL_SAY.again(), tries + 1);
+  return end(CALL_SAY.none());
+}
+
+const callTwiml = xml => new Response(xml, { status: 200, headers: { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' } });
+
+async function handleCall(req, env, url) {
+  const origin = url.origin;
+  if (url.pathname === '/call/answer') {
+    let digits = '';
+    if (req.method === 'POST') {
+      try { digits = String((await req.formData()).get('Digits') || ''); } catch (e) { digits = ''; }
+    }
+    const tries = parseInt(url.searchParams.get('n') || '1', 10) || 1;
+    console.log('[call] answer', JSON.stringify(digits), 'try', tries);
+    return callTwiml(callAnswer(origin, digits, tries));
+  }
+  if (url.pathname === '/call/start') {
+    return callTwiml(callAsk(origin, CALL_SAY.ask(callTime(url.searchParams.get('t'))), 1));
+  }
+  if (url.pathname !== '/call/demo') return reply('no', 404);
+  // DEMO_KEY is a word the owner picks for this link alone; BTN_KEY still works.
+  const ck = url.searchParams.get('k') || '';
+  const okKey = (env.DEMO_KEY && sameKey(ck, env.DEMO_KEY)) || (env.BTN_KEY && sameKey(ck, env.BTN_KEY));
+  if (!okKey) return reply('no', 403);
+  if (!env.TWILIO_SID || !env.TWILIO_TOKEN || !env.TWILIO_FROM) return reply('Twilio is not set up yet: TWILIO_SID, TWILIO_TOKEN and TWILIO_FROM are missing.', 503);
+  // 0533 866 9933, 0090 533…, +90 533… all mean the same Turkish/KKTC number.
+  let to = (url.searchParams.get('to') || '').replace(/\D/g, '');
+  if (to.startsWith('00')) to = to.slice(2);
+  else if (to.length === 11 && to.startsWith('0')) to = '90' + to.slice(1);
+  if (to.length < 10 || to.length > 15) return reply('to: the number to ring, with country code, e.g. 905338669933', 400);
+  const t = callTime(url.searchParams.get('t'));
+  // A trial account refuses inline Twiml, so Twilio fetches the words from
+  // /call/start instead — To, From and Url are all a trial allows.
+  const body = new URLSearchParams({ To: '+' + to, From: env.TWILIO_FROM, Url: `${origin}/call/start?t=${encodeURIComponent(t)}` });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_SID}/Calls.json`, {
+    method: 'POST',
+    headers: { authorization: 'Basic ' + btoa(env.TWILIO_SID + ':' + env.TWILIO_TOKEN), 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const out = await res.json().catch(() => ({}));
+  console.log('[call] demo to', to, res.status, out.sid || out.message || '');
+  if (!res.ok) return reply('Twilio said no: ' + (out.message || res.status), 502);
+  return reply('Arıyor… / Calling +' + to + ' now.', 200);
+}
+
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
-         raConfig, raPlan, runReviewAsk,
-         hookSign, hookVerify, hookParse, hookMatchOffer, handleHook };
+         raConfig, raPlan, runReviewAsk, waConfirmLive,
+         hookSign, hookVerify, hookParse, hookMatchOffer, handleHook,
+         CALL_SAY, callAsk, callAnswer, handleCall };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -1924,6 +2067,8 @@ export default {
     // holds none; its signature is the door. Routed before the keyed routes.
     if (url.pathname === '/wa/hook') return handleHook(req, env, ctx, url);
     if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
+    // The robot confirmation call (demo). See handleCall.
+    if (url.pathname.startsWith('/call/')) return handleCall(req, env, url);
     // The "Detaylar / Details" button on both approved WhatsApp templates
     // lands under /r/ — the real confirm page, public by design (customers
     // hold no key). See handleRPage.
