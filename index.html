@@ -15103,6 +15103,28 @@ function renderCashCheck(){
     const sub=list.reduce((s,r)=>s+(r.orphan?0:r.amount),0);
     const dtv=dtTotals&&(st in dtTotals)?dtTotals[st]:null;
     const diff=(dtv!==null)?(dtv-sub):null;
+    /* WHY the Fark, not just how much.
+       The owner looked at "⚠️ Fark: +₺2,100" against Helen and at "+₺2,000"
+       against Lissa and read them as something entered twice. They are not:
+       every Fark in this screen has a named cause sitting in the rows below
+       it — money in the till with no appointment behind it (Karşılıksız), or
+       an appointment finished with nothing in the till (Kasa kaydı yok). The
+       badges were already on the rows. Nobody connects a number at the top of
+       a table to a badge eleven lines down, so the number now says the name
+       and the figure itself. */
+    const _ccOrph=list.filter(r=>r.orphan), _ccNoTill=list.filter(r=>r.noTill);
+    const _ccWhy=(function(){
+      const bits=[];
+      if(diff>0.5 && _ccOrph.length)
+        bits.push('karşılıksız: '+_ccOrph.map(r=>r.client+' ₺'+r.amount.toLocaleString()).join(', '));
+      if(diff<-0.5 && _ccNoTill.length)
+        bits.push('kasa kaydı yok: '+_ccNoTill.map(r=>r.client+' ₺'+r.amount.toLocaleString()).join(', '));
+      // A difference with nothing flagged is the one worth saying out loud:
+      // it means the day's till total was typed by hand and does not match.
+      if(!bits.length && diff!==null && Math.abs(diff)>0.5)
+        bits.push('eşleşen kayıt yok — kasa toplamı elle girilmiş olabilir');
+      return bits.join(' · ');
+    })();
     html+='<div style="margin-bottom:16px;">'
       +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:6px;flex-wrap:wrap;">'
       +'<div class="avatar" style="background:'+avC(st)+';width:26px;height:26px;font-size:0.68rem">'+avI(st)+'</div>'
@@ -15112,7 +15134,9 @@ function renderCashCheck(){
       +(dtv!==null?'<span style="font-weight:700;color:var(--blue);">Kasa: ₺'+dtv.toLocaleString()+'</span>':'')
       +(diff!==null&&Math.abs(diff)>0.5?'<span style="font-weight:800;color:#d9534f;background:rgba(217,83,79,0.1);border:1px solid rgba(217,83,79,0.3);border-radius:7px;padding:2px 9px;font-size:0.78rem;">⚠️ Fark: '+(diff>0?"+":"")+'₺'+diff.toLocaleString()+'</span>'
         :(diff!==null?'<span style="font-weight:700;color:var(--waDark);font-size:0.78rem;">✓ Tutuyor</span>':''))
-      +'</div>';
+      +'</div>'
+      // The cause, on its own line under the name, where there is room for it.
+      +(_ccWhy?'<div style="margin:-2px 0 8px 35px;font-size:0.76rem;color:#b4463f;">↳ '+_ccWhy+'</div>':'');
     if(list.length){
       html+='<table class="tbl"><thead><tr><th style="width:36px;">✔</th><th>Saat</th><th>Müşteri</th><th>Hizmet</th><th>Tutar</th><th>Ödeme</th><th style=\"width:150px;\"></th></tr></thead><tbody>';
       list.forEach(r=>{
