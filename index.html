@@ -4427,7 +4427,7 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="page" id="page-deductions">
       <div style="margin-bottom:20px;">
         <div style="font-weight:700;font-size:1.1rem;color:var(--gold);margin-bottom:4px;">✂️ Kesintiler — Komisyon Kuralları</div>
-        <div style="font-size:0.78rem;color:#666;">1.5 saat aşımı / memnuniyetsizlik → komisyon iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
+        <div style="font-size:0.78rem;color:#666;">Komisyon yalnızca Crown Board taçı (zamanında başla + 60 dk içinde bitir) + çıkışta 😊 Memnun ise · Aksi halde otomatik iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
       </div>
       <div id="ded-form-box" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;"></div>
       <div id="ded-summary" style="margin-bottom:18px;"></div>
@@ -6619,7 +6619,7 @@ function renderDashGrid(){
       // before the customer reaches the till (the till itself asks at her last
       // appointment of the day).
       try{ html += (typeof dpDebtBadge==='function') ? dpDebtBadge(a.clientId) : ''; }catch(e){}
-      html += '<div style="display:flex;gap:3px;">';
+      html += '<div style="display:flex;gap:3px;flex-wrap:wrap;">';
       const _isBlk = (typeof rdIsBlocker==='function') && rdIsBlocker(a.clientId);
       if(_isBlk){
         // A held hour, not a customer: it can be moved (✏) or released (✕) —
@@ -6638,6 +6638,7 @@ function renderDashGrid(){
         html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       } else {
         html += '<span style="font-size:0.68rem;font-weight:800;color:#c9584a;padding:2px 4px;">✓ Completed</span>';
+        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span><div style="flex-basis:100%;font-size:0.6rem;font-weight:700;color:#c94040;">'+dtEscHtml(commReasonShort(a))+'</div>'; }catch(e){}
         // A completed appointment used to lose its Edit button, so a price that
         // went in wrong could never be corrected from here.
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;margin-left:auto;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fiyat</button>';
@@ -7312,12 +7313,15 @@ function quickBookStaff(staffName, slotH){
 // ══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════
 // ✂️ DEDUCTIONS — commission rules & salary cuts
-// overtime / dissatisfied → that customer's commission is cancelled
+// late / overtime / dissatisfied → that customer's commission is cancelled
 // unpaid redo → full service amount deducted from technician
 // Applies to: Hannah 12%, Lissa 12%, Zara 25%, Beyhan 80%
 // ══════════════════════════════════════════════
 const DED_RATES = {Hannah:0.12, Lissa:0.12};
 const DED_TYPES = {
+  // From 5 Oct 2026: she earns commission on a job only if she was on time
+  // AND the customer was happy. Late or a complaint → no commission on it.
+  late:     {label:'⏰ Geç kaldı — komisyon iptal', full:false},
   overtime: {label:'⏱ 1.5 saat aşıldı — komisyon iptal', full:false},
   unsat:    {label:'😞 Müşteri memnun değil — komisyon iptal', full:false},
   redo:     {label:'🔁 Ücretsiz tekrar (ödeme alınmadı) — tutar kesilir', full:true}
@@ -7389,10 +7393,130 @@ function dedAmountOf(item){
 }
 function dedItemsForMonth(monthKey){
   if(typeof dedState==='undefined' || !dedState) return [];
-  return (dedState.items||[]).filter(function(it){
+  const stored = (dedState.items||[]).filter(function(it){
     return it && !it.removed && (it.date||'').slice(0,7)===monthKey;
   });
+  // …plus every job THE RULE took commission off by itself (see commAutoItems).
+  // A job someone already marked by hand is counted once, as the hand record.
+  const marked = {};
+  stored.forEach(function(it){ if(it.apptId!=null) marked[String(it.apptId)] = 1; });
+  return stored.concat(commAutoItems(monthKey).filter(function(it){ return !marked[String(it.apptId)]; }));
 }
+
+// ── THE RULE — commission comes from the system, not from anyone's say-so ──
+// From 5 Oct 2026 a technician on the scheme (DED_RATES) earns commission on a
+// job only if the Crown Board gave it a crown AND the customer was happy:
+//   crown  → she pressed start (wall button / Crown Board) no later than
+//            COMM_LATE_GRACE_MIN after the booked time, and finished it with the
+//            long press inside her limit (60 min). timers.html files every
+//            finished job to timers/sessions with crown true/false.
+//   happy  → a.sat, the mandatory question at checkout (😊 Memnun)
+// No start press at all, a finish after the limit, a late start, 😕 or
+// "Sormadım" → that job earns nothing. Nobody marks anything: the app reads it.
+const COMM_RULE_FROM = '2026-10-05';
+const COMM_LATE_GRACE_MIN = 10;
+// The rule went live mid-morning on 5 Oct. A job that day is only penalised on
+// real evidence (a Crown Board record, or 😕 at checkout) — "no record" and
+// "Sormadım" count from the 6th, when everyone has been told.
+const COMM_NOEVIDENCE_FROM = '2026-10-06';
+const COMM_STRICT = true;
+DED_TYPES.nocrown  = {label:'😢 60 dk içinde bitirilmedi (taç yok) — komisyon yok', full:false, auto:true};
+DED_TYPES.nostart  = {label:'🚫 Crown Board’da başlatılmadı — komisyon yok', full:false, auto:true};
+DED_TYPES.notasked = {label:'❔ Memnuniyet sorulmadı — komisyon yok', full:false, auto:true};
+DED_TYPES.latestart= {label:'⏰ Müşteriye geç başladı — komisyon yok', full:false, auto:true};
+// Crown Board data, kept live by commCrownListen below. Until the sessions have
+// arrived once, no job is judged — a slow connection must never cost anybody.
+let commSessions = [], commOps = {}, commSessionsLoaded = false;
+function commLocalDay(ms){
+  const d = new Date(Number(ms));
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function commBookedMs(a){ return new Date(String(a.datetime||'').slice(0,16)).getTime(); }
+// Pair her finished appointments of the day with her Crown Board jobs of the
+// day, in time order: each appointment takes the first unused job that started
+// between 45 min before and 90 min after its booked time.
+function commSessionFor(a){
+  const day = String(a.datetime||'').slice(0,10);
+  const sess = commSessions.filter(function(x){ return x && x.operator===a.staff && commLocalDay(x.startAt)===day; })
+    .sort(function(x,y){ return x.startAt-y.startAt; });
+  const mine = (typeof appointments!=='undefined' && Array.isArray(appointments) ? appointments : []).filter(function(x){
+    return x && x.staff===a.staff && x.status==='completed' && String(x.datetime||'').slice(0,10)===day;
+  }).sort(function(x,y){ return commBookedMs(x)-commBookedMs(y); });
+  const used = {};
+  for(let i=0;i<mine.length;i++){
+    const t = commBookedMs(mine[i]);
+    const hit = sess.find(function(x){ return !used[x.id] && x.startAt>=t-45*60000 && x.startAt<=t+90*60000; });
+    if(hit) used[hit.id] = 1;
+    if(String(mine[i].id)===String(a.id)) return hit || null;
+  }
+  return null;
+}
+// Why this job earns no commission — or null when it earns it (or is not
+// decided yet: her Crown Board job is still running).
+function commVerdict(a){
+  if(!a || a.status!=='completed' || !a.staff || DED_RATES[a.staff]===undefined) return null;
+  const day = String(a.datetime||'').slice(0,10);
+  if(!day || day < COMM_RULE_FROM) return null;
+  try{ if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return null; }catch(e){}
+  if(a.sat==='unhappy') return 'unsat';
+  if(commSessionsLoaded){
+    const s = commSessionFor(a);
+    if(s){
+      if(s.noPress) return 'nostart';
+      if(!s.crown) return 'nocrown';
+      if((s.startAt - commBookedMs(a))/60000 > COMM_LATE_GRACE_MIN) return 'latestart';
+    }else{
+      // Still on the board — the long press has not come yet. Judged once it does
+      // (or once the limit runs out and she files it without a crown).
+      const key = String(a.staff).toLowerCase();
+      const cur = (commOps[key]||{}).current;
+      const running = cur && commLocalDay(cur.startAt)===day;
+      if(!running && day >= COMM_NOEVIDENCE_FROM) return 'nostart';
+    }
+  }
+  if(COMM_STRICT && a.sat==='not_asked' && day >= COMM_NOEVIDENCE_FROM) return 'notasked';
+  return null;
+}
+// The reason in a few words, with the Crown Board's own times, so the red mark
+// on the card answers "why?" without anyone having to ask.
+function commReasonShort(a){
+  const why = commVerdict(a); if(!why) return '';
+  const hm = function(ms){ const d=new Date(Number(ms)); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+  const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
+  if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç)';
+  if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk (sınır '+(s.limitMin||60)+')';
+  return {nostart:'Crown Board\u2019da başlatılmadı', unsat:'müşteri memnun değil', notasked:'memnuniyet sorulmadı'}[why] || '';
+}
+function commAutoItems(monthKey){
+  if(typeof appointments==='undefined' || !Array.isArray(appointments)) return [];
+  const out = [];
+  appointments.forEach(function(a){
+    if(!a || String(a.datetime||'').slice(0,7)!==monthKey) return;
+    const why = commVerdict(a); if(!why) return;
+    const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
+    out.push({id:'auto_'+a.id, auto:true, apptId:a.id, tech:a.staff, type:why,
+      date:String(a.datetime).slice(0,10), time:String(a.datetime).slice(11,16),
+      service:a.service||'', amount:0,
+      note: s ? (why==='nocrown' ? (s.elapsedMin||0)+' dk sürdü' : Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç başladı') : ''});
+  });
+  return out;
+}
+function commCrownListen(){
+  try{
+    if(commCrownListen._on || typeof _fbDb==='undefined' || !_fbDb) return;
+    commCrownListen._on = true;
+    const from = new Date(COMM_RULE_FROM+'T00:00').getTime();
+    _fbDb.ref('timers/sessions').orderByChild('startAt').startAt(from).on('value', function(snap){
+      const v = snap.val()||{};
+      commSessions = Object.keys(v).map(function(k){ const x=v[k]||{}; x.id=x.id||k; x.startAt=Number(x.startAt)||0; return x; });
+      commSessionsLoaded = true;
+      try{ renderDash(); }catch(e){}
+      try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+    }, function(e){ console.warn('[comm] sessions read denied:', e); });
+    _fbDb.ref('timers/ops').on('value', function(snap){ commOps = snap.val()||{}; });
+  }catch(e){ commCrownListen._on = false; console.warn('[comm] listen error:', e); }
+}
+setInterval(commCrownListen, 3000);
 // Salary cuts only — the free-redo type, where the salon took no money at all.
 function dedTotalsForMonth(monthKey){
   const t = {};
@@ -8143,7 +8267,7 @@ function renderDeductionsPage(){
   const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
   // Form
   let opts=''; Object.keys(DED_RATES).forEach(t=>{opts+='<option value="'+t+'">'+t+' (%'+Math.round(DED_RATES[t]*100)+')</option>';});
-  let topts=''; Object.keys(DED_TYPES).forEach(k=>{topts+='<option value="'+k+'">'+DED_TYPES[k].label+'</option>';});
+  let topts=''; Object.keys(DED_TYPES).forEach(k=>{if(DED_TYPES[k].auto)return;topts+='<option value="'+k+'">'+DED_TYPES[k].label+'</option>';});
   const inpCss='padding:9px;border:1px solid var(--border);border-radius:8px;font-family:\'Nunito\',sans-serif;';
   const nowTime=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const clientOpts=dedClientLabels().map(function(l){ return '<option value="'+dtEscHtml(l)+'"></option>'; }).join('');
@@ -8210,7 +8334,7 @@ function renderDeductionsPage(){
       '<span style="font-size:0.78rem;color:#666;">Hizmet: '+(pending?'<i style="color:#c98a2e;">fiyat bekleniyor</i>':'₺'+amt.toLocaleString('tr-TR'))+'</span>'+
       '<b style="color:#c94040;" title="'+(full?'Maaştan kesilir':'Bu işin komisyonu verilmez')+'">'+
         (full?'−₺'+dedAmountOf(it).toLocaleString('tr-TR')+' maaştan':'komisyon yok −₺'+dedAmountOf(it).toLocaleString('tr-TR'))+'</b>'+
-      '<button onclick="dedDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button></div>';
+      (it.auto?'<span title="Kural otomatik uyguladı" style="font-size:0.7rem;color:#888;">otomatik</span>':'<button onclick="dedDelete(\''+it.id+'\')" style="padding:5px 10px;border:1px solid rgba(232,122,122,0.4);background:rgba(232,122,122,0.08);border-radius:8px;cursor:pointer;">🗑</button>')+'</div>';
   });
   // Per-technician record — what each of them was NOT paid commission on.
   let perTech='';
@@ -16160,9 +16284,13 @@ function dtRenderEntries(op, opIdx){
   if(!op.entries.length) return '<div class="no-entries">No transactions yet</div>';
   const inScheme = (typeof DED_RATES!=='undefined') && DED_RATES[op.name];
   return op.entries.map((e,i)=>{
-    const isDed = !!e.ded;
-    const dedLbl = isDed ? (e.ded==='redo' ? 'KESİNTİ' : 'KOMİSYON YOK') : '';
-    const noPay = !isDed && !e.pay;
+    // The commission rule decides on its own too (commVerdict) — same red label.
+    let _autoV = null;
+    try{ if(!e.ded && e.apptId!=null && typeof commVerdict==='function') _autoV = commVerdict(dedApptById(e.apptId)); }catch(_e){}
+    const noPay = !e.ded && !e.pay;
+    const isDed = !!e.ded || !!_autoV;
+    let dedLbl = isDed ? (e.ded==='redo' ? 'KESİNTİ' : 'KOMİSYON YOK') : '';
+    try{ if(_autoV){ const _rs = commReasonShort(dedApptById(e.apptId)); if(_rs) dedLbl += ' · '+dtEscHtml(_rs); } }catch(_e){}
     return `
     <div class="entry-row ${noPay?'pm-untagged':''}" style="${isDed?'background:rgba(201,64,64,0.10);border:1px solid rgba(201,64,64,0.35);border-radius:8px;':(noPay?'background:rgba(232,122,122,0.08);border:1px dashed rgba(232,122,122,0.45);border-radius:8px;':'')}">
       <span class="entry-service" style="${isDed?'color:#c94040;':''}">${dtEscHtml(e.service||'Service')}${isDed?' <b style=\'font-size:0.6rem;background:#c94040;color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;\'>✂ '+dedLbl+'</b>':''} ${pmChip(e,opIdx,i)}</span>
@@ -16191,13 +16319,14 @@ function dedFlagEntry(opIdx, entryIdx){
     'Sebep seçin:\n' +
     '1 = ⏱ 1.5 saat aşıldı (komisyon iptal)\n' +
     '2 = 😞 Müşteri memnun değil (komisyon iptal)\n' +
-    '3 = 🔁 Ücretsiz tekrar — ödeme alınmadı (tutarın tamamı kesilir)\n\n' +
-    '1, 2 veya 3 yazın:'
+    '3 = 🔁 Ücretsiz tekrar — ödeme alınmadı (tutarın tamamı kesilir)\n' +
+    '4 = ⏰ Geç kaldı (komisyon iptal)\n\n' +
+    '1, 2, 3 veya 4 yazın:'
   );
   if(!choice) return;
-  const map = {'1':'overtime','2':'unsat','3':'redo'};
+  const map = {'1':'overtime','2':'unsat','3':'redo','4':'late'};
   const type = map[choice.trim()];
-  if(!type){ alert('Geçersiz seçim. 1, 2 veya 3 yazın.'); return; }
+  if(!type){ alert('Geçersiz seçim. 1, 2, 3 veya 4 yazın.'); return; }
   const n = new Date();
   const date = n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
   const recId = rdNewId();
