@@ -1897,9 +1897,10 @@ async function hookForward(env, ctx, rec) {
 // key. It writes NOTHING to Firebase: no appointment turns green or red yet.
 //
 //   GET /call/demo?k=<DEMO_KEY or BTN_KEY>&to=90533…&t=14:30   rings the phone
+//   /call/start                                    Twilio, when the call connects
 //   POST /call/answer                              Twilio, after a key press
 //
-// /call/answer is public because Twilio holds no key; it only ever returns
+// /call/start and /call/answer are public because Twilio holds no key; they only return
 // spoken words, never reads or writes anything. The Twilio credentials are
 // wrangler secrets — TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM (the number the
 // call comes from) — never written here. Without them /call/demo says so.
@@ -1950,6 +1951,9 @@ async function handleCall(req, env, url) {
     console.log('[call] answer', JSON.stringify(digits), 'try', tries);
     return callTwiml(callAnswer(origin, digits, tries));
   }
+  if (url.pathname === '/call/start') {
+    return callTwiml(callAsk(origin, CALL_SAY.ask(callTime(url.searchParams.get('t'))), 1));
+  }
   if (url.pathname !== '/call/demo') return reply('no', 404);
   // DEMO_KEY is a word the owner picks for this link alone; BTN_KEY still works.
   const ck = url.searchParams.get('k') || '';
@@ -1962,7 +1966,9 @@ async function handleCall(req, env, url) {
   else if (to.length === 11 && to.startsWith('0')) to = '90' + to.slice(1);
   if (to.length < 10 || to.length > 15) return reply('to: the number to ring, with country code, e.g. 905338669933', 400);
   const t = callTime(url.searchParams.get('t'));
-  const body = new URLSearchParams({ To: '+' + to, From: env.TWILIO_FROM, Twiml: callAsk(origin, CALL_SAY.ask(t), 1) });
+  // A trial account refuses inline Twiml, so Twilio fetches the words from
+  // /call/start instead — To, From and Url are all a trial allows.
+  const body = new URLSearchParams({ To: '+' + to, From: env.TWILIO_FROM, Url: `${origin}/call/start?t=${encodeURIComponent(t)}` });
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_SID}/Calls.json`, {
     method: 'POST',
     headers: { authorization: 'Basic ' + btoa(env.TWILIO_SID + ':' + env.TWILIO_TOKEN), 'content-type': 'application/x-www-form-urlencoded' },

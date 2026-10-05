@@ -45,15 +45,18 @@ const is = (got, want, label) => {
   const p = new URLSearchParams(calls[0].o.body.toString());
   is(p.get('To'), '+905338669933', '0090… → +90533…');
   is(p.get('From'), '+15550001111', 'from the Twilio number');
-  is(p.get('Twiml').includes("saat 10:30&apos;da randevunuz var"), true, 'speaks the appointment time');
-  is(p.get('Twiml').includes('voice="Polly.Filiz"'), true, 'Turkish voice');
-  is(p.get('Twiml').includes('action="https://w.dev/call/answer?n=1"'), true, 'keys go to /call/answer');
+  is([...p.keys()].sort(), ['From', 'To', 'Url'], 'only To, From, Url — all a trial account allows');
+  is(p.get('Url'), 'https://w.dev/call/start?t=10%3A30', 'Twilio fetches the words from /call/start');
+  const start = await (await worker.fetch(new Request(p.get('Url'), { method: 'POST' }), env, {})).text();
+  is(start.includes("saat 10:30&apos;da randevunuz var"), true, 'speaks the appointment time');
+  is(start.includes('voice="Polly.Filiz"'), true, 'Turkish voice');
+  is(start.includes('action="https://w.dev/call/answer?n=1"'), true, 'keys go to /call/answer');
   calls.length = 0;
   await get('?k=kk&to=0533 866 9933');
   is(new URLSearchParams(calls[0].o.body.toString()).get('To'), '+905338669933', '0533… → +90533…');
   calls.length = 0;
   await get('?k=kk&to=905338669933&t=<x>');
-  is(new URLSearchParams(calls[0].o.body.toString()).get('Twiml').includes('saat 14:30'), true, 'a bad time falls back to 14:30');
+  is(new URLSearchParams(calls[0].o.body.toString()).get('Url').endsWith('t=14%3A30'), true, 'a bad time falls back to 14:30');
 
   console.log('3. the keys');
   const ans = async (n, digits) => {
