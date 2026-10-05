@@ -31,7 +31,10 @@ const is = (got, want, label) => {
   is((await get('?k=bad&to=905338669933')).status, 403, 'wrong key → 403');
   is((await get('?k=kk&to=905338669933', { BTN_KEY: 'kk' })).status, 503, 'no Twilio secrets → 503');
   is((await get('?k=kk')).status, 400, 'no number → 400');
+  is((await get('?k=&to=905338669933', { ...env, BTN_KEY: '' })).status, 403, 'empty key with no secrets → 403');
   is(calls.length, 0, '…and nothing was dialled');
+  is((await get('?k=gul&to=905338669933', { ...env, DEMO_KEY: 'gul' })).status, 200, 'DEMO_KEY opens it too');
+  calls.length = 0;
 
   console.log('2. the call');
   const r = await get('?k=kk&to=0090 533 866 9933&t=10:30');

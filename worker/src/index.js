@@ -1896,7 +1896,7 @@ async function hookForward(env, ctx, rec) {
 // (Polly.Filiz — Emel's own recordings replace it later), and answers each
 // key. It writes NOTHING to Firebase: no appointment turns green or red yet.
 //
-//   GET /call/demo?k=<BTN_KEY>&to=90533…&t=14:30   rings the phone
+//   GET /call/demo?k=<DEMO_KEY or BTN_KEY>&to=90533…&t=14:30   rings the phone
 //   POST /call/answer                              Twilio, after a key press
 //
 // /call/answer is public because Twilio holds no key; it only ever returns
@@ -1951,7 +1951,10 @@ async function handleCall(req, env, url) {
     return callTwiml(callAnswer(origin, digits, tries));
   }
   if (url.pathname !== '/call/demo') return reply('no', 404);
-  if (!env.BTN_KEY || !sameKey(url.searchParams.get('k') || '', env.BTN_KEY)) return reply('no', 403);
+  // DEMO_KEY is a word the owner picks for this link alone; BTN_KEY still works.
+  const ck = url.searchParams.get('k') || '';
+  const okKey = (env.DEMO_KEY && sameKey(ck, env.DEMO_KEY)) || (env.BTN_KEY && sameKey(ck, env.BTN_KEY));
+  if (!okKey) return reply('no', 403);
   if (!env.TWILIO_SID || !env.TWILIO_TOKEN || !env.TWILIO_FROM) return reply('Twilio is not set up yet: TWILIO_SID, TWILIO_TOKEN and TWILIO_FROM are missing.', 503);
   // 0533 866 9933, 0090 533…, +90 533… all mean the same Turkish/KKTC number.
   let to = (url.searchParams.get('to') || '').replace(/\D/g, '');
