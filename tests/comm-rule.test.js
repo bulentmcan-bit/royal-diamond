@@ -68,6 +68,11 @@ is(commVerdict(ctx.appointments[0]), null, '5 Oct, Sormadım → not penalised')
 run([{ ...base, datetime: '2026-10-05T10:00' }], [sess('s1', '10:20', true, { startAt: T('10:20', '2026-10-05') })]);
 is(commVerdict(ctx.appointments[0]), 'latestart', '5 Oct, real late start on the board → penalised');
 
+run([base], [sess('s1', '10:10', true, { startAt: T('10:10') + 40000 })]);
+is(commVerdict(base), null, 'started 10:10:40 → 10 whole minutes → on time');
+run([base], [sess('s1', '10:11', true)]);
+is(commVerdict(base), 'latestart', 'started 10:11 → 11 minutes → late');
+
 console.log('1b. the reason on the card carries the board times');
 run([base], [sess('s1', '10:25', true)]);
 is(commReasonShort(base), '10:25 başladı (25 dk geç)', 'late start shows when she started');
