@@ -24,8 +24,8 @@ const to = html.indexOf('// The record the technician is entitled to see');
 const src = html.slice(from, to);
 const ctx = { console, window: {}, appointments: [], dedState: { items: [] }, setInterval: () => 0 };
 vm.createContext(ctx);
-vm.runInContext(src + '\nthis.api={commVerdict,dedItemsForMonth,dedNoCommByTech};', ctx);
-const { commVerdict, dedItemsForMonth, dedNoCommByTech } = ctx.api;
+vm.runInContext(src + '\nthis.api={commVerdict,dedItemsForMonth,dedNoCommByTech,commReasonShort};', ctx);
+const { commVerdict, dedItemsForMonth, dedNoCommByTech, commReasonShort } = ctx.api;
 const at = (hm) => new Date('2026-10-06T' + hm).getTime();
 
 const T = (hm, d) => new Date((d||'2026-10-06') + 'T' + hm).getTime();
@@ -60,6 +60,14 @@ is(commVerdict(ctx.appointments[0]), null, 'off-scheme technician → untouched'
 vm.runInContext('commSessionsLoaded = false;', ctx);
 ctx.appointments = [base];
 is(commVerdict(base), null, 'board data not loaded yet → nobody loses anything');
+
+console.log('1b. the reason on the card carries the board times');
+run([base], [sess('s1', '10:25', true)]);
+is(commReasonShort(base), '10:25 başladı (25 dk geç)', 'late start shows when she started');
+run([base], [Object.assign(sess('s1', '10:02', false), { endAt: T('11:17'), elapsedMin: 75, limitMin: 60 })]);
+is(commReasonShort(base), '10:02–11:17 · 75 dk (sınır 60)', 'no crown shows start, finish and minutes');
+run([base], []);
+is(commReasonShort(base), 'Crown Board\u2019da başlatılmadı', 'never started says so');
 
 console.log('2. two jobs in a row pair up in order');
 const a1 = { ...base, id: 1 }, a2 = { ...base, id: 2, datetime: '2026-10-06T11:00' };
