@@ -61,6 +61,13 @@ vm.runInContext('commSessionsLoaded = false;', ctx);
 ctx.appointments = [base];
 is(commVerdict(base), null, 'board data not loaded yet → nobody loses anything');
 
+run([{ ...base, datetime: '2026-10-05T10:00' }], []);
+is(commVerdict(ctx.appointments[0]), null, '5 Oct, no board record → not penalised (rule went live that morning)');
+run([{ ...base, datetime: '2026-10-05T10:00', sat: 'not_asked' }], [sess('s1', '10:01', true, { startAt: T('10:01', '2026-10-05') })]);
+is(commVerdict(ctx.appointments[0]), null, '5 Oct, Sormadım → not penalised');
+run([{ ...base, datetime: '2026-10-05T10:00' }], [sess('s1', '10:20', true, { startAt: T('10:20', '2026-10-05') })]);
+is(commVerdict(ctx.appointments[0]), 'latestart', '5 Oct, real late start on the board → penalised');
+
 console.log('1b. the reason on the card carries the board times');
 run([base], [sess('s1', '10:25', true)]);
 is(commReasonShort(base), '10:25 başladı (25 dk geç)', 'late start shows when she started');

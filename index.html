@@ -7415,6 +7415,10 @@ function dedItemsForMonth(monthKey){
 // "Sormadım" → that job earns nothing. Nobody marks anything: the app reads it.
 const COMM_RULE_FROM = '2026-10-05';
 const COMM_LATE_GRACE_MIN = 10;
+// The rule went live mid-morning on 5 Oct. A job that day is only penalised on
+// real evidence (a Crown Board record, or 😕 at checkout) — "no record" and
+// "Sormadım" count from the 6th, when everyone has been told.
+const COMM_NOEVIDENCE_FROM = '2026-10-06';
 const COMM_STRICT = true;
 DED_TYPES.nocrown  = {label:'😢 60 dk içinde bitirilmedi (taç yok) — komisyon yok', full:false, auto:true};
 DED_TYPES.nostart  = {label:'🚫 Crown Board’da başlatılmadı — komisyon yok', full:false, auto:true};
@@ -7467,10 +7471,10 @@ function commVerdict(a){
       const key = String(a.staff).toLowerCase();
       const cur = (commOps[key]||{}).current;
       const running = cur && commLocalDay(cur.startAt)===day;
-      if(!running) return 'nostart';
+      if(!running && day >= COMM_NOEVIDENCE_FROM) return 'nostart';
     }
   }
-  if(COMM_STRICT && a.sat==='not_asked') return 'notasked';
+  if(COMM_STRICT && a.sat==='not_asked' && day >= COMM_NOEVIDENCE_FROM) return 'notasked';
   return null;
 }
 // The reason in a few words, with the Crown Board's own times, so the red mark
