@@ -4427,7 +4427,7 @@ p, span, div, label, h1, h2, h3, h4 {
     <div class="page" id="page-deductions">
       <div style="margin-bottom:20px;">
         <div style="font-weight:700;font-size:1.1rem;color:var(--gold);margin-bottom:4px;">✂️ Kesintiler — Komisyon Kuralları</div>
-        <div style="font-size:0.78rem;color:#666;">Komisyon yalnızca ▶ Başladı zamanında + çıkışta 😊 Memnun ise · Geç / memnun değil / sorulmadı → otomatik iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
+        <div style="font-size:0.78rem;color:#666;">Komisyon yalnızca Crown Board taçı (zamanında başla + 60 dk içinde bitir) + çıkışta 😊 Memnun ise · Aksi halde otomatik iptal · Ücretsiz tekrar → tutar maaştan kesilir · Hannah %12 · Lissa %12</div>
       </div>
       <div id="ded-form-box" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;"></div>
       <div id="ded-summary" style="margin-bottom:18px;"></div>
@@ -6628,7 +6628,6 @@ function renderDashGrid(){
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 44px;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
       } else if(!isDone){
-        html += commStartBtn(a);
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:1;padding:2px 0;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Edit</button>';
         html += '<button onclick="dashCompleteAppt('+a.id+')" style="flex:1;padding:2px 0;background:#2f7fe0;border:1px solid #2f7fe0;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">✓ Done</button>';
         html += '<button onclick="dashCancelAppt('+a.id+')" style="flex:0 0 28px;padding:2px 0;background:rgba(232,122,122,0.1);border:1px solid rgba(232,122,122,0.2);border-radius:4px;color:#e87a7a;font-size:0.68rem;cursor:pointer;font-family:Nunito,sans-serif;">✕</button>';
@@ -7406,37 +7405,71 @@ function dedItemsForMonth(monthKey){
 
 // ── THE RULE — commission comes from the system, not from anyone's say-so ──
 // From 5 Oct 2026 a technician on the scheme (DED_RATES) earns commission on a
-// job only if she started it on time AND the customer was happy. Both answers
-// are already recorded by the app itself:
-//   on time → a.startedAt, stamped by ▶ Başladı on the dashboard card; more
-//             than COMM_LATE_GRACE_MIN after the booked time is late
-//   happy   → a.sat, the mandatory question at checkout (😊 Memnun)
-// Strict mode (Bülent, 5 Oct): no ▶ Başladı tap at all, or "Sormadım" at
-// checkout, is not proof — that job earns nothing either.
-// The ▶ button only arrived mid-day on the 5th, so "no tap" counts from the 6th.
+// job only if the Crown Board gave it a crown AND the customer was happy:
+//   crown  → she pressed start (wall button / Crown Board) no later than
+//            COMM_LATE_GRACE_MIN after the booked time, and finished it with the
+//            long press inside her limit (60 min). timers.html files every
+//            finished job to timers/sessions with crown true/false.
+//   happy  → a.sat, the mandatory question at checkout (😊 Memnun)
+// No start press at all, a finish after the limit, a late start, 😕 or
+// "Sormadım" → that job earns nothing. Nobody marks anything: the app reads it.
 const COMM_RULE_FROM = '2026-10-05';
-const COMM_START_TAP_FROM = '2026-10-06';
 const COMM_LATE_GRACE_MIN = 10;
 const COMM_STRICT = true;
-DED_TYPES.nostart  = {label:'▶ Başladı işaretlenmedi — komisyon yok', full:false, auto:true};
+DED_TYPES.nocrown  = {label:'😢 60 dk içinde bitirilmedi (taç yok) — komisyon yok', full:false, auto:true};
+DED_TYPES.nostart  = {label:'🚫 Crown Board’da başlatılmadı — komisyon yok', full:false, auto:true};
 DED_TYPES.notasked = {label:'❔ Memnuniyet sorulmadı — komisyon yok', full:false, auto:true};
-// Minutes after the booked time she actually started; null if never tapped.
-function commLateMin(a){
-  if(!a || !a.startedAt || !a.datetime) return null;
-  const booked = new Date(String(a.datetime).slice(0,16)).getTime();
-  if(isNaN(booked)) return null;
-  return Math.round((Number(a.startedAt) - booked) / 60000);
+DED_TYPES.latestart= {label:'⏰ Müşteriye geç başladı — komisyon yok', full:false, auto:true};
+// Crown Board data, kept live by commCrownListen below. Until the sessions have
+// arrived once, no job is judged — a slow connection must never cost anybody.
+let commSessions = [], commOps = {}, commSessionsLoaded = false;
+function commLocalDay(ms){
+  const d = new Date(Number(ms));
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-// Why this job earns no commission — or null when it earns it.
+function commBookedMs(a){ return new Date(String(a.datetime||'').slice(0,16)).getTime(); }
+// Pair her finished appointments of the day with her Crown Board jobs of the
+// day, in time order: each appointment takes the first unused job that started
+// between 45 min before and 90 min after its booked time.
+function commSessionFor(a){
+  const day = String(a.datetime||'').slice(0,10);
+  const sess = commSessions.filter(function(x){ return x && x.operator===a.staff && commLocalDay(x.startAt)===day; })
+    .sort(function(x,y){ return x.startAt-y.startAt; });
+  const mine = (typeof appointments!=='undefined' && Array.isArray(appointments) ? appointments : []).filter(function(x){
+    return x && x.staff===a.staff && x.status==='completed' && String(x.datetime||'').slice(0,10)===day;
+  }).sort(function(x,y){ return commBookedMs(x)-commBookedMs(y); });
+  const used = {};
+  for(let i=0;i<mine.length;i++){
+    const t = commBookedMs(mine[i]);
+    const hit = sess.find(function(x){ return !used[x.id] && x.startAt>=t-45*60000 && x.startAt<=t+90*60000; });
+    if(hit) used[hit.id] = 1;
+    if(String(mine[i].id)===String(a.id)) return hit || null;
+  }
+  return null;
+}
+// Why this job earns no commission — or null when it earns it (or is not
+// decided yet: her Crown Board job is still running).
 function commVerdict(a){
   if(!a || a.status!=='completed' || !a.staff || DED_RATES[a.staff]===undefined) return null;
   const day = String(a.datetime||'').slice(0,10);
   if(!day || day < COMM_RULE_FROM) return null;
   try{ if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return null; }catch(e){}
   if(a.sat==='unhappy') return 'unsat';
-  const late = commLateMin(a);
-  if(late!==null && late > COMM_LATE_GRACE_MIN) return 'late';
-  if(COMM_STRICT && late===null && day >= COMM_START_TAP_FROM) return 'nostart';
+  if(commSessionsLoaded){
+    const s = commSessionFor(a);
+    if(s){
+      if(s.noPress) return 'nostart';
+      if(!s.crown) return 'nocrown';
+      if((s.startAt - commBookedMs(a))/60000 > COMM_LATE_GRACE_MIN) return 'latestart';
+    }else{
+      // Still on the board — the long press has not come yet. Judged once it does
+      // (or once the limit runs out and she files it without a crown).
+      const key = String(a.staff).toLowerCase();
+      const cur = (commOps[key]||{}).current;
+      const running = cur && commLocalDay(cur.startAt)===day;
+      if(!running) return 'nostart';
+    }
+  }
   if(COMM_STRICT && a.sat==='not_asked') return 'notasked';
   return null;
 }
@@ -7446,36 +7479,30 @@ function commAutoItems(monthKey){
   appointments.forEach(function(a){
     if(!a || String(a.datetime||'').slice(0,7)!==monthKey) return;
     const why = commVerdict(a); if(!why) return;
-    const late = commLateMin(a);
+    const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
     out.push({id:'auto_'+a.id, auto:true, apptId:a.id, tech:a.staff, type:why,
       date:String(a.datetime).slice(0,10), time:String(a.datetime).slice(11,16),
       service:a.service||'', amount:0,
-      note:(why==='late' ? late+' dk geç başladı' : '')});
+      note: s ? (why==='nocrown' ? (s.elapsedMin||0)+' dk sürdü' : Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç başladı') : ''});
   });
   return out;
 }
-// ▶ Başladı — the tap that makes "on time" a fact instead of an opinion.
-function commMarkStart(id){
-  const a = appointments.find(function(x){ return String(x.id)===String(id); });
-  if(!a) return;
-  if(a.startedAt){
-    if(!confirm('Başlama saati silinsin mi?')) return;
-    delete a.startedAt;
-  }else{
-    a.startedAt = Date.now();
-    const late = commLateMin(a);
-    if(late!==null && late > COMM_LATE_GRACE_MIN && DED_RATES[a.staff]!==undefined)
-      toast('⏰','Geç başladı — '+late+' dk', a.staff+' — bu işten komisyon yazılmaz.','r');
-  }
-  saveAll(); renderDash();
+function commCrownListen(){
+  try{
+    if(commCrownListen._on || typeof _fbDb==='undefined' || !_fbDb) return;
+    commCrownListen._on = true;
+    const from = new Date(COMM_RULE_FROM+'T00:00').getTime();
+    _fbDb.ref('timers/sessions').orderByChild('startAt').startAt(from).on('value', function(snap){
+      const v = snap.val()||{};
+      commSessions = Object.keys(v).map(function(k){ const x=v[k]||{}; x.id=x.id||k; x.startAt=Number(x.startAt)||0; return x; });
+      commSessionsLoaded = true;
+      try{ renderDash(); }catch(e){}
+      try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+    }, function(e){ console.warn('[comm] sessions read denied:', e); });
+    _fbDb.ref('timers/ops').on('value', function(snap){ commOps = snap.val()||{}; });
+  }catch(e){ commCrownListen._on = false; console.warn('[comm] listen error:', e); }
 }
-function commStartBtn(a){
-  if(!a || !a.startedAt)
-    return '<button onclick="commMarkStart('+a.id+')" title="Teknisyen müşteriye başladığında dokunun" style="flex:0 0 auto;padding:2px 6px;background:#3f6e50;border:1px solid #3f6e50;border-radius:4px;color:#fff;font-size:0.62rem;font-weight:700;cursor:pointer;font-family:Nunito,sans-serif;">▶ Başladı</button>';
-  const late = commLateMin(a), bad = late!==null && late > COMM_LATE_GRACE_MIN;
-  const t = new Date(Number(a.startedAt)), hm = String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
-  return '<button onclick="commMarkStart('+a.id+')" title="'+(bad?late+' dk geç — komisyon yok':'Zamanında başladı')+'" style="flex:0 0 auto;padding:2px 5px;background:'+(bad?'rgba(201,64,64,0.12)':'rgba(63,110,80,0.12)')+';border:1px solid '+(bad?'#c94040':'#3f6e50')+';border-radius:4px;color:'+(bad?'#c94040':'#3f6e50')+';font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">'+(bad?'⏰ ':'▶ ')+hm+'</button>';
-}
+setInterval(commCrownListen, 3000);
 // Salary cuts only — the free-redo type, where the salon took no money at all.
 function dedTotalsForMonth(monthKey){
   const t = {};
@@ -16243,9 +16270,12 @@ function dtRenderEntries(op, opIdx){
   if(!op.entries.length) return '<div class="no-entries">No transactions yet</div>';
   const inScheme = (typeof DED_RATES!=='undefined') && DED_RATES[op.name];
   return op.entries.map((e,i)=>{
-    const isDed = !!e.ded;
+    // The commission rule decides on its own too (commVerdict) — same red label.
+    let _autoV = null;
+    try{ if(!e.ded && e.apptId!=null && typeof commVerdict==='function') _autoV = commVerdict(dedApptById(e.apptId)); }catch(_e){}
+    const noPay = !e.ded && !e.pay;
+    const isDed = !!e.ded || !!_autoV;
     const dedLbl = isDed ? (e.ded==='redo' ? 'KESİNTİ' : 'KOMİSYON YOK') : '';
-    const noPay = !isDed && !e.pay;
     return `
     <div class="entry-row ${noPay?'pm-untagged':''}" style="${isDed?'background:rgba(201,64,64,0.10);border:1px solid rgba(201,64,64,0.35);border-radius:8px;':(noPay?'background:rgba(232,122,122,0.08);border:1px dashed rgba(232,122,122,0.45);border-radius:8px;':'')}">
       <span class="entry-service" style="${isDed?'color:#c94040;':''}">${dtEscHtml(e.service||'Service')}${isDed?' <b style=\'font-size:0.6rem;background:#c94040;color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;\'>✂ '+dedLbl+'</b>':''} ${pmChip(e,opIdx,i)}</span>
