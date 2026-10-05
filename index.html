@@ -7431,6 +7431,9 @@ function commLocalDay(ms){
   const d = new Date(Number(ms));
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+// Whole minutes late, counted the way the clock on the card reads: a start at
+// 09:10:40 is 09:10, which is 10 minutes — on time, not 11.
+function commLateMin(a, s){ return Math.floor((s.startAt - commBookedMs(a))/60000); }
 function commBookedMs(a){ return new Date(String(a.datetime||'').slice(0,16)).getTime(); }
 // Pair her finished appointments of the day with her Crown Board jobs of the
 // day, in time order: each appointment takes the first unused job that started
@@ -7464,7 +7467,7 @@ function commVerdict(a){
     if(s){
       if(s.noPress) return 'nostart';
       if(!s.crown) return 'nocrown';
-      if((s.startAt - commBookedMs(a))/60000 > COMM_LATE_GRACE_MIN) return 'latestart';
+      if(commLateMin(a, s) > COMM_LATE_GRACE_MIN) return 'latestart';
     }else{
       // Still on the board — the long press has not come yet. Judged once it does
       // (or once the limit runs out and she files it without a crown).
@@ -7483,7 +7486,7 @@ function commReasonShort(a){
   const why = commVerdict(a); if(!why) return '';
   const hm = function(ms){ const d=new Date(Number(ms)); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
   const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
-  if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç)';
+  if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+commLateMin(a, s)+' dk geç)';
   if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk (sınır '+(s.limitMin||60)+')';
   return {nostart:'Crown Board\u2019da başlatılmadı', unsat:'müşteri memnun değil', notasked:'memnuniyet sorulmadı'}[why] || '';
 }
@@ -7508,7 +7511,7 @@ function commAutoItems(monthKey){
     out.push({id:'auto_'+a.id, auto:true, apptId:a.id, tech:a.staff, type:why,
       date:String(a.datetime).slice(0,10), time:String(a.datetime).slice(11,16),
       service:a.service||'', amount:0,
-      note: s ? (why==='nocrown' ? (s.elapsedMin||0)+' dk sürdü' : Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç başladı') : ''});
+      note: s ? (why==='nocrown' ? (s.elapsedMin||0)+' dk sürdü' : commLateMin(a, s)+' dk geç başladı') : ''});
   });
   return out;
 }
