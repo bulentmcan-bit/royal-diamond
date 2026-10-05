@@ -539,9 +539,12 @@ function waNeedsR1(hhmm, openHHMM) {
 // left undefined it sends, the old contract). One already in the past is
 // normal for a same-day booking, not an error — Piyzi refuses anything
 // nearer than 2 minutes, so the line is drawn at 3 to not race it.
-function waReminders(apptUtc, now, needR1) {
+// r1Min moves the short reminder: 120 (two hours) by default; the button
+// reminder uses WA_CONFIRM_MIN instead (see /wa/schedule).
+function waReminders(apptUtc, now, needR1, r1Min) {
   const due = [], skipped = [];
-  for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', apptUtc - 2 * 3600e3]]) {
+  const r1At = apptUtc - (Number(r1Min) > 0 ? Number(r1Min) : 120) * 60e3;
+  for (const [kind, at] of [['r24', apptUtc - 24 * 3600e3], ['r1', r1At]]) {
     if (kind === 'r1' && needR1 === false) { skipped.push({ kind, why: 'call-covers' }); continue; }
     if (at < now + 3 * 60e3) skipped.push({ kind, why: 'past' });
     else due.push({ kind, at });
@@ -807,8 +810,15 @@ async function handleWa(req, env, ctx, url) {
     // The old spec stays as the fallback if Piyzi refuses the new one.
     const confirm = waSpec(env.WA_CONFIRM);
     const fallback = { r24: specs.r24, r1: specs.r1 };
-    if (confirm && await waConfirmLive(env, confirm)) { specs.r24 = confirm; specs.r1 = confirm; }
-    const plan = waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
+    const live = !!(confirm && await waConfirmLive(env, confirm));
+    if (live) { specs.r24 = confirm; specs.r1 = confirm; }
+    // With the buttons live, EVERY customer also gets the short reminder, close
+    // to the hour (WA_CONFIRM_MIN before, default 90) — a lot can change in a
+    // day. Whoever has not tapped by the hour still gets reception's 1 SAAT
+    // KALA call. Before that, the short one stays early-morning only.
+    const plan = live
+      ? waReminders(apptUtc, Date.now(), true, Number(env.WA_CONFIRM_MIN) || 90)
+      : waReminders(apptUtc, Date.now(), waNeedsR1(timeHHMM, env.WA_OPEN));
 
     const scheduled = [], failed = [];
     for (const { kind, at } of plan.due) {

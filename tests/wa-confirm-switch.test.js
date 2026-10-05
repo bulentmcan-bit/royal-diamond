@@ -37,7 +37,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
   const d = new Date(Date.now() + 5 * 86400e3);
   const dateISO = d.toISOString().slice(0, 10);
 
-  function setup({ approved, refuseNew }) {
+  function setup({ approved, refuseNew, open }) {
     const sent = [], listCalls = [];
     globalThis.fetch = async (u, o = {}) => {
       u = String(u);
@@ -58,7 +58,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
       }
       return new Response('{}', { status: 404 });
     };
-    const env = { WA_KEY: 'k', PIYZI_API_KEY: 'p', WA_R24: R24, WA_R1: R1, WA_CONFIRM: CONF, WA_OPEN: '23:59', RD_WA: kv() };
+    const env = { WA_KEY: 'k', PIYZI_API_KEY: 'p', WA_R24: R24, WA_R1: R1, WA_CONFIRM: CONF, WA_CONFIRM_MIN: '90', WA_OPEN: open || '23:59', RD_WA: kv() };
     const send = () => worker.fetch(new Request('https://w.dev/wa/schedule', {
       method: 'POST', headers: { 'x-rd-key': 'k', 'content-type': 'application/json' },
       body: JSON.stringify({ apptId: 'a1', phone: '05338669933', name: 'Ayşe', dateISO, timeHHMM: '14:00', service: 'Manikür' }),
@@ -83,6 +83,24 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     is(s.sent[0].parameters.body[1], '14:00', 'second variable is the hour');
     is(/^\d{1,2} \S+ \S+$/.test(s.sent[0].parameters.body[0]), true, 'first variable is the long date: ' + s.sent[0].parameters.body[0]);
     is(s.sent[0].parameters.buttons, undefined, 'no button value (quick replies have none)');
+    const at = s.sent.map(b => b.scheduledAt).sort();
+    const appt = new Date(at[1]).getTime() + 90 * 60e3;
+    is(new Date(at[0]).getTime(), appt - 24 * 3600e3, '24 hours before');
+    is(new Date(at[1]).getTime(), appt - 90 * 60e3, 'and 90 minutes before (WA_CONFIRM_MIN)');
+  }
+
+  console.log('2b. approved: a mid-day booking also gets the near reminder');
+  {
+    const s = setup({ approved: true, open: '08:00' });
+    await s.send();
+    is(s.sent.length, 2, 'both reminders, though 14:00 is covered by the call before approval');
+  }
+
+  console.log('2c. not approved: a mid-day booking keeps the old rule');
+  {
+    const s = setup({ approved: false, open: '08:00' });
+    await s.send();
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat'], 'only the 24-hour reminder');
   }
 
   console.log('3. Piyzi refuses the new template');
@@ -106,6 +124,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
     const m = toml.match(/^WA_CONFIRM = '(.*)'$/m);
     is(m && JSON.parse(m[1]), JSON.parse(CONF), 'WA_CONFIRM names randevu_onay2 with [dateLong, time]');
+    is(/^WA_CONFIRM_MIN = "90"$/m.test(toml), true, 'WA_CONFIRM_MIN is 90');
     is(/^WA_R24 = '.*pyz_randevu_hatirlatma_24saat/m.test(toml), true, 'old WA_R24 left in place as the fallback');
   }
 

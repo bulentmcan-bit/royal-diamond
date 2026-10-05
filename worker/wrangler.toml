@@ -103,6 +103,10 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 # instead of WA_R24 / WA_R1 — falling back to them if Piyzi refuses it.
 # Empty this line to switch the automatic change off.
 WA_CONFIRM = '{"templateName":"randevu_onay2","languageCode":"tr","body":["{dateLong}","{time}"]}'
+# Once it is live, every customer also gets it this many minutes before the
+# appointment (not only the early ones), so the answer is fresh. 90 leaves
+# half an hour to tap before reception's 1 SAAT KALA call for the silent ones.
+WA_CONFIRM_MIN = "90"
 
 # The booking confirmation, sent the MOMENT a booking is made (no scheduledAt)
 # via POST /wa/confirm-booking. pyz_appointment_booked_v2 carries two body
