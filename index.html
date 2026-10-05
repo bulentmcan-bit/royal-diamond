@@ -6638,7 +6638,7 @@ function renderDashGrid(){
         html += '<button onclick="undoComplete('+a.id+')" style="flex:0 0 auto;padding:2px 6px;background:rgba(150,150,150,0.12);border:1px solid rgba(150,150,150,0.3);border-radius:4px;color:#666;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">↩ Undo</button>';
       } else {
         html += '<span style="font-size:0.68rem;font-weight:800;color:#c9584a;padding:2px 4px;">✓ Completed</span>';
-        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span><div style="flex-basis:100%;font-size:0.6rem;font-weight:700;color:#c94040;">'+dtEscHtml(commReasonShort(a))+'</div>'; }catch(e){}
+        try{ const _cv=commVerdict(a); if(_cv) html += '<span title="'+dtEscHtml(DED_TYPES[_cv].label)+'" style="font-size:0.58rem;font-weight:800;color:#fff;background:#c94040;border-radius:4px;padding:2px 4px;">KOMİSYON YOK</span><div style="flex-basis:100%;font-size:0.6rem;font-weight:700;color:#c94040;">'+dtEscHtml(commReasonShort(a))+'</div>'; else { const _pf=commProofShort(a); if(_pf) html += '<div style="flex-basis:100%;font-size:0.6rem;font-weight:700;color:#3f6e50;">'+dtEscHtml(_pf)+'</div>'; } }catch(e){}
         // A completed appointment used to lose its Edit button, so a price that
         // went in wrong could never be corrected from here.
         html += '<button onclick="dashEditAppt('+a.id+')" style="flex:0 0 auto;padding:2px 6px;margin-left:auto;background:rgba(212,169,106,0.15);border:1px solid rgba(212,169,106,0.3);border-radius:4px;color:#d4a96a;font-size:0.62rem;cursor:pointer;font-family:Nunito,sans-serif;">✏ Fiyat</button>';
@@ -7486,6 +7486,17 @@ function commReasonShort(a){
   if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+Math.round((s.startAt-commBookedMs(a))/60000)+' dk geç)';
   if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk (sınır '+(s.limitMin||60)+')';
   return {nostart:'Crown Board\u2019da başlatılmadı', unsat:'müşteri memnun değil', notasked:'memnuniyet sorulmadı'}[why] || '';
+}
+// The other side of the same coin: a job that EARNED its commission shows the
+// proof too (board times + 😊), so the owner can see she kept the rules.
+function commProofShort(a){
+  if(!a || a.status!=='completed' || DED_RATES[a.staff]===undefined || commVerdict(a)) return '';
+  if(String(a.datetime||'').slice(0,10) < COMM_RULE_FROM || !commSessionsLoaded) return '';
+  const hm = function(ms){ const d=new Date(Number(ms)); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+  const s = commSessionFor(a);
+  const sat = a.sat==='happy' ? ' · 😊' : (a.sat==='not_asked' ? ' · sorulmadı' : '');
+  if(!s) return 'Crown Board kaydı yok'+sat;
+  return '👑 '+hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk'+sat;
 }
 function commAutoItems(monthKey){
   if(typeof appointments==='undefined' || !Array.isArray(appointments)) return [];
