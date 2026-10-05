@@ -24,8 +24,8 @@ const to = html.indexOf('// The record the technician is entitled to see');
 const src = html.slice(from, to);
 const ctx = { console, window: {}, appointments: [], dedState: { items: [] }, setInterval: () => 0 };
 vm.createContext(ctx);
-vm.runInContext(src + '\nthis.api={commVerdict,dedItemsForMonth,dedNoCommByTech,commReasonShort};', ctx);
-const { commVerdict, dedItemsForMonth, dedNoCommByTech, commReasonShort } = ctx.api;
+vm.runInContext(src + '\nthis.api={commVerdict,dedItemsForMonth,dedNoCommByTech,commReasonShort,commProofShort};', ctx);
+const { commVerdict, dedItemsForMonth, dedNoCommByTech, commReasonShort, commProofShort } = ctx.api;
 const at = (hm) => new Date('2026-10-06T' + hm).getTime();
 
 const T = (hm, d) => new Date((d||'2026-10-06') + 'T' + hm).getTime();
@@ -75,6 +75,9 @@ run([base], [Object.assign(sess('s1', '10:02', false), { endAt: T('11:17'), elap
 is(commReasonShort(base), '10:02–11:17 · 75 dk (sınır 60)', 'no crown shows start, finish and minutes');
 run([base], []);
 is(commReasonShort(base), 'Crown Board\u2019da başlatılmadı', 'never started says so');
+
+run([base], [Object.assign(sess('s1', '10:02', true), { endAt: T('10:55'), elapsedMin: 53 })]);
+is(commProofShort(base), '👑 10:02–10:55 · 53 dk · 😊', 'an earned job shows its crown times and the smile');
 
 console.log('2. two jobs in a row pair up in order');
 const a1 = { ...base, id: 1 }, a2 = { ...base, id: 2, datetime: '2026-10-06T11:00' };
