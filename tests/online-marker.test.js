@@ -22,7 +22,20 @@ const path=require('path');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const a=html.indexOf('var RD_SRC_ICON');
 const b=html.indexOf('function renderAppts(){');
-const ctx={ Date, String, Number, Object, console }; vm.createContext(ctx);
+/* A FROZEN Wednesday.
+   The fixture below places rows on "Monday of this week" and "Sunday of this
+   week". Run on a real Monday, the Monday row IS today — so it quietly added a
+   third booking to today's count and this test failed for the first time on
+   5 Ekim 2026, the first Monday after it was written. Nothing was wrong with
+   the app.
+   A diary test must not depend on which day somebody runs it, so the clock is
+   nailed to a Wednesday, inside the week and clear of both its ends. */
+const FIXED = new Date(2026, 9, 7, 12, 0, 0);          // Wed 7 Ekim 2026
+class FrozenDate extends Date {
+  constructor(...a){ if(!a.length) super(FIXED.getTime()); else super(...a); }
+  static now(){ return FIXED.getTime(); }
+}
+const ctx={ Date: FrozenDate, String, Number, Object, console }; vm.createContext(ctx);
 vm.runInContext(html.slice(a,b) + '\n;__x={mark:rdOnlineMark,tally:rdOnlineTally};', ctx);
 const api=ctx.__x;
 
@@ -40,7 +53,7 @@ is(ig.includes('📷')&&ig.includes('INSTAGRAM'), true, 'instagram is named and 
 is(api.mark({online:true,src:'weird-thing'}).includes('🌐'), true, 'an unknown source still shows as online');
 
 // tally — build a diary around a fixed "now"
-const now=new Date();
+const now=FIXED;
 const at=(dayOffset,h)=>{ const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()+dayOffset,h||10);
   const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':00'; };
