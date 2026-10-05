@@ -1887,13 +1887,98 @@ async function hookForward(env, ctx, rec) {
   console.log('[hook] forward to', to, err ? 'FAILED ' + err : 'sent', '—', who);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// The robot confirmation call — DEMO ONLY (5 Ekim 2026).
+//
+// One hour before the appointment a phone call asks the customer to press 1
+// (geliyorum) or 2 (gelemeyeceğim). This is the demo the owner asked for: it
+// rings ONE number, speaks the agreed script with Twilio's Turkish voice
+// (Polly.Filiz — Emel's own recordings replace it later), and answers each
+// key. It writes NOTHING to Firebase: no appointment turns green or red yet.
+//
+//   GET /call/demo?k=<BTN_KEY>&to=90533…&t=14:30   rings the phone
+//   POST /call/answer                              Twilio, after a key press
+//
+// /call/answer is public because Twilio holds no key; it only ever returns
+// spoken words, never reads or writes anything. The Twilio credentials are
+// wrangler secrets — TWILIO_SID, TWILIO_TOKEN, TWILIO_FROM (the number the
+// call comes from) — never written here. Without them /call/demo says so.
+// ═══════════════════════════════════════════════════════════════════════════
+const CALL_VOICE = 'Polly.Filiz';
+const CALL_SAY = {
+  ask:   t => `Merhaba, Royal Diamond Nail Studio'dan Emel. Bugün saat ${t}'da randevunuz var. Geliyorsanız 1'e, gelemeyecekseniz 2'ye basın.`,
+  again: () => `Lütfen geliyorsanız 1'e, gelemeyecekseniz 2'ye basın.`,
+  yes:   () => `Teşekkürler, sizi bekliyoruz. Görüşmek üzere!`,
+  no:    () => `Bilgi verdiğiniz için teşekkürler. Yeni bir randevu için sizi arayacağız. İyi günler.`,
+  none:  () => `Size ulaşamadık, salon sizi arayacak. İyi günler.`,
+};
+
+const callXml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+const callSay = text => `<Say language="tr-TR" voice="${CALL_VOICE}">${callXml(text)}</Say>`;
+const callTime = t => (/^([01]\d|2[0-3]):[0-5]\d$/.test(t || '') ? t : '14:30');
+
+// One question: the words inside a Gather, then — if no key comes — on to
+// /call/answer with no digits, which counts as a wrong key.
+function callAsk(origin, text, tries) {
+  const next = callXml(`${origin}/call/answer?n=${tries}`);
+  return `<?xml version="1.0" encoding="UTF-8"?><Response>`
+    + `<Gather numDigits="1" timeout="6" method="POST" action="${next}">${callSay(text)}</Gather>`
+    + `<Redirect method="POST">${next}</Redirect></Response>`;
+}
+
+// What the call says after a key (or silence). 1 and 2 end the call; anything
+// else repeats the question ONCE, then gives up politely.
+function callAnswer(origin, digits, tries) {
+  const end = text => `<?xml version="1.0" encoding="UTF-8"?><Response>${callSay(text)}<Hangup/></Response>`;
+  if (digits === '1') return end(CALL_SAY.yes());
+  if (digits === '2') return end(CALL_SAY.no());
+  if (tries < 2) return callAsk(origin, CALL_SAY.again(), tries + 1);
+  return end(CALL_SAY.none());
+}
+
+const callTwiml = xml => new Response(xml, { status: 200, headers: { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' } });
+
+async function handleCall(req, env, url) {
+  const origin = url.origin;
+  if (url.pathname === '/call/answer') {
+    let digits = '';
+    if (req.method === 'POST') {
+      try { digits = String((await req.formData()).get('Digits') || ''); } catch (e) { digits = ''; }
+    }
+    const tries = parseInt(url.searchParams.get('n') || '1', 10) || 1;
+    console.log('[call] answer', JSON.stringify(digits), 'try', tries);
+    return callTwiml(callAnswer(origin, digits, tries));
+  }
+  if (url.pathname !== '/call/demo') return reply('no', 404);
+  if (!env.BTN_KEY || !sameKey(url.searchParams.get('k') || '', env.BTN_KEY)) return reply('no', 403);
+  if (!env.TWILIO_SID || !env.TWILIO_TOKEN || !env.TWILIO_FROM) return reply('Twilio is not set up yet: TWILIO_SID, TWILIO_TOKEN and TWILIO_FROM are missing.', 503);
+  // 0533 866 9933, 0090 533…, +90 533… all mean the same Turkish/KKTC number.
+  let to = (url.searchParams.get('to') || '').replace(/\D/g, '');
+  if (to.startsWith('00')) to = to.slice(2);
+  else if (to.length === 11 && to.startsWith('0')) to = '90' + to.slice(1);
+  if (to.length < 10 || to.length > 15) return reply('to: the number to ring, with country code, e.g. 905338669933', 400);
+  const t = callTime(url.searchParams.get('t'));
+  const body = new URLSearchParams({ To: '+' + to, From: env.TWILIO_FROM, Twiml: callAsk(origin, CALL_SAY.ask(t), 1) });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_SID}/Calls.json`, {
+    method: 'POST',
+    headers: { authorization: 'Basic ' + btoa(env.TWILIO_SID + ':' + env.TWILIO_TOKEN), 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const out = await res.json().catch(() => ({}));
+  console.log('[call] demo to', to, res.status, out.sid || out.message || '');
+  if (!res.ok) return reply('Twilio said no: ' + (out.message || res.status), 502);
+  return reply('Arıyor… / Calling +' + to + ' now.', 200);
+}
+
 // Exported for the fixture tests beside this file — the workers runtime
 // ignores named exports, and nothing else imports them.
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
          raConfig, raPlan, runReviewAsk,
-         hookSign, hookVerify, hookParse, hookMatchOffer, handleHook };
+         hookSign, hookVerify, hookParse, hookMatchOffer, handleHook,
+         CALL_SAY, callAsk, callAnswer, handleCall };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -1924,6 +2009,8 @@ export default {
     // holds none; its signature is the door. Routed before the keyed routes.
     if (url.pathname === '/wa/hook') return handleHook(req, env, ctx, url);
     if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
+    // The robot confirmation call (demo). See handleCall.
+    if (url.pathname.startsWith('/call/')) return handleCall(req, env, url);
     // The "Detaylar / Details" button on both approved WhatsApp templates
     // lands under /r/ — the real confirm page, public by design (customers
     // hold no key). See handleRPage.
