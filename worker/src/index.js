@@ -813,13 +813,15 @@ async function handleWa(req, env, ctx, url) {
     const apptUtc = nicosiaWallToUtc(dateISO, timeHHMM);
     if (!Number.isFinite(apptUtc)) return waJson({ ok: false, error: { code: 'BAD_REQUEST', message: 'dateISO/timeHHMM did not parse' } }, 400);
     const vals = { name: name || '', service: service || '', date: dateISO, dateLong: rDateStr(dateISO), time: timeHHMM, when: waWhen(apptUtc), apptId: String(apptId) };
-    // Once Meta approves the button template, both reminders ask for an answer.
-    // The old spec stays as the fallback if Piyzi refuses the new one.
+    // Once Meta approves the button template, the short reminder close to the
+    // hour asks for an answer; the day-before one stays the plain heads-up
+    // (Bülent's call, 6 Ekim). The old spec stays as the fallback if Piyzi
+    // refuses the new one.
     const confirm = waSpec(env.WA_CONFIRM);
     const fallback = { r24: specs.r24, r1: specs.r1 };
     const liveName = confirm ? await waConfirmLive(env, confirm) : '';
     const live = !!liveName;
-    if (live) { const c = { ...confirm, templateName: liveName }; specs.r24 = c; specs.r1 = c; }
+    if (live) specs.r1 = { ...confirm, templateName: liveName };
     // With the buttons live, EVERY customer also gets the short reminder, close
     // to the hour (WA_CONFIRM_MIN before, default 90) — a lot can change in a
     // day. Whoever has not tapped by the hour still gets reception's 1 SAAT
