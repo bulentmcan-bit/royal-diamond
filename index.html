@@ -7434,6 +7434,19 @@ function commLocalDay(ms){
 // Whole minutes late, counted the way the clock on the card reads: a start at
 // 09:10:40 is 09:10, which is 10 minutes — on time, not 11.
 function commLateMin(a, s){ return Math.floor((s.startAt - commBookedMs(a))/60000); }
+function commMinsOf(s){ return s.elapsedMin!=null ? s.elapsedMin : Math.round((s.endAt-s.startAt)/60000); }
+// "60", or "75 · Design A" when an add-on or reception gave the job more time.
+function commLimitText(s){
+  let t = String(s.limitMin||60);
+  try{
+    const C = window.CROWN, d = s.design && C && C.designs && C.designs[s.design];
+    if(d) t += ' · '+(d.label||d.name||s.design);
+    else if(s.design) t += ' · '+s.design;
+    else if(s.limitOvr) t += ' · resepsiyon';
+    else if((s.limitMin||60) > 60) t += ' · uzatılmış';
+  }catch(e){}
+  return t;
+}
 function commBookedMs(a){ return new Date(String(a.datetime||'').slice(0,16)).getTime(); }
 // Pair her finished appointments of the day with her Crown Board jobs of the
 // day, in time order: each appointment takes the first unused job that started
@@ -7477,7 +7490,7 @@ function commVerdict(a){
       if(!running && day >= COMM_NOEVIDENCE_FROM) return 'nostart';
     }
   }
-  if(COMM_STRICT && a.sat==='not_asked' && day >= COMM_NOEVIDENCE_FROM) return 'notasked';
+  if(COMM_STRICT && (a.sat==='not_asked' || !a.sat) && day >= COMM_NOEVIDENCE_FROM) return 'notasked';
   return null;
 }
 // The reason in a few words, with the Crown Board's own times, so the red mark
@@ -7487,7 +7500,7 @@ function commReasonShort(a){
   const hm = function(ms){ const d=new Date(Number(ms)); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
   const s = (why==='nocrown'||why==='latestart') ? commSessionFor(a) : null;
   if(why==='latestart' && s) return hm(s.startAt)+' başladı ('+commLateMin(a, s)+' dk geç)';
-  if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk (sınır '+(s.limitMin||60)+')';
+  if(why==='nocrown' && s) return hm(s.startAt)+'–'+hm(s.endAt)+' · '+commMinsOf(s)+' dk (sınır '+commLimitText(s)+')';
   return {nostart:'Crown Board\u2019da başlatılmadı', unsat:'müşteri memnun değil', notasked:'memnuniyet sorulmadı'}[why] || '';
 }
 // The other side of the same coin: a job that EARNED its commission shows the
@@ -7499,7 +7512,7 @@ function commProofShort(a){
   const s = commSessionFor(a);
   const sat = a.sat==='happy' ? ' · 😊' : (a.sat==='not_asked' ? ' · sorulmadı' : '');
   if(!s) return 'Crown Board kaydı yok'+sat;
-  return '👑 '+hm(s.startAt)+'–'+hm(s.endAt)+' · '+(s.elapsedMin||Math.round((s.endAt-s.startAt)/60000))+' dk'+sat;
+  return '👑 '+hm(s.startAt)+'–'+hm(s.endAt)+' · '+commMinsOf(s)+' dk (sınır '+commLimitText(s)+')'+sat;
 }
 function commAutoItems(monthKey){
   if(typeof appointments==='undefined' || !Array.isArray(appointments)) return [];
@@ -23646,6 +23659,9 @@ try{ if(typeof renderDashGrid==='function') renderDashGrid(); }catch(e){}
     // Only a job management gave its own limit carries this, so a job run the
     // normal way is filed byte for byte the way it always was.
     if(cur.limitOvr){ tile.limitOvr=true; session.limitOvr=true; }
+    // The add-on that earned the extra minutes rides into the record, so the
+    // commission line can say WHY her limit was 75 or 90 and not 60.
+    if(cur.design){ tile.design=cur.design; session.design=cur.design; }
     upd['ops/'+o.key+'/last/'+cur.type]=tile;
     upd['sessions/'+id]=session;
     return crown;

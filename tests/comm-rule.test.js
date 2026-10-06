@@ -82,7 +82,12 @@ run([base], []);
 is(commReasonShort(base), 'Crown Board\u2019da başlatılmadı', 'never started says so');
 
 run([base], [Object.assign(sess('s1', '10:02', true), { endAt: T('10:55'), elapsedMin: 53 })]);
-is(commProofShort(base), '👑 10:02–10:55 · 53 dk · 😊', 'an earned job shows its crown times and the smile');
+is(commProofShort(base), '👑 10:02–10:55 · 53 dk (sınır 60) · 😊', 'an earned job shows its crown times, its limit and the smile');
+run([base], [Object.assign(sess('s1', '10:02', true), { endAt: T('11:09'), elapsedMin: 67, limitMin: 75, design: 'a' })]);
+ctx.window.CROWN = { designs: { a: { label: 'Design A' } } };
+is(commProofShort(base), '👑 10:02–11:09 · 67 dk (sınır 75 · Design A) · 😊', 'a 67-min crown says the limit was 75 because of Design A');
+run([{ ...base, sat: undefined }], [sess('s1', '10:02', true)]);
+is(commVerdict(ctx.appointments[0]), 'notasked', 'no satisfaction answer at all (from 6 Oct) → no commission');
 
 console.log('2. two jobs in a row pair up in order');
 const a1 = { ...base, id: 1 }, a2 = { ...base, id: 2, datetime: '2026-10-06T11:00' };
