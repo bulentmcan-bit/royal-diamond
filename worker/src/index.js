@@ -568,23 +568,30 @@ function waSpec(raw) {
 // Piyzi's GET /whatsapp/templates (approved templates only) does not list it,
 // and the reminders keep going out under WA_R24 / WA_R1 exactly as before.
 // The moment it is listed, both reminders use it — no edit, no redeploy.
+// "namePrefix" lets a resubmission under a new name (randevu_onay3, …) count
+// too, since Meta never lets a refused or deleted name be reused.
+// Returns the approved name to send under, or '' while none is approved.
 // The answer is kept in KV for an hour so a busy day asks Piyzi ~once an hour.
 async function waConfirmLive(env, spec) {
-  if (!spec) return false;
-  const key = 'tpl:live:' + spec.templateName + '/' + (spec.languageCode || 'tr');
+  if (!spec) return '';
+  const lang = spec.languageCode || 'tr';
+  const key = 'tpl:live2:' + spec.templateName + '|' + (spec.namePrefix || '') + '/' + lang;
   if (env.RD_WA) {
-    try { const c = await env.RD_WA.get(key); if (c === '1' || c === '0') return c === '1'; } catch { /* ask Piyzi */ }
+    try { const c = await env.RD_WA.get(key); if (c !== null && c !== undefined) return c === '-' ? '' : c; } catch { /* ask Piyzi */ }
   }
-  let live = false;
+  let live = '';
   try {
     const r = await piyziCall(env, 'GET', '/whatsapp/templates');
-    if (!(r && r.body && r.body.success)) return false;   // unsure → the old reminder, and ask again next time
-    const list = (r.body.data && r.body.data.templates) || [];
-    live = list.some(t => t && t.name === spec.templateName && (!t.language || t.language === (spec.languageCode || 'tr'))
-      && t.sendable !== false && (!t.status || String(t.status).toUpperCase() === 'APPROVED'));
-  } catch { return false; }
-  if (env.RD_WA) { try { await env.RD_WA.put(key, live ? '1' : '0', { expirationTtl: 3600 }); } catch { /* cache only */ } }
-  console.log('[wa] confirm template', spec.templateName, live ? 'LIVE' : 'not approved yet');
+    if (!(r && r.body && r.body.success)) return '';   // unsure → the old reminder, and ask again next time
+    const ok = ((r.body.data && r.body.data.templates) || []).filter(t => t && typeof t.name === 'string'
+      && (!t.language || t.language === lang) && t.sendable !== false
+      && (!t.status || String(t.status).toUpperCase() === 'APPROVED'));
+    const exact = ok.find(t => t.name === spec.templateName);
+    const pre = spec.namePrefix ? ok.filter(t => t.name.startsWith(spec.namePrefix)).map(t => t.name).sort() : [];
+    live = exact ? exact.name : (pre.length ? pre[pre.length - 1] : '');
+  } catch { return ''; }
+  if (env.RD_WA) { try { await env.RD_WA.put(key, live || '-', { expirationTtl: 3600 }); } catch { /* cache only */ } }
+  console.log('[wa] confirm template', live || ('none approved yet (' + spec.templateName + ')'));
   return live;
 }
 
@@ -810,8 +817,9 @@ async function handleWa(req, env, ctx, url) {
     // The old spec stays as the fallback if Piyzi refuses the new one.
     const confirm = waSpec(env.WA_CONFIRM);
     const fallback = { r24: specs.r24, r1: specs.r1 };
-    const live = !!(confirm && await waConfirmLive(env, confirm));
-    if (live) { specs.r24 = confirm; specs.r1 = confirm; }
+    const liveName = confirm ? await waConfirmLive(env, confirm) : '';
+    const live = !!liveName;
+    if (live) { const c = { ...confirm, templateName: liveName }; specs.r24 = c; specs.r1 = c; }
     // With the buttons live, EVERY customer also gets the short reminder, close
     // to the hour (WA_CONFIRM_MIN before, default 90) — a lot can change in a
     // day. Whoever has not tapped by the hour still gets reception's 1 SAAT
