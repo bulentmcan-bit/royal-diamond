@@ -97,13 +97,14 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 # Not before. A reminder that fails to send is worse than one nobody answers.
 #
 # RESUBMITTED 5 Ekim 2026 as `randevu_onay2` (the first name could not be
-# reused); gone from Piyzi's list on 6 Ekim, so refused. Any approved
+# reused); APPROVED 6 Ekim (Piyzi's picker had hidden it). Any approved
 # template whose name starts with `randevu_onay` (namePrefix) now counts, so
 # a resubmission as randevu_onay3 needs no edit here. No edit is needed
 # when Meta approves it either: the worker asks
 # Piyzi's approved-template list (cached an hour) on each /wa/schedule and,
-# once randevu_onay2 is listed, sends BOTH reminders under the spec below
-# instead of WA_R24 / WA_R1 — falling back to them if Piyzi refuses it.
+# once randevu_onay2 is listed, sends the near reminder (WA_CONFIRM_MIN
+# before) under the spec below instead of WA_R1, falling back to it if Piyzi
+# refuses it. The day-before reminder stays WA_R24, a plain heads-up.
 # Empty this line to switch the automatic change off.
 WA_CONFIRM = '{"templateName":"randevu_onay2","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
 # Once it is live, every customer also gets it this many minutes before the

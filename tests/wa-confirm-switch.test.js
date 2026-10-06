@@ -2,8 +2,9 @@
 // The answer-asking reminder switches itself on (WA_CONFIRM, randevu_onay2).
 //
 //   1. not approved yet → both reminders go out under the old templates
-//   2. approved (listed by Piyzi) → both go out under randevu_onay2, with the
-//      Turkish long date and the hour, and no Detaylar button value
+//   2. approved (listed by Piyzi) → the 90-minute reminder goes out under
+//      randevu_onay2, with the Turkish long date and the hour, and no Detaylar
+//      button value; the day-before one stays the plain old reminder
 //   3. Piyzi refuses the new one → the old one is sent instead
 //   4. the approval answer is cached, so Piyzi is asked once, not per send
 //   5. wrangler.toml names randevu_onay2 with [dateLong, time]
@@ -79,10 +80,10 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const s = setup({ approved: true });
     const r = await (await s.send()).json();
     is(r.ok, true, 'scheduled');
-    is(s.sent.map(b => b.templateName), ['randevu_onay2', 'randevu_onay2'], 'both reminders use randevu_onay2');
-    is(s.sent[0].parameters.body[1], '14:00', 'second variable is the hour');
-    is(/^\d{1,2} \S+ \S+$/.test(s.sent[0].parameters.body[0]), true, 'first variable is the long date: ' + s.sent[0].parameters.body[0]);
-    is(s.sent[0].parameters.buttons, undefined, 'no button value (quick replies have none)');
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay2'], 'day before stays plain; the near one asks with buttons');
+    is(s.sent[1].parameters.body[1], '14:00', 'second variable is the hour');
+    is(/^\d{1,2} \S+ \S+$/.test(s.sent[1].parameters.body[0]), true, 'first variable is the long date: ' + s.sent[1].parameters.body[0]);
+    is(s.sent[1].parameters.buttons, undefined, 'no button value (quick replies have none)');
     const at = s.sent.map(b => b.scheduledAt).sort();
     const appt = new Date(at[1]).getTime() + 90 * 60e3;
     is(new Date(at[0]).getTime(), appt - 24 * 3600e3, '24 hours before');
@@ -107,7 +108,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
   {
     const s = setup({ approved: true, approvedName: 'randevu_onay3' });
     await s.send();
-    is(s.sent.map(b => b.templateName), ['randevu_onay3', 'randevu_onay3'], 'randevu_onay3 is picked up with no config edit');
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay3'], 'randevu_onay3 is picked up with no config edit');
   }
 
   console.log('3. Piyzi refuses the new template');
@@ -115,7 +116,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const s = setup({ approved: true, refuseNew: true });
     const r = await (await s.send()).json();
     is(r.ok, true, 'still scheduled');
-    is(s.sent.map(b => b.templateName), ['randevu_onay2', 'pyz_randevu_hatirlatma_24saat', 'randevu_onay2', 'pyz_randevu_hatirlatma_2saat'], 'each refusal falls back to the old reminder');
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay2', 'pyz_randevu_hatirlatma_2saat'], 'the refusal falls back to the old reminder');
   }
 
   console.log('4. cached');
