@@ -25,7 +25,7 @@ const is = (got, want, label) => {
 
 const R24 = '{"templateName":"pyz_randevu_hatirlatma_24saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}';
 const R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}';
-const CONF = '{"templateName":"randevu_onay2","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}';
+const CONF = '{"templateName":"randevu_onay4","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}';
 
 function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.get(k) : null), put: async (k, v) => { m.set(k, v); } }; }
 
@@ -46,7 +46,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
       if (u.endsWith('/whatsapp/templates')) {
         listCalls.push(u);
         const templates = [{ name: 'pyz_randevu_hatirlatma_24saat', language: 'tr' }, { name: 'pyz_randevu_hatirlatma_2saat', language: 'tr' }];
-        if (approved) templates.push({ name: approvedName || 'randevu_onay2', language: 'tr' });
+        if (approved) for (const n of [].concat(approvedName || 'randevu_onay2')) templates.push({ name: n, language: 'tr' });
         return new Response(JSON.stringify({ success: true, data: { templates } }));
       }
       if (u.endsWith('/whatsapp/messages')) {
@@ -111,6 +111,13 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay3'], 'randevu_onay3 is picked up with no config edit');
   }
 
+  console.log('2e. the ✅/❌ version (randevu_onay4) wins once approved');
+  {
+    const s = setup({ approved: true, approvedName: ['randevu_onay', 'randevu_onay2', 'randevu_onay4'] });
+    await s.send();
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay4'], 'randevu_onay4 preferred over randevu_onay2');
+  }
+
   console.log('3. Piyzi refuses the new template');
   {
     const s = setup({ approved: true, refuseNew: true });
@@ -124,14 +131,14 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const s = setup({ approved: false });
     await s.send(); await s.send(); await s.send();
     is(s.listCalls.length, 1, 'Piyzi asked once for three bookings');
-    is(s.env.RD_WA.m.get('tpl:live2:randevu_onay2|randevu_onay/tr'), '-', 'cached as not yet approved');
+    is(s.env.RD_WA.m.get('tpl:live2:randevu_onay4|randevu_onay/tr'), '-', 'cached as not yet approved');
   }
 
   console.log('5. wrangler.toml');
   {
     const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
     const m = toml.match(/^WA_CONFIRM = '(.*)'$/m);
-    is(m && JSON.parse(m[1]), JSON.parse(CONF), 'WA_CONFIRM: randevu_onay2, any randevu_onay* approved, [dateLong, time]');
+    is(m && JSON.parse(m[1]), JSON.parse(CONF), 'WA_CONFIRM: randevu_onay4, any randevu_onay* approved, [dateLong, time]');
     is(/^WA_CONFIRM_MIN = "90"$/m.test(toml), true, 'WA_CONFIRM_MIN is 90');
     is(/^WA_R24 = '.*pyz_randevu_hatirlatma_24saat/m.test(toml), true, 'old WA_R24 left in place as the fallback');
   }
