@@ -6615,6 +6615,8 @@ function renderDashGrid(){
       // What SHE said, on her own row. See rdWrApptStrip: a cancellation is red
       // and says GELMİYOR, anything else is a quiet gold line with her words.
       try{ html += (typeof rdWrStripFor==='function') ? rdWrStripFor(a) : ''; }catch(e){}
+      // What WhatsApp has done for this visit, and 📨 to ask her right now.
+      try{ html += (typeof rdWaRemLine==='function') ? rdWaRemLine(a) : ''; }catch(e){}
       // Unpaid old debt on this customer — one small line so reception knows
       // before the customer reaches the till (the till itself asks at her last
       // appointment of the day).
@@ -13246,6 +13248,144 @@ async function rdWaBackfill(apply){
   console.log('[wa-backfill] DONE — scheduled:', ok, 'failed:', fail, 'duplicates cancelled:', dupOk);
   return Object.assign({}, report, { scheduledOk:ok, failed:fail, duplicatesCancelled:dupOk, failures:failures.slice(0,20) });
 }
+
+// ── The button reminder, by hand and for the bookings that missed it ───────
+// 7 Ekim: the 09:00 customer had booked before the buttons went live, so her
+// visit kept the old plan (a plain 24-hour message, no near one) and there
+// was no way to ask her from the screen. Two answers to that:
+//   📨 on each card — sends the Geleceğim / Gelemiyorum message NOW, after a
+//      confirm, and says on the card that it went (wa.n);
+//   the one-off re-plan below — every future visit whose reminders were set
+//      up under the old plan is set up again, so it gets the 1.5-hour button
+//      message like a booking made today.
+// The template the worker switched to on 6 Ekim (RD_WA_BTN_LIVE_AT, the
+// cb509d1b deploy) is approved under this name; randevu_onay4 (✅/❌ in the
+// body) is the worker's choice once Meta approves it, but this hand-sent one
+// stays on the name that is known to work.
+const RD_WA_BTN_TEMPLATE = 'randevu_onay2';
+const RD_WA_BTN_LIVE_AT = Date.UTC(2026, 9, 6, 13, 22);
+// "7 Ekim Çarşamba" — worded exactly as the worker's rDateStr words it.
+function rdWaDateLong(ymd){
+  const p=String(ymd||'').slice(0,10).split('-').map(Number);
+  if(p.length!==3||!p.every(Number.isFinite)) return '';
+  return new Intl.DateTimeFormat('tr-TR',{ timeZone:'UTC', day:'numeric', month:'long', weekday:'long' })
+    .format(new Date(Date.UTC(p[0],p[1]-1,p[2],12)));
+}
+// The small line under her name: what WhatsApp has done for this visit.
+function rdWaRemLine(a){
+  try{
+    if(!a || a.status!=='confirmed' || !rdWaOn()) return '';
+    const at=new Date(String(a.datetime||'')).getTime();
+    if(!at || at<Date.now()) return '';
+    const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+    if(!c || /kapal[ıi]/i.test(String(c.name||''))) return '';
+    const two=function(n){ return (n<10?'0':'')+n; };
+    const clock=function(t){ const d=new Date(t); return two(d.getHours())+':'+two(d.getMinutes()); };
+    let say;
+    if(a.wa && a.wa.n) say='📨 Butonlu mesaj gönderildi '+clock(a.wa.n);
+    else if(rdWaHasUids(a)) say=(Number(a.wa.t)||0)>=RD_WA_BTN_LIVE_AT ? '📨 Butonlu hatırlatma 1,5 sa önce gidecek' : '📨 Eski hatırlatma (butonsuz)';
+    else {
+      const carrier=rdWaCarrier(a, rdWaDayOf(a));
+      say=(carrier && String(carrier.id)!==String(a.id)) ? '📨 Aynı günün ilk randevusuyla birlikte' : '📭 Hatırlatma kurulmadı';
+    }
+    return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
+      +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
+      +'<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
+      +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>'
+      +'</div>';
+  }catch(e){ return ''; }
+}
+function rdWaSendNow(id){
+  try{
+    if(!rdWaOn()){ toast('⚠️','WhatsApp kapalı','Bu cihazda WhatsApp anahtarı yok.','r'); return; }
+    const a=(typeof apptById==='function')?apptById(id):null;
+    const c=a?(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); }):null;
+    const p=rdWaPayload(a, c);
+    if(!p){ toast('📵','Gönderilemez','Bu randevuda geçerli bir telefon numarası yok.','r'); return; }
+    if(a.wa && a.wa.n && !confirm('Bu müşteriye butonlu mesaj zaten gönderildi. Yine de tekrar gönderilsin mi?')) return;
+    if(!(a.wa && a.wa.n) && !confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
+    rdWaFetch('/wa/send', { phone:p.phone, templateName:RD_WA_BTN_TEMPLATE, languageCode:'tr',
+                            params:{ body:[rdWaDateLong(p.dateISO), p.timeHHMM] } })
+      .then(function(j){
+        if(j && j.ok){
+          const live=(typeof apptById==='function')?apptById(id):null;
+          if(live){ live.wa=Object.assign({}, live.wa||{}, { n:Date.now() }); apptTouch(live); try{ saveAll(); }catch(e){} }
+          toast('📨','Gönderildi',(c.name||'Müşteri')+' butonlu mesajı aldı.','g');
+          try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+        } else {
+          const e=(j&&j.error)||{};
+          toast('✗','Gönderilemedi',(e.message||e.code||'bilinmeyen hata'),'r');
+        }
+      })
+      .catch(function(){ toast('✗','Gönderilemedi','Sunucuya ulaşılamadı — tekrar deneyin.','r'); });
+  }catch(e){ console.warn('[wa] send-now error:', e); }
+}
+
+// Which future visits still carry the old plan. Pure, like rdWaBackfillScan:
+// a group's carrier holding uids set up BEFORE the buttons went live, whose
+// 1.5-hour moment is still ahead (otherwise a re-plan buys nothing).
+function rdWaReplanScan(appts, cls, now){
+  const out=[];
+  (appts||[]).forEach(function(a){
+    if(!a || a.status!=='confirmed') return;
+    if(!(a.wa && Array.isArray(a.wa.u) && a.wa.u.length)) return;
+    if((Number(a.wa.t)||0) >= RD_WA_BTN_LIVE_AT) return;     // already on the new plan
+    if(a.wa.n) return;                                       // already asked by hand
+    const dt=String(a.datetime||'');
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(dt)) return;
+    const t=new Date(dt).getTime();
+    if(!(t - now > 93*60e3)) return;                         // the 90-min send is already past
+    const c=(cls||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+    const p=rdWaPayload(a, c);
+    if(!p) return;
+    out.push({ id:a.id, payload:p });
+  });
+  return out;
+}
+// Runs once, on the owner's machine only (one device, so two screens never
+// re-plan the same visit twice). New reminders are booked FIRST and the old
+// ones cancelled only after, so a failure leaves her with her old reminder,
+// never with none; and the 24-hour one that has already gone is in the past,
+// so it is not sent again — still at most two messages per visit. Nothing is
+// sent immediately: everything is a scheduled send.
+let _waReplanBusy=false;
+async function rdWaReplan(){
+  if(_waReplanBusy || !rdWaOn()) return;
+  let role=''; try{ role=localStorage.getItem('rdns_msg_role')||''; }catch(e){}
+  if(role!=='owner') return;
+  _waReplanBusy=true;
+  try{
+    const todo=rdWaReplanScan(appointments, clients, Date.now());
+    if(!todo.length) return;
+    console.log('[wa-replan] old-plan visits to set up again:', todo.length);
+    let ok=0, fail=0;
+    for(const e of todo){
+      const live=(typeof apptById==='function')?apptById(e.id):null;
+      if(!live || !(live.wa && Array.isArray(live.wa.u) && live.wa.u.length) || (Number(live.wa.t)||0)>=RD_WA_BTN_LIVE_AT) continue;
+      const old=live.wa.u.slice();
+      try{
+        const j=await rdWaFetch('/wa/schedule', e.payload);
+        if(j && j.ok){
+          const now2=(typeof apptById==='function')?apptById(e.id):live;
+          const conf=now2.wa && now2.wa.c;
+          now2.wa={ u:(j.scheduled||[]).map(function(s){ return s.uid; }), d:e.payload.dateISO, t:Date.now(), x:old };
+          if(conf) now2.wa.c=conf;
+          apptTouch(now2); try{ saveAll(); }catch(_){}
+          try{ await rdWaFetch('/wa/cancel', { uids:old }); }catch(_){}
+          ok++;
+        } else { fail++; console.warn('[wa-replan]', e.id, j&&j.error); }
+      }catch(err){ fail++; console.warn('[wa-replan]', e.id, err); }
+      // Up to four Piyzi calls per visit (two schedules, two cancels) against
+      // its 30-a-minute limit: one visit every nine seconds stays under it.
+      await new Promise(function(r){ setTimeout(r, 9000); });
+    }
+    console.log('[wa-replan] done — set up again:', ok, 'failed:', fail);
+    if(ok) try{ toast('📨','Hatırlatmalar güncellendi', ok+' randevu artık 1,5 saat önce butonlu mesaj alacak.','g'); }catch(_){}
+    try{ if(typeof renderDash==='function') renderDash(); }catch(_){}
+  } finally { _waReplanBusy=false; }
+}
+setTimeout(function(){ rdWaReplan(); }, 20000);           // after the first sync has settled
+setInterval(function(){ rdWaReplan(); }, 30*60e3);         // and again later, for anything synced in since
 
 // The 🤖 button on the dashboard reminders panel: owner PIN, then paste the
 // shared key (the same BTN_KEY the wall buttons carry) — or leave the box
