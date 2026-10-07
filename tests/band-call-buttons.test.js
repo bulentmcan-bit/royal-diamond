@@ -84,6 +84,7 @@ console.log('3. the triage moves her — and her own words still win');
 
   is(run(mk({})).amber.length, 1, 'a reminder sent and nothing back → she is on the list to ring');
   is(run(mk({ rdCall: 'yes' })).amber.length, 0, '…pressing ✅ takes her off that list');
+  is(run(mk({ wa: { n: NOW - 60000 } })).amber.length, 0, '…and so does 📨: she has just been asked by WhatsApp, nobody rings her too');
   is(run(mk({ rdCall: 'yes' })).green.length, 1, '…and puts her in the confirmed one');
   is(run(mk({ rdCall: 'yes' })).green[0].byCall, true, '…marked as a telephone confirmation, not a message');
   is(/Telefonla teyit edildi/.test(run(mk({ rdCall: 'yes' })).green[0].r.text), true, '…and it says so in plain Turkish');
