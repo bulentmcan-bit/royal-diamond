@@ -71,7 +71,12 @@ console.log('3. the triage moves her — and her own words still win');
     grab('rdWrTriage') + '\nreturn rdWrTriage;');
 
   const NOW = Date.now();
-  const inHours = h => new Date(NOW + h * 3600000).toISOString().slice(0, 16);
+  // The diary stores "YYYY-MM-DDTHH:MM" in SALON time and the triage parses it
+  // as local time, so the test must build it the same way — toISOString()
+  // gives UTC, which on a UTC+3 desk turned "in one hour" into "two hours ago".
+  const local = ms => { const d = new Date(ms); const z = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()); };
+  const inHours = h => local(NOW + h * 3600000);
   const clients = [{ id: 1, name: 'Yagmur Özyay', phone: '905331112233' }];
   const mk = extra => Object.assign({ id: 7, clientId: 1, datetime: inHours(1), staff: 'Lissa', status: 'confirmed', r24: true }, extra);
 
@@ -83,6 +88,13 @@ console.log('3. the triage moves her — and her own words still win');
     () => false)();
 
   is(run(mk({})).amber.length, 1, 'a reminder sent and nothing back → she is on the list to ring');
+  // Only chase where a reminder actually went: no r24 and no r1 means she was
+  // never asked, and a silence nobody asked for is not a silence.
+  is(run(mk({ r24: false })).amber.length, 0, 'no reminder ever went → nobody to ring, she was never asked');
+  is(run(mk({ r24: false, r1: true })).amber.length, 1, '…but the 90-minute one on its own is enough');
+  // Today and tomorrow only: the list is for ringing people whose hour is
+  // close, not a fortnight's diary.
+  is(run(mk({ datetime: inHours(40) })).amber.length, 0, 'a booking beyond 36 hours is not on the list, reminder or not');
   ['cancelled', 'noshow', 'deleted', 'declined'].forEach(st =>
     is(run(mk({ status: st })).amber.length, 0, 'a ' + st + ' booking is nobody to ring'));
   is(run(mk({ datetime: inHours(5) })).amber.length, 0, '…but not before the 1.5-hour button message has gone (7 Ekim)');
@@ -104,11 +116,12 @@ console.log('3b. one row per visit');
   const t2 = new Function('appointments', 'clients', 'rdWrAll', 'rdWrLatestFor', 'rdWrIsCancel', 'rdWrIsConfirm', 'rdIsBlocker', 'rdWaGroup',
     grab('rdWrTriage') + '\nreturn rdWrTriage;');
   const NOW = Date.now();
-  const at = m => new Date(NOW + m * 60000).toISOString().slice(0, 16);
+  const at = m => { const d = new Date(NOW + m * 60000); const z = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + z(d.getHours()) + ':' + z(d.getMinutes()); };
   const clients = [{ id: 1, name: 'RUHŞEN', phone: '905331112233' }];
   const book = [
-    { id: 11, clientId: 1, datetime: at(60), staff: 'Helen', status: 'confirmed' },
-    { id: 12, clientId: 1, datetime: at(120), staff: 'Hannah', status: 'confirmed' },
+    { id: 11, clientId: 1, datetime: at(60), staff: 'Helen', status: 'confirmed', r24: true },
+    { id: 12, clientId: 1, datetime: at(120), staff: 'Hannah', status: 'confirmed', r24: true },
   ];
   const grp = a => book.filter(x => x.clientId === a.clientId);
   const go = reply => t2(book, clients, () => ({}), (m, c, a) => (reply && a.id === reply.on ? reply : null),

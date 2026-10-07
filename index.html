@@ -14080,6 +14080,8 @@ function rdWrTriage(){
          waits for her tap. Any booking of hers that day counts, because one
          message covers the whole visit. */
       if(g.some(function(x){ return x && x.wa && x.wa.n; })) return;
+      if(!(a.r24 || a.r1)) return;      // only chase where a reminder actually went
+      if(at > now+36*3600000) return;   // today and tomorrow only
       amber.push(row);
     });
   }catch(e){}
