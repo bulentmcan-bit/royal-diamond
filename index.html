@@ -20224,6 +20224,12 @@ function rdWrLatestFor(map, client, appt){
   var at=new Date(String(appt.datetime||'')).getTime();
   if(!at) return null;
   var from=at-2*86400000, to=at+3600000;
+  // A reply written BEFORE this booking existed answered something else — her
+  // previous appointment, last night's test. Ids are Date.now() at booking,
+  // so the id is the floor; without it a fresh 09:30 opened already red with
+  // yesterday's "Gelemiyorum" (7 Ekim).
+  var made=Number(appt.createdAt||appt.id)||0;
+  if(made>1.5e12 && made<=Date.now()+86400000) from=Math.max(from, made);
   var want=rdWrPhoneKey(client.phone||'');
   if(!want) return null;
   var best=null;
