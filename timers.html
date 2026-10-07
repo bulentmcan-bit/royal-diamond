@@ -785,6 +785,9 @@ function fileJob(upd, o, cur){
   // Only a job management gave its own limit carries this, so a job run the
   // normal way is filed byte for byte the way it always was.
   if (cur.limitOvr) { tile.limitOvr = true; session.limitOvr = true; }
+  // The add-on that earned the extra minutes, so the commission line can say
+  // why this job's limit was not the usual 60.
+  if (cur.design) { tile.design = cur.design; session.design = cur.design; }
   upd['ops/' + o.key + '/last/' + cur.type] = tile;
   upd['sessions/' + id] = session;
   return crown;
