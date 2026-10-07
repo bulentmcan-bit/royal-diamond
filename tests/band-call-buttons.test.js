@@ -73,7 +73,7 @@ console.log('3. the triage moves her — and her own words still win');
   const NOW = Date.now();
   const inHours = h => new Date(NOW + h * 3600000).toISOString().slice(0, 16);
   const clients = [{ id: 1, name: 'Yagmur Özyay', phone: '905331112233' }];
-  const mk = extra => Object.assign({ id: 7, clientId: 1, datetime: inHours(5), staff: 'Lissa', status: 'confirmed', r24: true }, extra);
+  const mk = extra => Object.assign({ id: 7, clientId: 1, datetime: inHours(1), staff: 'Lissa', status: 'confirmed', r24: true }, extra);
 
   const run = (appt, reply) => t([appt], clients,
     () => ({}),
@@ -83,6 +83,7 @@ console.log('3. the triage moves her — and her own words still win');
     () => false)();
 
   is(run(mk({})).amber.length, 1, 'a reminder sent and nothing back → she is on the list to ring');
+  is(run(mk({ datetime: inHours(5) })).amber.length, 0, '…but not before the 1.5-hour button message has gone (7 Ekim)');
   is(run(mk({ rdCall: 'yes' })).amber.length, 0, '…pressing ✅ takes her off that list');
   is(run(mk({ wa: { n: NOW - 60000 } })).amber.length, 0, '…and so does 📨: she has just been asked by WhatsApp, nobody rings her too');
   is(run(mk({ rdCall: 'yes' })).green.length, 1, '…and puts her in the confirmed one');
@@ -94,6 +95,25 @@ console.log('3. the triage moves her — and her own words still win');
   const cancelled = run(mk({ rdCall: 'yes' }), { text: 'gelemiyorum', ts: NOW });
   is(cancelled.red.length, 1, 'her own written cancellation OVERRULES a telephone yes');
   is(cancelled.green.length, 0, '…and she is not left sitting in the green list as well');
+}
+
+console.log('3b. one row per visit');
+{
+  const t2 = new Function('appointments', 'clients', 'rdWrAll', 'rdWrLatestFor', 'rdWrIsCancel', 'rdWrIsConfirm', 'rdIsBlocker', 'rdWaGroup',
+    grab('rdWrTriage') + '\nreturn rdWrTriage;');
+  const NOW = Date.now();
+  const at = m => new Date(NOW + m * 60000).toISOString().slice(0, 16);
+  const clients = [{ id: 1, name: 'RUHŞEN', phone: '905331112233' }];
+  const book = [
+    { id: 11, clientId: 1, datetime: at(60), staff: 'Helen', status: 'confirmed' },
+    { id: 12, clientId: 1, datetime: at(120), staff: 'Hannah', status: 'confirmed' },
+  ];
+  const grp = a => book.filter(x => x.clientId === a.clientId);
+  const go = reply => t2(book, clients, () => ({}), (m, c, a) => (reply && a.id === reply.on ? reply : null),
+    x => /gelemiyorum/i.test(x), x => /tamam/i.test(x), () => false, grp)();
+  is(go().amber.map(x => x.a.id), [11], 'two bookings the same day are one row, on the first');
+  is(go({ on: 12, text: 'tamam', ts: NOW }).green.map(x => x.a.id), [11], 'an answer on either booking answers the visit');
+  is(go({ on: 12, text: 'tamam', ts: NOW }).amber.length, 0, '…and takes it off the call list');
 }
 
 console.log('4. the card says it too, not only the band');

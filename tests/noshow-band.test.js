@@ -161,27 +161,27 @@ console.log('4b. who lands in which list');
 {
   const C = ctx.rdWrIsConfirm;
   ['Tamam', 'tamamdır', 'Evet', 'olur', 'geliyorum', 'geleceğim', 'görüşürüz',
-   'yes', 'OK', 'okay', 'coming', 'see you', 'confirmed', 'Peki'].forEach(t =>
+   'yes', 'OK', 'okay', 'coming', 'see you', 'confirmed', 'Peki',
+   'Merhaba, teşekkür ederim. Mutlaka zamanında geleceğim', 'Tamam mutlu günler'].forEach(t =>
     is(C(t), true, 'confirms: “' + t + '”'));
 
   /* A confirmation caught by mistake is worse than a cancellation caught by
      mistake: the row turns green, everybody relaxes, and the one customer who
      was actually asking a question never gets rung. So this is narrow. */
   ['tamam mı', 'geliyor muyum', 'saat kaçta?', 'olur mu acaba',
-   'Konum atarmısın', 'başka saat', 'iptal edelim tamam mı', ''].forEach(t =>
+   'Konum atarmısın', 'başka saat', 'iptal edelim tamam mı', 'tamam mı.', 'gelecek miyim', 'geleyim mi, olur mu', ''].forEach(t =>
     is(C(t), false, 'does NOT confirm: “' + t + '”'));
   is(C('iptal, tamam mı'), false, 'a cancellation with "tamam" in it is still a cancellation');
   is(/if\(t\.indexOf\('\?'\)!==-1\) return false;/.test(html), true, '…and a question mark is never a yes');
   is(/if\(rdWrIsCancel\(t\)\) return false;/.test(html), true, '…and iptal always wins over tamam');
 
   // Amber is only claimed where a reminder really went.
-  is(/if\(!\(a\.r24 \|\| a\.r1\)\) return;/.test(html), true, 'nobody is called "no answer" unless a reminder actually went to her');
-  is(/if\(at > now\+36\*3600000\) return;/.test(html), true, '…and only for today and tomorrow, not next week');
+  is(/if\(at > now\+90\*60000\) return;/.test(html), true, 'nobody is called "no answer" before the 1.5-hour button message has gone');
   is(/if\(typeof rdIsBlocker==='function' && rdIsBlocker\(a\.clientId\)\) return;/.test(html), true,
      'a held hour is not a person and never appears in any of the three');
   is(/if\(r\) return;\s+\/\/ she wrote something else/.test(html), true,
      'a customer who wrote something else is in none of them — her words are on her card');
-  is(/\(\^\|\\s\)\(mi\|mu\|ma\|me\)/.test(html), true,
+  is(/\(\^\|\\s\)\(mi\|mu\)\(yim/.test(html), true,
      'and a Turkish question with no question mark — "tamam mı", "olur mu" — is not read as a yes');
 }
 
