@@ -62,8 +62,8 @@ console.log('3. the card and the send');
 {
   is(/rdWaRemLine\(a\)/.test(html), true, 'the 📨 line sits on every dashboard card');
   is(/📨 Şimdi gönder/.test(html), true, '…with a "send now" button');
-  is(/\(\(a\.wa && a\.wa\.n\) \? '' : '<button onclick="rdWaSendNow\(/.test(html), true, '…which disappears once the message has gone');
-  is(/if\(a\.wa && a\.wa\.n\)\{ toast\('📨','Zaten gönderildi'/.test(html), true, '…and a second send is refused even if called');
+  is(/\(!showBtn \? '' : '<button onclick="rdWaSendNow\(/.test(html), true, '…which disappears once the message has gone');
+  is(/rdWaGroup\(a, rdWaDayOf\(a\)\)\.concat\(\[a\]\)\.some\(function\(x\)\{ return x && x\.wa && x\.wa\.n; \}\)\)\{ toast\('📨','Zaten gönderildi'/.test(html), true, '…and a second send to the same visit is refused even if called');
   is(/rdWaFetch\('\/wa\/send', \{ phone:p\.phone, templateName:RD_WA_BTN_TEMPLATE/.test(html), true, 'sent through /wa/send under the button template');
   is(/confirm\(\(c\.name\|\|'Müşteri'\)\+' — '\+p\.timeHHMM/.test(html), true, '…only after reception confirms');
   is(/if\(role!=='owner'\) return;/.test(html), true, 'the re-plan runs on the owner machine only');
@@ -94,6 +94,32 @@ console.log('4. a booking made too late for its 1.5-hour message is asked at onc
   is(L(book[0], { ok: true, scheduled: [{ kind: 'r1', uid: 'u' }], skipped: [] }), false, 'a booking whose 1.5-hour send is scheduled waits for it');
   is(sent, ['late'], 'exactly one message sent');
   is(/rdWaLateAsk\(live, j\)/.test(html), true, 'checked every time a booking is scheduled');
+}
+
+console.log('5. a later booking the same day follows the first one');
+{
+  const src3 = ['RD_WA_BTN_LIVE_AT', 'rdWaRemLine'].map(grab).join('\n');
+  const day = new Date(Date.now() + 86400e3); const z = n => String(n).padStart(2, '0');
+  const ymd = day.getFullYear() + '-' + z(day.getMonth() + 1) + '-' + z(day.getDate());
+  const cls = [{ id: 1, name: 'EMİNE', phone: '905338669933' }, { id: 2, name: 'RUHŞEN', phone: '905330000000' }];
+  const sentAt = new Date(ymd + 'T08:39').getTime();
+  const A = (id, cid, hm, wa) => ({ id, clientId: cid, status: 'confirmed', datetime: ymd + 'T' + hm, wa });
+  const book = [
+    A('e9', 1, '09:00', { u: ['x'], t: 1, n: sentAt }), A('e10', 1, '10:00'),
+    A('r11', 2, '11:00', { u: ['x'], t: 1 }), A('r12', 2, '12:00'),
+  ];
+  const line = new Function('rdWaOn', 'clients', 'rdWaGroup', 'rdWaDayOf', 'rdWaHasUids', src3 + '\nreturn rdWaRemLine;')(
+    () => true, cls,
+    (of, d) => book.filter(a => a.clientId === of.clientId && a.datetime.slice(0, 10) === d).sort((x, y) => x.datetime.localeCompare(y.datetime)),
+    a => String(a.datetime).slice(0, 10),
+    a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length));
+  const L = id => line(book.find(a => a.id === id));
+  is(/Butonlu mesaj gönderildi 08:39/.test(L('e9')) && !/Şimdi gönder/.test(L('e9')), true, '09:00: sent at 08:39, no button');
+  is(/İlk randevuyla gönderildi 08:39/.test(L('e10')), true, '10:00: says it went with the first booking');
+  is(/Şimdi gönder/.test(L('e10')), false, '…and has no 📨 to send it again');
+  is(/📨 Eski hatırlatma \(butonsuz\)/.test(L('r11')) && /Şimdi gönder/.test(L('r11')), true, '11:00 first booking, not yet asked: keeps its 📨');
+  is(/11:00 randevusuyla: eski hatırlatma \(butonsuz\)/.test(L('r12')), true, '12:00: shows the 11:00 plan');
+  is(/Şimdi gönder/.test(L('r12')), false, '…and its 📨 lives on the 11:00 card only');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
