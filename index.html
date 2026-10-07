@@ -17722,8 +17722,8 @@ function mGetCalc(rev, viewMonth){
   return {breakeven, above, comm, profit: afterBreakeven, vatDue, taxDue,
     finalProfit, netAfterAll,
     starBase: starSalTRY + starFlatTRY,
-    starTotal: starSalTRY + comm,
-    starSalTRY, starFlatTRY,
+    starTotal: starSalTRY + glynSal + comm,
+    starSalTRY, starFlatTRY, glynSal,
     extraStaffTotal: hannahSal + lissaSal + nihalSal + beverages + socialMedia + glynSal,
     totalStaff, fixed: fixedTRY,
     techCommTotal};
@@ -18107,8 +18107,9 @@ function renderMonthly(){
     // ── HELEN ──
     html += mkGroup('💎 Helen',
       mkCard(_('m_helen_salary'), mFmtTRY(c.starSalTRY)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">'+mFmtCur(mCosts.starSal,mCosts.starSalCur)+'</div>', 'var(--blue)', false) +
+      mkCard('Helen — Glyn', mFmtTRY(c.glynSal||0)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Sosyal medya · Helen üzerinden ödenir</div>', 'var(--orange)', false) +
       mkCard(_('m_helen_bonus'), mFmtTRY(c.comm), 'var(--purple)', true, '25% of net after expenses, commissions, KDV & Vergi') +
-      mkCard(_('m_helen_total'), mFmtTRY(c.starTotal), 'var(--coral)', true)
+      mkCard(_('m_helen_total'), mFmtTRY(c.starTotal)+'<div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Maaş '+mFmtTRY(c.starSalTRY)+' + Glyn '+mFmtTRY(c.glynSal||0)+' + Prim '+mFmtTRY(c.comm)+'</div>', 'var(--coral)', true)
     );
 
     // The commission base is the month's income minus any job whose commission
