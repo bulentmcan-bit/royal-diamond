@@ -66,7 +66,9 @@ console.log('4. whose phone is this');
   is(/id="rd-who-email"/.test(html), true, 'the page names the account signed in');
   is(/function rdShowWhoAmI\(\)/.test(html), true, '…filled in from the live auth state');
   is(/firebase\.auth\(\)\.onAuthStateChanged\(rdShowWhoAmI\)/.test(html), true, '…and refreshed when that changes');
-  is(/if\(page==="settings"\)\{ try\{ rdShowWhoAmI\(\); \}catch\(e\)\{\} \}/.test(html), true, '…and again whenever Ayarlar is opened');
+  // Pinned loosely on purpose: Ayarlar now paints more than one card when it
+  // opens, and this test is about the who-am-I line being one of them.
+  is(/if\(page==="settings"\)\{[^}]*try\{ rdShowWhoAmI\(\); \}catch\(e\)\{\}/.test(html), true, '…and again whenever Ayarlar is opened');
   is(/el\.textContent=\(u&&u\.email\)\?u\.email:'—';/.test(html), true, '…showing the e-mail, or a dash when there is none');
 }
 

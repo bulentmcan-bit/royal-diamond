@@ -4398,6 +4398,25 @@ p, span, div, label, h1, h2, h3, h4 {
 
     <!-- ════ AYARLAR PAGE — owner-only levers, PIN behind each ════ -->
     <div class="page" id="page-settings">
+      <!-- THE WHATSAPP KEY, where somebody can actually find it.
+           The key is per DEVICE, and a device without one sends nothing: no
+           booking confirmation, no 24-hour or 2-hour reminder, and reception
+           cannot answer a customer from it. Silently — no error, nothing in
+           the diary to show for it. The salon's tablet ran that way and
+           nobody knew until a customer said she had never been sent anything.
+
+           The only control was a button inside the 24-saat hatırlatma panel,
+           which is HIDDEN whenever no reminders are due — so on the tablet
+           there was usually nothing to press. It belongs here, next to the
+           other things that are set once per device, and it says its own
+           state so the answer to "is this one sending?" is on the screen. -->
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">🤖 WhatsApp — bu cihaz</div>
+        <div id="rd-wa-key-state" style="font-size:0.9rem;font-weight:800;margin:10px 0 6px;"></div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:0 0 14px;" id="rd-wa-key-help"></p>
+        <button class="btn" onclick="rdWaSetup()" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.45);color:var(--gold);font-weight:800;">🔑 Anahtarı gir / değiştir (PIN)</button>
+      </div>
+
       <div class="card" style="max-width:560px;">
         <div class="card-title">📂 Yedekten Geri Yükle</div>
         <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 14px;">
@@ -6291,7 +6310,7 @@ function _gotoActual(page,el){
   if(page==="calendar")renderCalendar();
   if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}try{mRenderStaleAppts();}catch(e){}}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
-  if(page==="settings"){ try{ rdShowWhoAmI(); }catch(e){} }
+  if(page==="settings"){ try{ rdShowWhoAmI(); }catch(e){} try{ rdWaKeyCard(); }catch(e){} }
   if(page==="deductions"){ renderDeductionsPage(); }
   if(page==="advance"){ renderAdvancePage(); }
   if(page==="gapreport"){ renderGapReport(); }
@@ -13520,6 +13539,20 @@ function rdWaSetKey(k){ try{ localStorage.setItem('rdns_wa_key_v1', String(k||''
 function rdWaBadge(){
   const b=document.getElementById('dash-wa-auto');
   if(b) b.textContent = rdWaOn() ? '🤖 Oto: AÇIK' : '🤖 Oto: KAPALI';
+  try{ rdWaKeyCard(); }catch(e){}
+}
+/* Say plainly whether this device can send. Green and done, or red and what
+   it costs — never a quiet "KAPALI" that reads like a setting somebody chose. */
+function rdWaKeyCard(){
+  var st=document.getElementById('rd-wa-key-state'), hp=document.getElementById('rd-wa-key-help');
+  if(!st||!hp) return;
+  if(rdWaOn()){
+    st.innerHTML='<span style="color:#1e7a44;">✅ AÇIK — bu cihaz mesaj gönderiyor</span>';
+    hp.textContent='Bu cihazdan alınan randevular müşteriye onay mesajı gönderir, 24 saat ve 2 saat kala hatırlatmalar kurulur, ve Gelen Kutusu\'ndan müşteriye cevap yazılabilir.';
+  }else{
+    st.innerHTML='<span style="color:#c0392b;">⛔ KAPALI — bu cihaz HİÇBİR mesaj göndermiyor</span>';
+    hp.textContent='Bu cihazdan alınan randevular müşteriye onay göndermez ve hatırlatma kurmaz; Gelen Kutusu\'ndan cevap da yazılamaz. Anahtar başka bir cihazdan kopyalanıp buraya girilmelidir.';
+  }
 }
 function rdWaSetup(){
   if(typeof ownerPin==='function' && !ownerPin()) return;
