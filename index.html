@@ -20533,6 +20533,22 @@ function rdWrIsCancel(text){
    matches a plain yes and nothing clever: tamam, evet, geliyorum, olur,
    görüşürüz, yes, ok, coming, see you. A message with a question mark in it
    is never a confirmation, whatever else it says. */
+/* A message nobody has to answer: a tap on the Geleceğim / Gelemiyorum
+   buttons, a plain yes, or a thank-you. The booking card already shows it
+   (and a no goes to the red band), so the inbox list leaves it out unless
+   asked. An answer to a free-slot offer is NOT one of these: a yes there
+   still has to be booked by a person. */
+function rdWrNoActionNeeded(r){
+  if(!r || r.offerId) return false;
+  var raw=String(r.text||'').trim();
+  if(!raw) return false;
+  if(/^(geleceğim|gelecegim)\s*\/\s*yes$|^(gelemiyorum)\s*\/\s*no$/i.test(raw)) return true;
+  var t=raw.toLowerCase().replace(/i̇/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ü/g,'u').replace(/ç/g,'c');
+  if(t.indexOf('?')!==-1) return false;
+  if(/^[\s\W]*(cok |cokk |)(tesekkur(ler| ederim| ederiz)?|sagol(un)?|thanks?( you)?|thank you|tsk|tskr)[\s\W]*$/.test(t)) return true;
+  // a short plain yes ("Tamam", "Tamamdır 🙏", "Evet geliyorum") — not a long message with a yes in it
+  return t.length<=70 && rdWrIsConfirm(raw) && !rdWrIsCancel(raw);
+}
 function rdWrIsConfirm(text){
   var t=String(text||'').toLowerCase()
     .replace(/i̇/g,'i').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ı/g,'i')
@@ -20660,7 +20676,8 @@ function rdWrWindow(r, now){
 }
 // WAREPLY-SLICE-END
 (function(){
-  var _wr={}, _seen=null, _started=false, _timer=null, _open=null, _oldOpen={};
+  var _wr={}, _seen=null, _started=false, _timer=null, _open=null, _oldOpen={}, _inboxAll=false;
+  window.rdWrInboxAll=function(){ _inboxAll=!_inboxAll; render(); };
   // "Eski mesajları göster" on an opened row — per device, nothing written.
   window.rdWrOldToggle=function(id){ _oldOpen[String(id)]=!_oldOpen[String(id)]; render(); };
   // Opening a row is a local, per-device thing — nothing is written anywhere.
@@ -20916,7 +20933,7 @@ function rdWrWindow(r, now){
 
   function render(){
     var count=document.getElementById('dash-wa-replies-count');
-    var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read; });
+    var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read && !rdWrNoActionNeeded(r); });
     if(count) count.textContent=String(unread.length);
     var ic=document.getElementById('inbox-count'); if(ic) ic.textContent=String(unread.length);
     paintInboxBadge(unread.length);
@@ -20943,11 +20960,24 @@ function rdWrWindow(r, now){
       if(r && r.day) return String(r.day)===today;              // the worker stamps the salon's own day
       try{ return new Date(Number(r.ts)).toDateString()===new Date().toDateString(); }catch(e){ return false; }
     };
-    var pageRows=unread.concat(all.filter(function(r){ return r.read; }).slice(0,30));
-    var dashRows=all.filter(function(r){ return !r.read || isToday(r); });
+    /* Bülent, 7 Ekim: "I don't want to see all this — the task is being done
+       anyway." A tap on Geleceğim / Gelemiyorum, a plain yes, a thank-you:
+       the card already shows it, nobody has to answer it. The list keeps
+       what a person must deal with — a question, a new time, an answer to a
+       free-slot offer (that one still needs booking). The rest is one tap
+       away. */
+    var showAll=!!_inboxAll;
+    var quiet=all.filter(rdWrNoActionNeeded);
+    var act=all.filter(function(r){ return !rdWrNoActionNeeded(r); });
+    var src=showAll?all:act;
+    var srcUnread=src.filter(function(r){ return !r.read; });
+    var pageRows=srcUnread.concat(src.filter(function(r){ return r.read; }).slice(0,30));
+    var dashRows=src.filter(function(r){ return !r.read || isToday(r); });
+    var toggle=quiet.length ? '<div style="padding:8px 14px;"><button onclick="rdWrInboxAll()" style="padding:3px 10px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;cursor:pointer;font-family:inherit;">'
+      +(showAll?'▴ Sadece cevap bekleyenler':'▾ Otomatik işlenenleri de göster ('+quiet.length+')')+'</button></div>' : '';
     var empty='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>';
     var emptyToday='<div class="r24-empty">Bugün yanıt yok. Öncekiler için 📥 Gelen Kutusu.</div>';
-    var draw=function(el, rows, blank){ if(el) el.innerHTML = rows.length ? build(rows) : blank; };
+    var draw=function(el, rows, blank){ if(el) el.innerHTML = (rows.length ? build(rows) : blank)+toggle; };
     function build(rows){
     var html=rows.map(function(r){
       var esc=rdWrEsc, ph=String(r.phone||''), tel='tel:+'+ph.replace(/\D/g,''), off=rdWrOfferLine(r);
