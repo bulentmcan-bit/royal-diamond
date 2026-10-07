@@ -128,7 +128,7 @@ console.log('4. the band');
   is(/id="dash-noshow-band"/.test(html), true, 'the band has its own place on the dashboard');
   is(/<div id="dash-noshow-band"[\s\S]{0,120}<div id="dash-actions"/.test(html), true, '…ABOVE the actions list, not under it');
   is(/function rdNoShowSaid\(\)/.test(html), true, 'it reads every upcoming appointment against what she wrote');
-  is(/if\(!a \|\| a\.status==='cancelled' \|\| a\.status==='completed'\) return;/.test(html), true, '…skipping the already cancelled and the already done');
+  is(/if\(!a \|\| \/\^\(cancelled\|completed\|noshow\|deleted\|declined\)\$\/\.test\(String\(a\.status\|\|''\)\)\) return;/.test(html), true, '…skipping the already cancelled and the already done');
   // The owner watched a band of 25 at ten to six and the top of it was a five
   // o'clock that had already come and gone. "Don't show the ones where their
   // time has passed." An hour that is behind you cannot be sold, confirmed or
@@ -226,7 +226,7 @@ console.log('7. a finished appointment wears nothing');
   is(b.indexOf("st==='completed'") < b.indexOf("appt.rdCall==='yes'"), true,
      '…decided before the telephone confirmation, which would otherwise outlive the visit');
   // And the bands agree: rdWrTriage has always skipped these.
-  is(/if\(!a \|\| a\.status==='cancelled' \|\| a\.status==='completed'\) return;/.test(html), true,
+  is(/if\(!a \|\| \/\^\(cancelled\|completed\|noshow\|deleted\|declined\)\$\/\.test\(String\(a\.status\|\|''\)\)\) return;/.test(html), true,
      'the bands skip them too, so the card and the band tell the same story');
 }
 
