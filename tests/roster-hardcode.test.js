@@ -51,7 +51,7 @@ const STR_ARRAY = /\[\s*(?:(?:'[^'\n]*'|"[^"\n]*")\s*,\s*)*(?:'[^'\n]*'|"[^"\n]*
 const ALLOWED = [
   { file: 'index.html', text: "const RD_OB_FALLBACK_TECHS=['Helen','Lissa'];", why: 'online-booking fallback, CROWN absent only' },
   { file: 'index.html', text: "return ['Helen','Lissa'];", why: "rdStaffOn's fallback, CROWN absent only" },
-  { file: 'index.html', text: "const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Zebo','Nihal'];", why: 'avans money screen — Bülent\'s list' },
+  { file: 'index.html', text: "const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Nihal'];", why: 'avans money screen — Bülent\'s list' },
   { file: 'index.html', text: "['Hannah','Lissa','Zara','Saeideh','Beyhan'].forEach(function(n){", why: 'salary page commission rows — Bülent\'s list' },
   { file: 'index.html', text: "const commOrder=['Lissa','Hannah','Zara','Saeideh','Beyhan'];", why: 'Aylık page commission cards — Bülent\'s list' },
   { file: 'index.html', text: "['Zara','Saeideh','Beyhan'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });", why: 'Daily Takings keeps the commission-only technicians active — Bülent\'s list' },

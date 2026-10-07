@@ -277,7 +277,7 @@ console.log('3c. Beyhan on the money screens — 0.80, what the salon OWES her')
   is(diStaff[0].map(s => s.name), ['Helen', 'Hannah', 'Lissa', 'Zara', 'Saeideh', 'Beyhan'], 'DI_STAFF: Beyhan after Saeideh');
   is(/Beyhan:0\.2\b|Beyhan:0\.20\b|commRate:0\.20?,?\s*[^\n]*Beyhan|Beyhan[^\n]*commRate:0\.20?\b/.test(html), false, 'nowhere is Beyhan on 0.20');
   // The other lists and rows she must be on.
-  is(html.includes("const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Zebo','Nihal'];"), true, 'ADV_STAFF (avans): Beyhan after Saeideh');
+  is(html.includes("const ADV_STAFF = ['Helen','Hannah','Lissa','Zara','Saeideh','Beyhan','Nihal'];"), true, 'ADV_STAFF (avans): Beyhan after Saeideh');
   const row = html.match(/\{name:'Beyhan',\s*role:'([^']*)',\s*color:'([^']*)',\s*salary:(\d+),\s*cur:'([^']*)',\s*commLabel:'([^']*)',\s*comm:commTotals\['Beyhan'\]\|\|0\}/);
   is(row && row.slice(1), ['Kaş & Kirpik Uzmanı', '#7aaae8', '0', 'TL', '80% of own client income (salon keeps 20%) — no salary, paid monthly'], 'the salary page row: Kaş & Kirpik Uzmanı, her blue, salary 0, the 80% label');
   is(html.includes("['Hannah','Lissa','Zara','Saeideh','Beyhan'].forEach(function(n){") && html.includes("const rates = {Hannah:'12%',Lissa:'12%',Zara:'25%',Saeideh:'50%',Beyhan:'80%'};"), true, 'the salary page commission rows list her at 80%');
