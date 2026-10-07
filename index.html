@@ -13265,6 +13265,8 @@ async function rdWaBackfill(apply){
 // stays on the name that is known to work.
 const RD_WA_BTN_TEMPLATE = 'randevu_onay2';
 const RD_WA_BTN_LIVE_AT = Date.UTC(2026, 9, 6, 13, 22);
+// The worker's WA_CONFIRM_MIN: the button message goes this long before.
+const RD_WA_BTN_MIN = 90;
 // "7 Ekim Çarşamba" — worded exactly as the worker's rDateStr words it.
 function rdWaDateLong(ymd){
   const p=String(ymd||'').slice(0,10).split('-').map(Number);
@@ -13277,7 +13279,8 @@ function rdWaRemLine(a){
   try{
     if(!a || a.status!=='confirmed' || !rdWaOn()) return '';
     const at=new Date(String(a.datetime||'')).getTime();
-    if(!at || at<Date.now()) return '';
+    if(!at) return '';
+    const now=Date.now();
     const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
     if(!c || /kapal[ıi]/i.test(String(c.name||''))) return '';
     const two=function(n){ return (n<10?'0':'')+n; };
@@ -13288,20 +13291,34 @@ function rdWaRemLine(a){
     const g=rdWaGroup(a, rdWaDayOf(a));
     const first=g.length ? g[0] : a;
     const follow=String(first.id)!==String(a.id);
-    const sent=g.concat([a]).filter(function(x){ return x && x.wa && x.wa.n; })
+    // When did the Geleceğim / Gelemiyorum message go? By hand (📨, or a
+    // late booking asked at once): wa.n. On its own: the 1.5-hour send of a
+    // visit planned under the button plan, once that moment has passed —
+    // planned before that moment, or the worker skipped it as past.
+    let sent=g.concat([a]).filter(function(x){ return x && x.wa && x.wa.n; })
       .map(function(x){ return Number(x.wa.n); }).sort(function(p,q){ return p-q; })[0];
-    let say;
-    if(a.wa && a.wa.n) say='📨 Butonlu mesaj gönderildi '+clock(a.wa.n);
-    else if(sent) say='📨 İlk randevuyla gönderildi '+clock(sent);
-    else {
+    const firstAt=new Date(String(first.datetime||'')).getTime();
+    const auto=firstAt - RD_WA_BTN_MIN*60e3;
+    const planT=(first.wa && Number(first.wa.t)) || 0;
+    if(!sent && rdWaHasUids(first) && planT>=RD_WA_BTN_LIVE_AT && planT<auto && auto<=now) sent=auto;
+    // Her hour has begun: nothing left to send, so only the yellow mark stays.
+    if(at<now && !sent) return '';
+    let say, badge='';
+    if(sent){
+      say=follow ? '📨 İlk randevuyla' : '📨 Butonlu mesaj';
+      /* Yellow, and not a button: "it has gone" at a glance, in the place
+         where the green 📨 was (Bülent, 7 Ekim). */
+      badge='<span title="Geleceğim / Gelemiyorum mesajı gönderildi" style="flex:0 0 auto;padding:1px 6px;background:#f5c518;border:1px solid #d4a800;border-radius:4px;color:#3d3000;font-size:0.6rem;font-weight:800;font-family:Nunito,sans-serif;">✓ Gönderildi '+clock(sent)+'</span>';
+    } else {
       const t=String(first.datetime||'').slice(11,16);
-      const s=rdWaHasUids(first) ? ((Number(first.wa.t)||0)>=RD_WA_BTN_LIVE_AT ? 'Butonlu hatırlatma 1,5 sa önce gidecek' : 'Eski hatırlatma (butonsuz)') : null;
+      const s=rdWaHasUids(first) ? (planT>=RD_WA_BTN_LIVE_AT ? 'Butonlu hatırlatma 1,5 sa önce gidecek' : 'Eski hatırlatma (butonsuz)') : null;
       if(!follow) say=s ? '📨 '+s : '📭 Hatırlatma kurulmadı';
       else say='📨 '+t+' randevusuyla: '+(s ? s.charAt(0).toLocaleLowerCase('tr')+s.slice(1) : 'hatırlatma kurulmadı');
     }
     const showBtn=!sent && !follow;
     return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
       +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
+      +badge
       // Once it has gone, the button goes too: one tap cannot become two
       // messages to the same customer (Bülent, 7 Ekim).
       +(!showBtn ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '

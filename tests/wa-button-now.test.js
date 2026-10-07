@@ -98,7 +98,7 @@ console.log('4. a booking made too late for its 1.5-hour message is asked at onc
 
 console.log('5. a later booking the same day follows the first one');
 {
-  const src3 = ['RD_WA_BTN_LIVE_AT', 'rdWaRemLine'].map(grab).join('\n');
+  const src3 = ['RD_WA_BTN_LIVE_AT', 'RD_WA_BTN_MIN', 'rdWaRemLine'].map(grab).join('\n');
   const day = new Date(Date.now() + 86400e3); const z = n => String(n).padStart(2, '0');
   const ymd = day.getFullYear() + '-' + z(day.getMonth() + 1) + '-' + z(day.getDate());
   const cls = [{ id: 1, name: 'EMİNE', phone: '905338669933' }, { id: 2, name: 'RUHŞEN', phone: '905330000000' }];
@@ -114,12 +114,37 @@ console.log('5. a later booking the same day follows the first one');
     a => String(a.datetime).slice(0, 10),
     a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length));
   const L = id => line(book.find(a => a.id === id));
-  is(/Butonlu mesaj gönderildi 08:39/.test(L('e9')) && !/Şimdi gönder/.test(L('e9')), true, '09:00: sent at 08:39, no button');
-  is(/İlk randevuyla gönderildi 08:39/.test(L('e10')), true, '10:00: says it went with the first booking');
+  is(/Gönderildi 08:39/.test(L('e9')) && !/Şimdi gönder/.test(L('e9')), true, '09:00: a yellow "Gönderildi 08:39", no button');
+  is(/#f5c518/.test(L('e9')) && !/<button/.test(L('e9')), true, '…yellow, and not something to press');
+  is(/İlk randevuyla/.test(L('e10')) && /Gönderildi 08:39/.test(L('e10')), true, '10:00: says it went with the first booking');
   is(/Şimdi gönder/.test(L('e10')), false, '…and has no 📨 to send it again');
   is(/📨 Eski hatırlatma \(butonsuz\)/.test(L('r11')) && /Şimdi gönder/.test(L('r11')), true, '11:00 first booking, not yet asked: keeps its 📨');
   is(/11:00 randevusuyla: eski hatırlatma \(butonsuz\)/.test(L('r12')), true, '12:00: shows the 11:00 plan');
   is(/Şimdi gönder/.test(L('r12')), false, '…and its 📨 lives on the 11:00 card only');
+}
+
+console.log('6. the 1.5-hour message turns the button yellow on its own');
+{
+  const src4 = ['RD_WA_BTN_LIVE_AT', 'RD_WA_BTN_MIN', 'rdWaRemLine'].map(grab).join('\n');
+  const z = n => String(n).padStart(2, '0');
+  const at = m => { const t = new Date(Date.now() + m * 60e3); return t.getFullYear() + '-' + z(t.getMonth() + 1) + '-' + z(t.getDate()) + 'T' + z(t.getHours()) + ':' + z(t.getMinutes()); };
+  const LIVE = Date.UTC(2026, 9, 6, 13, 22);
+  const planned = Date.now() - 86400e3;
+  const book = [
+    { id: 'gone', clientId: 1, status: 'confirmed', datetime: at(60), wa: { u: ['x'], t: Math.max(planned, LIVE + 1) } },
+    { id: 'ahead', clientId: 2, status: 'confirmed', datetime: at(150), wa: { u: ['x'], t: Math.max(planned, LIVE + 1) } },
+    { id: 'old', clientId: 3, status: 'confirmed', datetime: at(60), wa: { u: ['x'], t: LIVE - 86400e3 } },
+    { id: 'begun', clientId: 4, status: 'confirmed', datetime: at(-10), wa: { u: ['x'], t: Math.max(planned, LIVE + 1) } },
+  ];
+  const cls = [1, 2, 3, 4].map(id => ({ id, name: 'C' + id, phone: '9053300000' + id }));
+  const line = new Function('rdWaOn', 'clients', 'rdWaGroup', 'rdWaDayOf', 'rdWaHasUids', src4 + '\nreturn rdWaRemLine;')(
+    () => true, cls, of => book.filter(a => a.clientId === of.clientId), a => String(a.datetime).slice(0, 10),
+    a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length));
+  const L = id => line(book.find(a => a.id === id));
+  is(/Gönderildi/.test(L('gone')) && !/Şimdi gönder/.test(L('gone')), true, '60 min away, button plan: it went at −90 → yellow');
+  is(/Şimdi gönder/.test(L('ahead')) && !/Gönderildi/.test(L('ahead')), true, '150 min away: still green, not yet gone');
+  is(/Gönderildi/.test(L('old')), false, 'old plan (no buttons): never claimed as sent');
+  is(/Gönderildi/.test(L('begun')), true, 'her hour has begun: the yellow mark stays on the card');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
