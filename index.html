@@ -13957,6 +13957,15 @@ function rdWrTriage(){
       // today and tomorrow: a reminder for next week has not gone yet.
       if(!(a.r24 || a.r1)) return;
       if(at > now+36*3600000) return;
+      /* We have just asked her ourselves with 📨 — the Geleceğim / Gelemiyorum
+         message is on her phone. Ringing her as well is the pestering the
+         owner does not want (7 Ekim): her visit leaves the call list and
+         waits for her tap. Any booking of hers that day counts, because one
+         message covers the whole visit. */
+      try{
+        var asked=(typeof rdWaGroup==='function') ? rdWaGroup(a, String(a.datetime).slice(0,10)) : [a];
+        if(asked.some(function(x){ return x && x.wa && x.wa.n; })) return;
+      }catch(e){}
       amber.push(row);
     });
   }catch(e){}
