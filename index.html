@@ -20759,15 +20759,25 @@ function rdWrWindow(r, now){
     var esc=rdWrEsc, c=rdWrClientFor(r, cls()), ph=String(r.phone||'');
     var thread=rdWrThread(_wr, ph), sent=rdWrSentTo(_wr, ph);
     var appts=[]; try{ appts=rdWrApptsFor(appointments, c, Date.now()); }catch(e){}
-    /* Only the current conversation (Bülent, 7 Ekim: "this gets confusing —
-       can we only see the current conversations and not the past?"). Current
-       = from two days before this message on: the reminders, her messages
-       and her bookings from today. The rest is one tap away. */
-    var all=!!_oldOpen[String(r.id)], cut=(Number(r.ts)||Date.now())-2*86400000;
+    /* Only the current exchange (Bülent, 7 Ekim: "I only want to see what
+       we say and what they say"): the one message of ours she is answering
+       — the latest reminder before her reply, or the offer this reply is
+       about — and her messages from that day since it. Other days, older
+       reminders, offers she is not answering and past bookings are one tap
+       away. */
+    var all=!!_oldOpen[String(r.id)], rts=Number(r.ts)||Date.now();
+    var day0=new Date(rts); day0.setHours(0,0,0,0);
     var d0=new Date(); d0.setHours(0,0,0,0);
-    var hidden=0;
+    var hidden=0, hadSent=sent.length;
+    var rems=[]; try{ rems=rdWrRemindersFor(appointments, c, r.ts, (typeof getR24SentLog==='function'?getR24SentLog():{})); }catch(e){}
     if(!all){
-      var n0=thread.length; thread=thread.filter(function(m){ return (Number(m.ts)||0)>=cut || String(m.id)===String(r.id); }); hidden+=n0-thread.length;
+      hadSent+=rems.length;
+      var past=rems.filter(function(x){ return x.at && Number(x.at)<=rts; }).sort(function(p,q){ return Number(q.at)-Number(p.at); });
+      var keepRem=past.length ? [past[0]] : [];
+      hidden+=rems.length-keepRem.length; rems=keepRem;
+      var ns=sent.length; sent=sent.filter(function(o){ return r.offerId && String(o.id)===String(r.offerId); }); hidden+=ns-sent.length;
+      var cut=day0.getTime(); if(keepRem.length && Number(keepRem[0].at)>cut) cut=Number(keepRem[0].at);
+      var n0=thread.length; thread=thread.filter(function(m){ return ((Number(m.ts)||0)>=cut && (Number(m.ts)||0)<=rts+86400000) || String(m.id)===String(r.id); }); hidden+=n0-thread.length;
       var n1=appts.length; appts=appts.filter(function(a){ var t=new Date(String(a.datetime||'')).getTime(); return !t || t>=d0.getTime(); }); hidden+=n1-appts.length;
     }
     var h='<div style="padding:12px 14px 14px 30px;background:rgba(127,127,127,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;">';
@@ -20795,8 +20805,6 @@ function rdWrWindow(r, now){
 
     // 2. the reminders. Most replies answer one of these, and the panel used to
     //    shrug and send reception to Piyzi.
-    var rems=[]; try{ rems=rdWrRemindersFor(appointments, c, r.ts, (typeof getR24SentLog==='function'?getR24SentLog():{})); }catch(e){}
-    if(!all){ var n2=rems.length; rems=rems.filter(function(x){ return !x.at || Number(x.at)>=cut; }); hidden+=n2-rems.length; }
     if(rems.length){
       h+=rems.map(function(x){
         var tpl=rdWrTemplate(x.tpl);
@@ -20814,7 +20822,7 @@ function rdWrWindow(r, now){
     }
 
     // 3. nothing matched at all. Still said plainly, but only when it is true.
-    if(!sent.length && !rems.length){
+    if(!sent.length && !rems.length && !(hadSent>0)){
       h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya sistemden teklif de hatırlatma da gitmemiş. Muhtemelen resepsiyonun Piyzi\'den kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
     }
 

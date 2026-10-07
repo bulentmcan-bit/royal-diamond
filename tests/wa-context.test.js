@@ -174,7 +174,7 @@ console.log('4. the panel is wired to it');
   is(/rdWrOfferLate\(o\.id, r\.ts, hold\)/.test(html), true, 'the offer is measured against the reply');
   is(/C\.gapFill&&C\.gapFill\.holdMinutes/.test(html), true, '…with holdMinutes read from crown-config, never hardcoded');
   is(/Ona yeni bir saat teklif edin/.test(html), true, 'a late reply tells reception what to DO, not just what happened');
-  is(/if\(!sent\.length && !rems\.length\)\{/.test(html), true, 'the "we sent her nothing" line appears only when BOTH are empty');
+  is(/if\(!sent\.length && !rems\.length && !\(hadSent>0\)\)\{/.test(html), true, 'the "we sent her nothing" line appears only when BOTH are empty (and nothing was merely folded away)');
   is(/son 14 günde sistemden teklif gitmemiş/.test(html), false, 'the old line that blamed the offer matcher alone is gone');
   is(/Piyzi\\'den kendi yazdığı bir mesaja/.test(html), true, '…replaced by the one true remaining case: reception typed it in Piyzi');
   is(/Resepsiyonun Piyzi\\'ye yazdığı cevaplar burada görünmez/.test(html), true, 'and the honest footnote still stands');
