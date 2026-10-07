@@ -61,12 +61,12 @@ console.log('3. the panel is today, the page is everything');
   const from = html.indexOf('function paintInboxBadge');
   const r = /function render\(\)\{([\s\S]*?)\n  \}/.exec(html.slice(from));
   const b = r ? r[1] : '';
-  is(/var dashRows=all\.filter\(function\(r\)\{ return !r\.read \|\| isToday\(r\); \}\);/.test(b), true,
+  is(/var dashRows=src\.filter\(function\(r\)\{ return !r\.read \|\| isToday\(r\); \}\);/.test(b), true,
      "the panel shows today's messages");
   // The exception that must never be dropped. An unread message is a customer
   // waiting, and losing one at midnight is the exact fault that cost two hours.
   is(/!r\.read \|\| isToday/.test(b), true, '…AND anything unread, whatever day it came from');
-  is(/var pageRows=unread\.concat\(all\.filter\(function\(r\)\{ return r\.read; \}\)\.slice\(0,30\)\);/.test(b), true,
+  is(/var pageRows=srcUnread\.concat\(src\.filter\(function\(r\)\{ return r\.read; \}\)\.slice\(0,30\)\);/.test(b), true,
      'the page keeps the tail, unread first');
   is(/draw\(dashEl, dashRows, emptyToday\);/.test(b), true, '…and each is drawn with its own rows');
   is(/draw\(pageEl, pageRows, empty\);/.test(b), true, '…from the one builder, so they cannot drift apart');

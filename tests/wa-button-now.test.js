@@ -198,5 +198,15 @@ console.log('10. the opened message shows only the current exchange');
   is(/bub\('Müşteri', rdWrWhen\(m\.ts\)/.test(html), true, 'the plain view reads as a short chat: our message, her words');
 }
 
+console.log('11. the inbox lists only what a person must answer');
+{
+  const g = n => { const i = html.indexOf('function ' + n + '('); let d = 0; for (let k = html.indexOf('{', i); ; k++) { if (html[k] === '{') d++; else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); } } };
+  const f = new Function(g('rdWrIsCancel') + g('rdWrIsConfirm') + g('rdWrNoActionNeeded') + ';return rdWrNoActionNeeded;')();
+  ['Geleceğim / Yes', 'Gelemiyorum / No', 'Çok teşekkür ederim 🌸✨', 'Tamamdır 🙏', 'Tamam teşekkürler'].forEach(t => is(f({ text: t }), true, 'left out: “' + t + '”'));
+  ['4 olur mu', 'hayir okuldayim', 'Saat 3e alabilir miyiz', 'Hello ı cannot come today'].forEach(t => is(f({ text: t }), false, 'listed: “' + t + '”'));
+  is(f({ text: 'Evet / Yes please', offerId: 'x' }), false, 'an answer to a free-slot offer is always listed — it still needs booking');
+  is(/Otomatik işlenenleri de göster/.test(html), true, 'one tap shows the rest');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
