@@ -68,5 +68,31 @@ console.log('3. the card and the send');
   is(/try\{ await rdWaFetch\('\/wa\/cancel', \{ uids:old \}\); \}/.test(html), true, '…booking the new reminders before cancelling the old');
 }
 
+console.log('4. a booking made too late for its 1.5-hour message is asked at once');
+{
+  const src2 = ['rdWaLateAsk'].map(grab).join('\n');
+  const sent = [];
+  const mk = (book, cls) => new Function('apptById', 'clients', 'rdWaPayload', 'rdWaSendButtons', src2 + '\nreturn rdWaLateAsk;')(
+    id => book.find(a => String(a.id) === String(id)), cls,
+    (a, c) => (a && c ? { phone: c.phone, dateISO: a.datetime.slice(0, 10), timeHHMM: a.datetime.slice(11, 16) } : null),
+    (id, p) => sent.push(id));
+  const at = d => { const t = new Date(Date.now() + d); const z = n => String(n).padStart(2, '0');
+    return t.getFullYear() + '-' + z(t.getMonth() + 1) + '-' + z(t.getDate()) + 'T' + z(t.getHours()) + ':' + z(t.getMinutes()); };
+  const cls = [{ id: 1, name: 'Bülent', phone: '905338669933' }];
+  const book = [
+    { id: 'late', clientId: 1, datetime: at(89 * 60e3) },
+    { id: 'imminent', clientId: 1, datetime: at(5 * 60e3) },
+    { id: 'done-by-hand', clientId: 1, datetime: at(60 * 60e3), wa: { n: 1 } },
+  ];
+  const L = mk(book, cls);
+  const past = { ok: true, scheduled: [], skipped: [{ kind: 'r1', why: 'past' }] };
+  is(L(book[0], past), true, 'booked 89 min ahead: the button message goes now');
+  is(L(book[1], past), false, '…but not when she is five minutes away');
+  is(L(book[2], past), false, '…nor twice, once it has gone by hand');
+  is(L(book[0], { ok: true, scheduled: [{ kind: 'r1', uid: 'u' }], skipped: [] }), false, 'a booking whose 1.5-hour send is scheduled waits for it');
+  is(sent, ['late'], 'exactly one message sent');
+  is(/rdWaLateAsk\(live, j\)/.test(html), true, 'checked every time a booking is scheduled');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
