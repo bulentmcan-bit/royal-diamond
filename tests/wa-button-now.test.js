@@ -144,7 +144,7 @@ console.log('6. the 1.5-hour message turns the button yellow on its own');
   is(/Gönderildi/.test(L('gone')) && !/Şimdi gönder/.test(L('gone')), true, '60 min away, button plan: it went at −90 → yellow');
   is(/Şimdi gönder/.test(L('ahead')) && !/Gönderildi/.test(L('ahead')), true, '150 min away: still green, not yet gone');
   is(/Gönderildi/.test(L('old')), false, 'old plan (no buttons): never claimed as sent');
-  is(/Gönderildi/.test(L('begun')), true, 'her hour has begun: the yellow mark stays on the card');
+  is(L('begun'), '', 'her hour has begun: the card goes back to plain (7 Ekim)');
 }
 
 console.log('7. she has already answered: no 📨');
@@ -181,6 +181,12 @@ console.log('8. an old-plan visit past its 1.5-hour moment is asked at once');
   is(/setInterval\(function\(\)\{ rdWaCatchUp\(\); \}, 2\*60e3\);/.test(html), true, 'looked at every two minutes');
   is(/function rdWaCatchUp\(\)\{[\s\S]*?if\(role!=='owner'\) return;/.test(html), true, '…on the owner machine only');
   is(/function rdWaCatchUp\(\)\{[\s\S]*?if\(rdWaVisitAnswered\(a, g\)\) continue;/.test(html), true, '…never to a customer who already wrote back');
+}
+
+console.log('9. once her hour has begun, the card is plain');
+{
+  is(/var _at=new Date\(String\(\(appt&&appt\.datetime\)\|\|''\)\)\.getTime\(\);\s+if\(_at && _at<=Date\.now\(\)\) return '';/.test(html), true, 'no GELİYOR strip after the start time');
+  is(/if\(_at && _at<=Date\.now\(\)\) return '';\s+\/\/ her hour has begun: plain card/.test(html), true, '…and no 🟢 by her name');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -13301,8 +13301,8 @@ function rdWaRemLine(a){
     const auto=firstAt - RD_WA_BTN_MIN*60e3;
     const planT=(first.wa && Number(first.wa.t)) || 0;
     if(!sent && rdWaHasUids(first) && planT>=RD_WA_BTN_LIVE_AT && planT<auto && auto<=now) sent=auto;
-    // Her hour has begun: nothing left to send, so only the yellow mark stays.
-    if(at<now && !sent) return '';
+    // Her hour has begun: the card goes back to plain, yellow mark and all.
+    if(at<=now) return '';
     let say, badge='';
     if(sent){
       say=follow ? '📨 İlk randevuyla' : '📨 Butonlu mesaj';
@@ -13890,6 +13890,8 @@ function renderWaAnswers(){
 function rdWaAnsMark(a, mini){
   try{
     if(!a || a.status!=='confirmed' || !a.waAns || !a.waAns.v) return '';
+    const _at=new Date(String(a.datetime||'')).getTime();
+    if(_at && _at<=Date.now()) return '';           // her hour has begun: plain card
     const stop='event.stopPropagation();event.preventDefault();';
     if(a.waAns.v==='confirm'){
       return ' <span onclick="'+stop+'rdWaAnsInfo('+a.id+')" style="cursor:pointer;" title="Müşteri onayladı — dokun: ne zaman">🟢</span>';
@@ -20660,6 +20662,11 @@ function rdWrWindow(r, now){
          were ever for. Her message is still on her row in Gelen Kutusu. */
       var st=String((appt&&appt.status)||'');
       if(st==='completed'||st==='cancelled'||st==='noshow') return '';
+      /* Her hour has begun: the question the strip answered ("is she
+         coming?") is settled, so the card goes back to plain (Bülent, 7 Ekim:
+         "when the time lapses, I want the green taken off"). */
+      var _at=new Date(String((appt&&appt.datetime)||'')).getTime();
+      if(_at && _at<=Date.now()) return '';
       /* Rung and confirmed. The same green mark the card gets for a written
          "tamam", because to the technician looking at her column there is no
          difference worth drawing — the customer is coming. A written
