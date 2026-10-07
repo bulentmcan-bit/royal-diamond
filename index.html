@@ -20782,69 +20782,88 @@ function rdWrWindow(r, now){
     }
     var h='<div style="padding:12px 14px 14px 30px;background:rgba(127,127,127,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;">';
 
-    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">NEYE CEVAP VERİYOR</div>';
-
-    // 1. the slots we offered her — and, where she answered one, whether the
-    //    slot was still being held when she did.
-    var hold=0; try{ hold=(C.gapFill&&C.gapFill.holdMinutes)||0; }catch(e){}
-    if(sent.length){
-      h+=sent.map(function(o){
-        var tpl=rdWrTemplate('bosluk_teklifi'), late=rdWrOfferLate(o.id, r.ts, hold);
-        var gone=rdWrSlotGone(o.offer&&o.offer.d, Date.now());
-        var line='<div style="margin-bottom:6px;">📤 Ona gönderdiğimiz boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b>';
-        if(tpl&&tpl.body) line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(tpl.body)+(tpl.buttons?'\n[ '+esc(tpl.buttons.join(' ]   [ '))+' ]':'')+'</div>';
-        if(late && (late.pastHold||gone)){
-          var how = late.days>=1 ? (late.days+' gün') : (late.hours>=1 ? (late.hours+' saat') : (late.mins+' dakika'));
-          line+='<div style="margin:5px 0 0 20px;color:#c4863a;font-weight:700;">⚠ Cevabı '+esc(how)+' sonra geldi'
-             +(gone?' — teklif edilen gün çoktan geçti.':' — slot '+esc(String(late.holdMinutes))+' dakika tutuluyordu, artık serbest.')
-             +' Ona yeni bir saat teklif edin.</div>';
-        }
-        return line+'</div>';
+    /* The plain view, the one that opens (Bülent, 7 Ekim: "it becomes an
+       eyesore — just make it neat and easy"): a short chat. Our message on
+       one line, her words under it, the answer box. The working-out —
+       template notes, late-reply warnings, her bookings — is behind the
+       button. */
+    if(!all){
+      var bub=function(who, when, txt, ours){
+        return '<div style="display:flex;'+(ours?'':'justify-content:flex-end;')+'margin-bottom:6px;">'
+          +'<div style="max-width:80%;padding:6px 10px;border-radius:10px;'+(ours?'background:rgba(37,211,102,0.12);':'background:var(--card,#fff);border:1px solid var(--border);')+'">'
+          +'<div style="font-size:0.7rem;color:var(--muted);margin-bottom:2px;">'+esc(who)+(when?' · '+esc(when):'')+'</div>'
+          +'<div>'+txt+'</div></div></div>';
+      };
+      var ours=[];
+      sent.forEach(function(o){ ours.push({ at:0, html:bub('Biz', '', 'Boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b>', true) }); });
+      rems.forEach(function(x){ ours.push({ at:Number(x.at)||0, html:bub('Biz', rdWrWhen(x.at), 'Hatırlatma: <b>'+esc(rdWrReminderLine(x))+'</b>', true) }); });
+      h+=ours.sort(function(p,q){ return p.at-q.at; }).map(function(x){ return x.html; }).join('');
+      h+=thread.map(function(m){ return bub('Müşteri', rdWrWhen(m.ts), '“'+esc(m.text||'(metin yok)')+'”', false); }).join('');
+    } else {
+      h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">NEYE CEVAP VERİYOR</div>';
+  
+      // 1. the slots we offered her — and, where she answered one, whether the
+      //    slot was still being held when she did.
+      var hold=0; try{ hold=(C.gapFill&&C.gapFill.holdMinutes)||0; }catch(e){}
+      if(sent.length){
+        h+=sent.map(function(o){
+          var tpl=rdWrTemplate('bosluk_teklifi'), late=rdWrOfferLate(o.id, r.ts, hold);
+          var gone=rdWrSlotGone(o.offer&&o.offer.d, Date.now());
+          var line='<div style="margin-bottom:6px;">📤 Ona gönderdiğimiz boş saat teklifi: <b>'+esc(rdWrOfferLine({offer:o.offer}))+'</b>';
+          if(tpl&&tpl.body) line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(tpl.body)+(tpl.buttons?'\n[ '+esc(tpl.buttons.join(' ]   [ '))+' ]':'')+'</div>';
+          if(late && (late.pastHold||gone)){
+            var how = late.days>=1 ? (late.days+' gün') : (late.hours>=1 ? (late.hours+' saat') : (late.mins+' dakika'));
+            line+='<div style="margin:5px 0 0 20px;color:#c4863a;font-weight:700;">⚠ Cevabı '+esc(how)+' sonra geldi'
+               +(gone?' — teklif edilen gün çoktan geçti.':' — slot '+esc(String(late.holdMinutes))+' dakika tutuluyordu, artık serbest.')
+               +' Ona yeni bir saat teklif edin.</div>';
+          }
+          return line+'</div>';
+        }).join('');
+      }
+  
+      // 2. the reminders. Most replies answer one of these, and the panel used to
+      //    shrug and send reception to Piyzi.
+      if(rems.length){
+        h+=rems.map(function(x){
+          var tpl=rdWrTemplate(x.tpl);
+          var line='<div style="margin-bottom:6px;">⏰ Ona giden hatırlatma: <b>'+esc(rdWrReminderLine(x))+'</b>'
+            +'<span style="color:var(--muted);"> · '+esc(rdWrWhen(x.at))+(x.exact?'':' (randevudan hesaplandı)')+'</span>';
+          if(x.text){
+            line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(x.text)+'</div>';
+          }else if(tpl){
+            line+='<div style="margin:3px 0 0 20px;color:var(--muted);font-size:0.78rem;">'+esc(tpl.label)
+              +(tpl.vars&&tpl.vars.length?' — içinde: '+esc(tpl.vars.join(', ')):'')
+              +'. Tam metni bu depoda yok, Piyzi\'deki şablonda.</div>';
+          }
+          return line+'</div>';
+        }).join('');
+      }
+  
+      // 3. nothing matched at all. Still said plainly, but only when it is true.
+      if(!sent.length && !rems.length && !(hadSent>0)){
+        h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya sistemden teklif de hatırlatma da gitmemiş. Muhtemelen resepsiyonun Piyzi\'den kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
+      }
+  
+      h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">'+(all?'ONDAN GELEN TÜM MESAJLAR':'ONDAN GELEN SON MESAJLAR')+'</div>';
+      h+=thread.map(function(m){
+        var mine=(String(m.id)===String(r.id));
+        return '<div style="margin-bottom:3px;'+(mine?'font-weight:700;':'')+'">'
+          +'<span style="color:var(--muted);font-variant-numeric:tabular-nums;">'+esc(rdWrWhen(m.ts))+'</span> &nbsp;“'+esc(m.text||'(metin yok)')+'”'
+          +(mine?' <span style="color:var(--gold);">← bu satır</span>':'')+'</div>';
       }).join('');
+  
+      if(appts.length){
+        h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">RANDEVULARI</div>';
+        h+=appts.map(function(a){
+          var d=String(a.datetime||''); 
+          return '<div style="margin-bottom:3px;">📆 '+esc(rdWrDayTR(d.slice(0,10)))+' '+esc(d.slice(11,16))+' · '+esc(a.staff||'—')+' · '+esc(a.service||'—')+'</div>';
+        }).join('');
+      }
     }
 
-    // 2. the reminders. Most replies answer one of these, and the panel used to
-    //    shrug and send reception to Piyzi.
-    if(rems.length){
-      h+=rems.map(function(x){
-        var tpl=rdWrTemplate(x.tpl);
-        var line='<div style="margin-bottom:6px;">⏰ Ona giden hatırlatma: <b>'+esc(rdWrReminderLine(x))+'</b>'
-          +'<span style="color:var(--muted);"> · '+esc(rdWrWhen(x.at))+(x.exact?'':' (randevudan hesaplandı)')+'</span>';
-        if(x.text){
-          line+='<div style="margin:3px 0 0 20px;padding:5px 9px;border-left:3px solid var(--border);color:var(--muted);white-space:pre-wrap;font-size:0.78rem;">'+esc(x.text)+'</div>';
-        }else if(tpl){
-          line+='<div style="margin:3px 0 0 20px;color:var(--muted);font-size:0.78rem;">'+esc(tpl.label)
-            +(tpl.vars&&tpl.vars.length?' — içinde: '+esc(tpl.vars.join(', ')):'')
-            +'. Tam metni bu depoda yok, Piyzi\'deki şablonda.</div>';
-        }
-        return line+'</div>';
-      }).join('');
-    }
-
-    // 3. nothing matched at all. Still said plainly, but only when it is true.
-    if(!sent.length && !rems.length && !(hadSent>0)){
-      h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya sistemden teklif de hatırlatma da gitmemiş. Muhtemelen resepsiyonun Piyzi\'den kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
-    }
-
-    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">'+(all?'ONDAN GELEN TÜM MESAJLAR':'ONDAN GELEN SON MESAJLAR')+'</div>';
-    h+=thread.map(function(m){
-      var mine=(String(m.id)===String(r.id));
-      return '<div style="margin-bottom:3px;'+(mine?'font-weight:700;':'')+'">'
-        +'<span style="color:var(--muted);font-variant-numeric:tabular-nums;">'+esc(rdWrWhen(m.ts))+'</span> &nbsp;“'+esc(m.text||'(metin yok)')+'”'
-        +(mine?' <span style="color:var(--gold);">← bu satır</span>':'')+'</div>';
-    }).join('');
-
-    if(appts.length){
-      h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">RANDEVULARI</div>';
-      h+=appts.map(function(a){
-        var d=String(a.datetime||''); 
-        return '<div style="margin-bottom:3px;">📆 '+esc(rdWrDayTR(d.slice(0,10)))+' '+esc(d.slice(11,16))+' · '+esc(a.staff||'—')+' · '+esc(a.service||'—')+'</div>';
-      }).join('');
-    }
-
-    if(hidden || all){
+    {
       h+='<div style="margin-top:8px;"><button onclick="event.stopPropagation();rdWrOldToggle('+JSON.stringify(String(r.id)).replace(/"/g,'&quot;')+')" style="padding:3px 10px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;cursor:pointer;font-family:inherit;">'
-        +(all?'▴ Eskileri gizle':'▾ Eski mesajları göster ('+hidden+')')+'</button></div>';
+        +(all?'▴ Sade görünüm':'▾ Ayrıntılar ve eski mesajlar')+'</button></div>';
     }
 
     /* ── the answer box ────────────────────────────────────────────────────
