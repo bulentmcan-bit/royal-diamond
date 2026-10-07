@@ -13315,7 +13315,8 @@ function rdWaRemLine(a){
       if(!follow) say=s ? '📨 '+s : '📭 Hatırlatma kurulmadı';
       else say='📨 '+t+' randevusuyla: '+(s ? s.charAt(0).toLocaleLowerCase('tr')+s.slice(1) : 'hatırlatma kurulmadı');
     }
-    const showBtn=!sent && !follow;
+    // She has already written back (GELİYOR on her card): nothing to ask.
+    const showBtn=!sent && !follow && !rdWaVisitAnswered(a, g);
     return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
       +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
       +badge
@@ -13325,6 +13326,18 @@ function rdWaRemLine(a){
       +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>')
       +'</div>';
   }catch(e){ return ''; }
+}
+// Has she written anything near this visit — any booking of it? Her words
+// are on her card; asking her again would be the pestering (7 Ekim: Kezban
+// had said "geleceğim" and still had a 📨 offered).
+function rdWaVisitAnswered(a, g){
+  try{
+    if(typeof rdWrAll!=='function' || typeof rdWrLatestFor!=='function') return false;
+    const map=rdWrAll(); if(!map) return false;
+    const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+    if(!c) return false;
+    return (g||[a]).some(function(x){ return !!rdWrLatestFor(map, c, x); });
+  }catch(e){ return false; }
 }
 function rdWaSendNow(id){
   try{
@@ -13439,6 +13452,53 @@ async function rdWaReplan(){
     try{ if(typeof renderDash==='function') renderDash(); }catch(_){}
   } finally { _waReplanBusy=false; }
 }
+/* The ones the re-plan came too late for. A visit still on the old plan
+   (24-hour message only, no buttons) whose 1.5-hour moment has passed can
+   no longer be scheduled — 7 Ekim, Canan's 10:00: the re-plan arrived at
+   08:34, four minutes after her moment. She is asked NOW instead, exactly as
+   📨 would, provided she is the first booking of her visit, has not been
+   asked or written back, and is still more than ten minutes away. Owner
+   machine only, like the re-plan, so two screens never send twice. */
+function rdWaCatchUpScan(appts, now){
+  const out=[];
+  (appts||[]).forEach(function(a){
+    if(!a || a.status!=='confirmed') return;
+    if(!(a.wa && Array.isArray(a.wa.u) && a.wa.u.length)) return;   // a carrier with a plan
+    if((Number(a.wa.t)||0) >= RD_WA_BTN_LIVE_AT) return;          // on the button plan already
+    const t=new Date(String(a.datetime||'')).getTime();
+    if(!t) return;
+    const left=t-now;
+    if(left > 93*60e3 || left <= 10*60e3) return;                  // re-plan's job, or too late
+    out.push(a);
+  });
+  return out;
+}
+let _waCatchBusy=false;
+function rdWaCatchUp(){
+  if(_waCatchBusy || !rdWaOn()) return;
+  let role=''; try{ role=localStorage.getItem('rdns_msg_role')||''; }catch(e){}
+  if(role!=='owner') return;
+  _waCatchBusy=true;
+  (async function(){
+    try{
+      for(const a of rdWaCatchUpScan(appointments, Date.now())){
+        const g=rdWaGroup(a, rdWaDayOf(a));
+        if(g.length && String(g[0].id)!==String(a.id)) continue;
+        if(g.concat([a]).some(function(x){ return x && x.wa && x.wa.n; })) continue;
+        if(rdWaVisitAnswered(a, g)) continue;
+        const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
+        const p=rdWaPayload(a, c);
+        if(!p) continue;
+        console.log('[wa-catchup] asking now:', a.id, a.datetime);
+        await rdWaSendButtons(a.id, p, c && c.name);
+        await new Promise(function(r){ setTimeout(r, 3000); });
+      }
+    }catch(e){ console.warn('[wa-catchup]', e); }
+    finally{ _waCatchBusy=false; }
+  })();
+}
+setTimeout(function(){ rdWaCatchUp(); }, 45000);
+setInterval(function(){ rdWaCatchUp(); }, 2*60e3);
 setTimeout(function(){ rdWaReplan(); }, 20000);           // after the first sync has settled
 setInterval(function(){ rdWaReplan(); }, 30*60e3);         // and again later, for anything synced in since
 
