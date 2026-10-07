@@ -13282,18 +13282,29 @@ function rdWaRemLine(a){
     if(!c || /kapal[ıi]/i.test(String(c.name||''))) return '';
     const two=function(n){ return (n<10?'0':'')+n; };
     const clock=function(t){ const d=new Date(t); return two(d.getHours())+':'+two(d.getMinutes()); };
+    // One visit, one message: a later booking the same day shows what the
+    // first one's message did, and has no 📨 of its own, since the message
+    // quotes the first booking's time (Bülent, 7 Ekim).
+    const g=rdWaGroup(a, rdWaDayOf(a));
+    const first=g.length ? g[0] : a;
+    const follow=String(first.id)!==String(a.id);
+    const sent=g.concat([a]).filter(function(x){ return x && x.wa && x.wa.n; })
+      .map(function(x){ return Number(x.wa.n); }).sort(function(p,q){ return p-q; })[0];
     let say;
     if(a.wa && a.wa.n) say='📨 Butonlu mesaj gönderildi '+clock(a.wa.n);
-    else if(rdWaHasUids(a)) say=(Number(a.wa.t)||0)>=RD_WA_BTN_LIVE_AT ? '📨 Butonlu hatırlatma 1,5 sa önce gidecek' : '📨 Eski hatırlatma (butonsuz)';
+    else if(sent) say='📨 İlk randevuyla gönderildi '+clock(sent);
     else {
-      const carrier=rdWaCarrier(a, rdWaDayOf(a));
-      say=(carrier && String(carrier.id)!==String(a.id)) ? '📨 Aynı günün ilk randevusuyla birlikte' : '📭 Hatırlatma kurulmadı';
+      const t=String(first.datetime||'').slice(11,16);
+      const s=rdWaHasUids(first) ? ((Number(first.wa.t)||0)>=RD_WA_BTN_LIVE_AT ? 'Butonlu hatırlatma 1,5 sa önce gidecek' : 'Eski hatırlatma (butonsuz)') : null;
+      if(!follow) say=s ? '📨 '+s : '📭 Hatırlatma kurulmadı';
+      else say='📨 '+t+' randevusuyla: '+(s ? s.charAt(0).toLocaleLowerCase('tr')+s.slice(1) : 'hatırlatma kurulmadı');
     }
+    const showBtn=!sent && !follow;
     return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
       +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
       // Once it has gone, the button goes too: one tap cannot become two
       // messages to the same customer (Bülent, 7 Ekim).
-      +((a.wa && a.wa.n) ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
+      +(!showBtn ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
       +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>')
       +'</div>';
   }catch(e){ return ''; }
@@ -13305,7 +13316,7 @@ function rdWaSendNow(id){
     const c=a?(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); }):null;
     const p=rdWaPayload(a, c);
     if(!p){ toast('📵','Gönderilemez','Bu randevuda geçerli bir telefon numarası yok.','r'); return; }
-    if(a.wa && a.wa.n){ toast('📨','Zaten gönderildi','Bu müşteriye butonlu mesaj zaten gitti.',''); return; }
+    if(rdWaGroup(a, rdWaDayOf(a)).concat([a]).some(function(x){ return x && x.wa && x.wa.n; })){ toast('📨','Zaten gönderildi','Bu müşteriye bugün butonlu mesaj zaten gitti.',''); return; }
     if(!confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
     rdWaSendButtons(id, p, c.name);
   }catch(e){ console.warn('[wa] send-now error:', e); }
