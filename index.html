@@ -13327,8 +13327,8 @@ function rdWaRemLine(a){
       +'</div>';
   }catch(e){ return ''; }
 }
-// Has she written anything near this visit — any booking of it? Her words
-// are on her card; asking her again would be the pestering (7 Ekim: Kezban
+// Has she answered yes or no near this visit — any booking of it? Her
+// words are on her card; asking her again would be the pestering (7 Ekim: Kezban
 // had said "geleceğim" and still had a 📨 offered).
 function rdWaVisitAnswered(a, g){
   try{
@@ -13336,7 +13336,12 @@ function rdWaVisitAnswered(a, g){
     const map=rdWrAll(); if(!map) return false;
     const c=(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); });
     if(!c) return false;
-    return (g||[a]).some(function(x){ return !!rdWrLatestFor(map, c, x); });
+    // A real yes or no, not any message: "2 side" (Berin, 7 Ekim) is a
+    // question about her booking, and she still needs asking.
+    return (g||[a]).some(function(x){
+      const r=rdWrLatestFor(map, c, x);
+      return !!(r && (rdWrIsConfirm(r.text) || rdWrIsCancel(r.text)));
+    });
   }catch(e){ return false; }
 }
 function rdWaSendNow(id){
