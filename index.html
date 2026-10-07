@@ -20614,7 +20614,9 @@ function rdWrWindow(r, now){
 }
 // WAREPLY-SLICE-END
 (function(){
-  var _wr={}, _seen=null, _started=false, _timer=null, _open=null;
+  var _wr={}, _seen=null, _started=false, _timer=null, _open=null, _oldOpen={};
+  // "Eski mesajları göster" on an opened row — per device, nothing written.
+  window.rdWrOldToggle=function(id){ _oldOpen[String(id)]=!_oldOpen[String(id)]; render(); };
   // Opening a row is a local, per-device thing — nothing is written anywhere.
   window.rdWrToggle=function(id){ _open=(_open===String(id)?null:String(id)); render(); };
   function cls(){ try{ return clients||[]; }catch(e){ return []; } }
@@ -20711,6 +20713,17 @@ function rdWrWindow(r, now){
     var esc=rdWrEsc, c=rdWrClientFor(r, cls()), ph=String(r.phone||'');
     var thread=rdWrThread(_wr, ph), sent=rdWrSentTo(_wr, ph);
     var appts=[]; try{ appts=rdWrApptsFor(appointments, c, Date.now()); }catch(e){}
+    /* Only the current conversation (Bülent, 7 Ekim: "this gets confusing —
+       can we only see the current conversations and not the past?"). Current
+       = from two days before this message on: the reminders, her messages
+       and her bookings from today. The rest is one tap away. */
+    var all=!!_oldOpen[String(r.id)], cut=(Number(r.ts)||Date.now())-2*86400000;
+    var d0=new Date(); d0.setHours(0,0,0,0);
+    var hidden=0;
+    if(!all){
+      var n0=thread.length; thread=thread.filter(function(m){ return (Number(m.ts)||0)>=cut || String(m.id)===String(r.id); }); hidden+=n0-thread.length;
+      var n1=appts.length; appts=appts.filter(function(a){ var t=new Date(String(a.datetime||'')).getTime(); return !t || t>=d0.getTime(); }); hidden+=n1-appts.length;
+    }
     var h='<div style="padding:12px 14px 14px 30px;background:rgba(127,127,127,0.06);border-bottom:1px solid var(--border);font-size:0.82rem;">';
 
     h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">NEYE CEVAP VERİYOR</div>';
@@ -20737,6 +20750,7 @@ function rdWrWindow(r, now){
     // 2. the reminders. Most replies answer one of these, and the panel used to
     //    shrug and send reception to Piyzi.
     var rems=[]; try{ rems=rdWrRemindersFor(appointments, c, r.ts, (typeof getR24SentLog==='function'?getR24SentLog():{})); }catch(e){}
+    if(!all){ var n2=rems.length; rems=rems.filter(function(x){ return !x.at || Number(x.at)>=cut; }); hidden+=n2-rems.length; }
     if(rems.length){
       h+=rems.map(function(x){
         var tpl=rdWrTemplate(x.tpl);
@@ -20758,7 +20772,7 @@ function rdWrWindow(r, now){
       h+='<div style="margin-bottom:4px;color:#c4863a;">Bu numaraya sistemden teklif de hatırlatma da gitmemiş. Muhtemelen resepsiyonun Piyzi\'den kendi yazdığı bir mesaja cevap veriyor — onu Piyzi\'den açıp görmeniz gerekir.</div>';
     }
 
-    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">ONDAN GELEN TÜM MESAJLAR</div>';
+    h+='<div style="font-weight:800;font-size:0.74rem;letter-spacing:.08em;color:var(--muted);margin:10px 0 6px;">'+(all?'ONDAN GELEN TÜM MESAJLAR':'ONDAN GELEN SON MESAJLAR')+'</div>';
     h+=thread.map(function(m){
       var mine=(String(m.id)===String(r.id));
       return '<div style="margin-bottom:3px;'+(mine?'font-weight:700;':'')+'">'
@@ -20772,6 +20786,11 @@ function rdWrWindow(r, now){
         var d=String(a.datetime||''); 
         return '<div style="margin-bottom:3px;">📆 '+esc(rdWrDayTR(d.slice(0,10)))+' '+esc(d.slice(11,16))+' · '+esc(a.staff||'—')+' · '+esc(a.service||'—')+'</div>';
       }).join('');
+    }
+
+    if(hidden || all){
+      h+='<div style="margin-top:8px;"><button onclick="event.stopPropagation();rdWrOldToggle('+JSON.stringify(String(r.id)).replace(/"/g,'&quot;')+')" style="padding:3px 10px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;cursor:pointer;font-family:inherit;">'
+        +(all?'▴ Eskileri gizle':'▾ Eski mesajları göster ('+hidden+')')+'</button></div>';
     }
 
     /* ── the answer box ────────────────────────────────────────────────────

@@ -189,5 +189,13 @@ console.log('9. once her hour has begun, the card is plain');
   is(/if\(_at && _at<=Date\.now\(\)\) return '';\s+\/\/ her hour has begun: plain card/.test(html), true, '…and no 🟢 by her name');
 }
 
+console.log('10. the opened message shows only the current conversation');
+{
+  is(/cut=\(Number\(r\.ts\)\|\|Date\.now\(\)\)-2\*86400000/.test(html), true, 'from two days before her message');
+  is(/thread=thread\.filter\(function\(m\)\{ return \(Number\(m\.ts\)\|\|0\)>=cut/.test(html), true, '…her older messages are folded away');
+  is(/rems=rems\.filter\(function\(x\)\{ return !x\.at \|\| Number\(x\.at\)>=cut; \}\)/.test(html), true, '…and older reminders');
+  is(/Eski mesajları göster \('\+hidden\+'\)/.test(html), true, '…one tap brings them back');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
