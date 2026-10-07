@@ -5719,18 +5719,22 @@ p, span, div, label, h1, h2, h3, h4 {
     costs.utils = 25000;     costs.utilsCur = 'TRY';
     costs.supplies = 1000;   costs.suppliesCur = 'USD';
     costs.other = 1460;      costs.otherCur = 'USD';
-    costs.staffCount = 5;
+    costs.staffCount = 6;
     if(!costs.extraStaff) costs.extraStaff = {};
     if(!costs.extraStaffCur) costs.extraStaffCur = {};
     costs.extraStaff[2] = 150;    costs.extraStaffCur[2] = 'GBP';   // Beverages
-    costs.extraStaff[3] = 25000;  costs.extraStaffCur[3] = 'TRY';   // Social Media
+    // The social media BUDGET is ₺25,000 and this is what is left of it after
+    // Glyn's ₺10,000 in slot 7. The two together are the budget — raise one and
+    // lower the other, or the salon pays more than it meant to.
+    costs.extraStaff[3] = 15000;  costs.extraStaffCur[3] = 'TRY';   // Social Media (₺25,000 budget less Glyn's ₺10,000)
     costs.extraStaff[4] = 1300;   costs.extraStaffCur[4] = 'USD';   // Hannah
     costs.extraStaff[5] = 1300;   costs.extraStaffCur[5] = 'USD';   // Lissa
     costs.extraStaff[6] = 60000;  costs.extraStaffCur[6] = 'TRY';   // Nihal
-    // Zebo has left. The slot is deleted rather than zeroed, so a device that
-    // still carries her ₺52,000 from before drops it on the next load instead
-    // of quietly keeping it in the expenses for ever.
-    delete costs.extraStaff[7]; delete costs.extraStaffCur[7];
+    // Slot 7 was Zebo's ₺52,000 and is now Glyn's ₺10,000 — paid through
+    // Helen's salary for the social media. Assigning it also overwrites Zebo's
+    // old figure on any device that still carries it, so she cannot linger in
+    // the expenses.
+    costs.extraStaff[7] = 10000;  costs.extraStaffCur[7] = 'TRY';   // Helen — Glyn (Sosyal Medya)
     localStorage.setItem('rdns_monthly_costs_v3', JSON.stringify(costs));
     syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem('rdns_monthly_costs_v3')||'{}'));
 
@@ -8703,7 +8707,7 @@ function renderSalaryPage(){
       var kdv   = Math.round(monthRevenue * 0.05 / 1.05);
       var vergi = Math.round(monthRevenue * 0.10);
       var breakeven = toTRY(2000,'USD') + toTRY(550,'GBP') + toTRY(1300,'USD') + toTRY(1300,'USD') +
-                      60000 + toTRY(150,'GBP') + 25000 +
+                      60000 + toTRY(150,'GBP') + 15000 + 10000 +
                       toTRY(750,'GBP') + 25000 + toTRY(1000,'USD') + toTRY(1460,'USD') + allTechComms;
       var above = Math.max(0, monthRevenue - breakeven);
       var net   = Math.max(0, above - kdv - vergi);
@@ -8911,8 +8915,9 @@ function renderHelenBreakdown(c, total){
   const ni         = mCosts.other     * usd;
   const bev        = (mCosts.extraStaff[2]||0) * gbp;
   const socmed     = (mCosts.extraStaff[3]||0);
+  const glynSal    = (mCosts.extraStaff[7]||0);
 
-  const totalExpenses = helenSal+helenAccom+hannahSal+lissaSal+nihalSal+rent+utils+supplies+ni+bev+socmed;
+  const totalExpenses = helenSal+helenAccom+hannahSal+lissaSal+nihalSal+rent+utils+supplies+ni+bev+socmed+glynSal;
 
   // Tech comms from history — cancelled jobs excluded
   const ym = mViewMonth||mCurrentMonth();
@@ -8949,7 +8954,8 @@ function renderHelenBreakdown(c, total){
   html += row('Business Supplies',    supplies,   '$1,000 × ₺'+usd.toFixed(2), 'var(--orange)');
   html += row('National Insurance ×4',ni,         '$1,460 × ₺'+usd.toFixed(2), 'var(--orange)');
   html += row('Beverages',            bev,        '£150 × ₺'+gbp.toFixed(2),   'var(--orange)');
-  html += row('Social Media',         socmed,     '₺25,000',                    'var(--orange)');
+  html += row('Social Media',         socmed,     '₺15,000',                    'var(--orange)');
+  html += row('Helen — Glyn (Sosyal Medya)', glynSal, '₺10,000 · bütçe ₺25,000', 'var(--orange)');
 
   // Total expenses
   html += '<div style="display:flex;justify-content:space-between;padding:10px 14px;background:rgba(0,0,0,0.2);border-top:1px solid var(--border);">';
@@ -17573,9 +17579,10 @@ let mCosts = {
   supplies:1000,   suppliesCur:'USD',  // Business supplies $1,000
   other:1460,      otherCur:'USD',     // National Insurance $1,460 (4 people)
   vat:5, tax:15,
-  staffCount:5,
-  // extraStaff slots: 2=Beverages, 3=SocialMedia, 4=Hannah, 5=Lissa, 6=Nihal
-  extraStaff:   {2:150,   3:25000, 4:1300,  5:1300,  6:60000},
+  staffCount:6,
+  // extraStaff slots: 2=Beverages, 3=SocialMedia, 4=Hannah, 5=Lissa, 6=Nihal,
+  //                   7=Helen/Glyn (sosyal medya, paid through Helen)
+  extraStaff:   {2:150,   3:15000, 4:1300,  5:1300,  6:60000, 7:10000},
   extraStaffCur:{2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY', 7:'TRY'},
 };
 
@@ -17673,8 +17680,9 @@ function mGetCalc(rev, viewMonth){
   const lissaSal    = Math.round(1300 * usd);   // Lissa $1,300
   const nihalSal    = 60000;                     // Nihal ₺60,000
   const beverages   = Math.round(150  * gbp);   // İçecekler £150
-  const socialMedia = 25000;                     // Sosyal Medya ₺25,000
-  const totalStaff  = starSalTRY + starFlatTRY + hannahSal + lissaSal + nihalSal + beverages + socialMedia;
+  const socialMedia = 15000;                     // Sosyal Medya ₺15,000  ┐ ₺25,000
+  const glynSal     = 10000;                     // Helen — Glyn ₺10,000    ┘ budget
+  const totalStaff  = starSalTRY + starFlatTRY + hannahSal + lissaSal + nihalSal + beverages + socialMedia + glynSal;
 
   // Fixed costs
   const fixedTRY = Math.round(750  * gbp)   // Kira £750
@@ -17716,7 +17724,7 @@ function mGetCalc(rev, viewMonth){
     starBase: starSalTRY + starFlatTRY,
     starTotal: starSalTRY + comm,
     starSalTRY, starFlatTRY,
-    extraStaffTotal: hannahSal + lissaSal + nihalSal + beverages + socialMedia,
+    extraStaffTotal: hannahSal + lissaSal + nihalSal + beverages + socialMedia + glynSal,
     totalStaff, fixed: fixedTRY,
     techCommTotal};
 }
@@ -17752,9 +17760,9 @@ function mInitCosts(){
   mCosts.utils = 25000;     mCosts.utilsCur = 'TRY';
   mCosts.supplies = 1000;   mCosts.suppliesCur = 'USD';
   mCosts.other = 1460;      mCosts.otherCur = 'USD';
-  mCosts.staffCount = 5;
-  mCosts.extraStaff    = {2:150,   3:25000, 4:1300,  5:1300,  6:60000};
-  mCosts.extraStaffCur = {2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY'};
+  mCosts.staffCount = 6;
+  mCosts.extraStaff    = {2:150,   3:15000, 4:1300,  5:1300,  6:60000, 7:10000};
+  mCosts.extraStaffCur = {2:'GBP', 3:'TRY', 4:'USD', 5:'USD', 6:'TRY', 7:'TRY'};
   localStorage.setItem(MONTHLY_COSTS_KEY, JSON.stringify(mCosts));
   syncPush('rdns_monthly_costs_v3', JSON.parse(localStorage.getItem(MONTHLY_COSTS_KEY)||'{}'));
   mPopulateCostInputs();
@@ -17821,7 +17829,7 @@ function mRenderOtherStaffInputs(){
   for(let i=2;i<=mCosts.staffCount+1;i++){
     const cur = mCosts.extraStaffCur[i]||'USD';
     const g=document.createElement('div'); g.className='m-cost-group';
-    const staffNames={2:'İçecekler (Beverages)',3:'Sosyal Medya',4:'Hannah — Salary',5:'Lissa — Salary',6:'Nihal — Salary'};
+    const staffNames={2:'İçecekler (Beverages)',3:'Sosyal Medya',4:'Hannah — Salary',5:'Lissa — Salary',6:'Nihal — Salary',7:'Helen — Glyn (Sosyal Medya)'};
     g.innerHTML=`<div class="m-cost-label">${staffNames[i]||('Staff '+i+' — Salary')}</div>
       <div class="m-cost-inp-row">
         <input class="m-cost-inp" type="number" id="mc-tech${i}" value="${mCosts.extraStaff[i]||0}" placeholder="0"
@@ -17934,6 +17942,7 @@ function mRenderOutgoings(){
     {label:'Hannah — Salary',         amount:mCosts.extraStaff[4]||0, cur:mCosts.extraStaffCur[4]||'USD', col:'var(--mint)'},
     {label:'Lissa — Salary',          amount:mCosts.extraStaff[5]||0, cur:mCosts.extraStaffCur[5]||'USD', col:'var(--mint)'},
     {label:'Nihal — Salary',          amount:mCosts.extraStaff[6]||0, cur:mCosts.extraStaffCur[6]||'TRY', col:'var(--mint)'},
+    {label:'Helen — Glyn (Sosyal Medya)', amount:mCosts.extraStaff[7]||0, cur:mCosts.extraStaffCur[7]||'TRY', col:'var(--orange)'},
   ];
 
   const grand = lines.reduce((s,l)=>s+mToTRY(l.amount,l.cur),0);
