@@ -155,12 +155,14 @@ console.log('7. she has already answered: no 📨');
   const book = [{ id: 'k12', clientId: 1, status: 'confirmed', datetime: at(150), wa: { u: ['x'], t: Date.now() - 86400e3 } },
                 { id: 'k13', clientId: 1, status: 'confirmed', datetime: at(210) }];
   const cls = [{ id: 1, name: 'KEZBAN', phone: '905330000001' }];
-  const mk = said => new Function('rdWaOn', 'clients', 'rdWaGroup', 'rdWaDayOf', 'rdWaHasUids', 'rdWrAll', 'rdWrLatestFor', src5 + '\nreturn rdWaRemLine;')(
+  const mk = said => new Function('rdWaOn', 'clients', 'rdWaGroup', 'rdWaDayOf', 'rdWaHasUids', 'rdWrAll', 'rdWrLatestFor', 'rdWrIsConfirm', 'rdWrIsCancel', src5 + '\nreturn rdWaRemLine;')(
     () => true, cls, of => book.filter(a => a.clientId === of.clientId), a => String(a.datetime).slice(0, 10),
-    a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length), () => ({}), (m, c, a) => (said && a.id === said ? { text: 'geleceğim' } : null));
+    a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length), () => ({}),
+    (m, c, a) => (said && a.id === said.on ? { text: said.text } : null), t => /geleceğim/.test(t), t => /gelemiyorum/.test(t));
   is(/Şimdi gönder/.test(mk(null)(book[0])), true, 'no answer yet: 📨 offered');
-  is(/Şimdi gönder/.test(mk('k12')(book[0])), false, 'she wrote back: no 📨');
-  is(/Şimdi gönder/.test(mk('k13')(book[0])), false, '…even when her words sit on the later booking');
+  is(/Şimdi gönder/.test(mk({ on: 'k12', text: 'geleceğim' })(book[0])), false, 'she said yes: no 📨');
+  is(/Şimdi gönder/.test(mk({ on: 'k13', text: 'gelemiyorum' })(book[0])), false, '…or no, even on the later booking');
+  is(/Şimdi gönder/.test(mk({ on: 'k12', text: '2 side' })(book[0])), true, 'a message that is neither ("2 side") still leaves 📨');
 }
 
 console.log('8. an old-plan visit past its 1.5-hour moment is asked at once');
