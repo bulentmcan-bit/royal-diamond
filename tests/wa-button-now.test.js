@@ -62,6 +62,8 @@ console.log('3. the card and the send');
 {
   is(/rdWaRemLine\(a\)/.test(html), true, 'the 📨 line sits on every dashboard card');
   is(/📨 Şimdi gönder/.test(html), true, '…with a "send now" button');
+  is(/\(\(a\.wa && a\.wa\.n\) \? '' : '<button onclick="rdWaSendNow\(/.test(html), true, '…which disappears once the message has gone');
+  is(/if\(a\.wa && a\.wa\.n\)\{ toast\('📨','Zaten gönderildi'/.test(html), true, '…and a second send is refused even if called');
   is(/rdWaFetch\('\/wa\/send', \{ phone:p\.phone, templateName:RD_WA_BTN_TEMPLATE/.test(html), true, 'sent through /wa/send under the button template');
   is(/confirm\(\(c\.name\|\|'Müşteri'\)\+' — '\+p\.timeHHMM/.test(html), true, '…only after reception confirms');
   is(/if\(role!=='owner'\) return;/.test(html), true, 'the re-plan runs on the owner machine only');

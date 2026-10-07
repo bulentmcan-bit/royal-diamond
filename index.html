@@ -13291,8 +13291,10 @@ function rdWaRemLine(a){
     }
     return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
       +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
-      +'<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
-      +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>'
+      // Once it has gone, the button goes too: one tap cannot become two
+      // messages to the same customer (Bülent, 7 Ekim).
+      +((a.wa && a.wa.n) ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
+      +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>')
       +'</div>';
   }catch(e){ return ''; }
 }
@@ -13303,8 +13305,8 @@ function rdWaSendNow(id){
     const c=a?(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); }):null;
     const p=rdWaPayload(a, c);
     if(!p){ toast('📵','Gönderilemez','Bu randevuda geçerli bir telefon numarası yok.','r'); return; }
-    if(a.wa && a.wa.n && !confirm('Bu müşteriye butonlu mesaj zaten gönderildi. Yine de tekrar gönderilsin mi?')) return;
-    if(!(a.wa && a.wa.n) && !confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
+    if(a.wa && a.wa.n){ toast('📨','Zaten gönderildi','Bu müşteriye butonlu mesaj zaten gitti.',''); return; }
+    if(!confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
     rdWaSendButtons(id, p, c.name);
   }catch(e){ console.warn('[wa] send-now error:', e); }
 }
