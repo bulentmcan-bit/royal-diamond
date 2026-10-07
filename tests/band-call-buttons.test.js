@@ -83,6 +83,8 @@ console.log('3. the triage moves her — and her own words still win');
     () => false)();
 
   is(run(mk({})).amber.length, 1, 'a reminder sent and nothing back → she is on the list to ring');
+  ['cancelled', 'noshow', 'deleted', 'declined'].forEach(st =>
+    is(run(mk({ status: st })).amber.length, 0, 'a ' + st + ' booking is nobody to ring'));
   is(run(mk({ datetime: inHours(5) })).amber.length, 0, '…but not before the 1.5-hour button message has gone (7 Ekim)');
   is(run(mk({ rdCall: 'yes' })).amber.length, 0, '…pressing ✅ takes her off that list');
   is(run(mk({ wa: { n: NOW - 60000 } })).amber.length, 0, '…and so does 📨: she has just been asked by WhatsApp, nobody rings her too');

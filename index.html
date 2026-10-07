@@ -13950,7 +13950,10 @@ function rdWrTriage(){
       catch(e){ return [a]; }
     };
     (appointments||[]).forEach(function(a){
-      if(!a || a.status==='cancelled' || a.status==='completed') return;
+      // Only a booking that is still on: a cancelled, deleted, no-show or
+      // declined one is nobody to ring (Bülent's cancelled 09:45 test, 7 Ekim).
+      if(!a || /^(cancelled|completed|noshow|deleted|declined)$/.test(String(a.status||''))) return;
+      if(a.deleted || a._deleted) return;
       if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return;   // a held hour, not a person
       var at=new Date(String(a.datetime||'')).getTime();
       if(!at || at < now) return;                   // her hour has gone — nothing left to save
