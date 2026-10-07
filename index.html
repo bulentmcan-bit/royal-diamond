@@ -13046,6 +13046,7 @@ function rdWaScheduleNow(a){
         // service — nothing else) the moment its reminders exist.
         try{ rdWaConfirmPush([live]); }catch(e){}
         console.log('[wa] appt', a.id, 'scheduled:', JSON.stringify(j.scheduled||[]), 'skipped:', JSON.stringify(j.skipped||[]));
+        try{ if(typeof rdWaLateAsk==='function') rdWaLateAsk(live, j); }catch(e){}
       } else {
         console.warn('[wa] appt', a.id, 'schedule failed:', j&&j.error&&j.error.code, j&&j.error&&j.error.message);
         // The one failure that means "the setup is not finished" is worth a
@@ -13304,21 +13305,45 @@ function rdWaSendNow(id){
     if(!p){ toast('📵','Gönderilemez','Bu randevuda geçerli bir telefon numarası yok.','r'); return; }
     if(a.wa && a.wa.n && !confirm('Bu müşteriye butonlu mesaj zaten gönderildi. Yine de tekrar gönderilsin mi?')) return;
     if(!(a.wa && a.wa.n) && !confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
-    rdWaFetch('/wa/send', { phone:p.phone, templateName:RD_WA_BTN_TEMPLATE, languageCode:'tr',
-                            params:{ body:[rdWaDateLong(p.dateISO), p.timeHHMM] } })
-      .then(function(j){
-        if(j && j.ok){
-          const live=(typeof apptById==='function')?apptById(id):null;
-          if(live){ live.wa=Object.assign({}, live.wa||{}, { n:Date.now() }); apptTouch(live); try{ saveAll(); }catch(e){} }
-          toast('📨','Gönderildi',(c.name||'Müşteri')+' butonlu mesajı aldı.','g');
-          try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
-        } else {
-          const e=(j&&j.error)||{};
-          toast('✗','Gönderilemedi',(e.message||e.code||'bilinmeyen hata'),'r');
-        }
-      })
-      .catch(function(){ toast('✗','Gönderilemedi','Sunucuya ulaşılamadı — tekrar deneyin.','r'); });
+    rdWaSendButtons(id, p, c.name);
   }catch(e){ console.warn('[wa] send-now error:', e); }
+}
+// The send itself, shared by 📨 and by a booking made too late for its
+// scheduled 1.5-hour message (see rdWaScheduleNow). wa.n stamps it, so the
+// card says it went and nothing sends it twice.
+function rdWaSendButtons(id, p, who){
+  return rdWaFetch('/wa/send', { phone:p.phone, templateName:RD_WA_BTN_TEMPLATE, languageCode:'tr',
+                                 params:{ body:[rdWaDateLong(p.dateISO), p.timeHHMM] } })
+    .then(function(j){
+      if(j && j.ok){
+        const live=(typeof apptById==='function')?apptById(id):null;
+        if(live){ live.wa=Object.assign({}, live.wa||{}, { n:Date.now() }); apptTouch(live); try{ saveAll(); }catch(e){} }
+        try{ toast('📨','Gönderildi',(who||'Müşteri')+' butonlu mesajı aldı.','g'); }catch(e){}
+        try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
+      } else {
+        const e=(j&&j.error)||{};
+        try{ toast('✗','Gönderilemedi',(e.message||e.code||'bilinmeyen hata'),'r'); }catch(_){}
+      }
+      return j;
+    })
+    .catch(function(){ try{ toast('✗','Gönderilemedi','Sunucuya ulaşılamadı — tekrar deneyin.','r'); }catch(_){} });
+}
+// A booking made inside the last 1.5 hours (08:29 for 10:00) has no
+// 1.5-hour moment left: the worker skips that reminder as past. If she is
+// still more than ten minutes away, she is asked NOW instead of not at all.
+function rdWaLateAsk(a, j){
+  try{
+    if(!a || !j || !(j.skipped||[]).some(function(s){ return s && s.kind==='r1' && s.why==='past'; })) return false;
+    const at=new Date(String(a.datetime||'')).getTime();
+    if(!(at - Date.now() > 10*60e3)) return false;
+    const live=(typeof apptById==='function')?apptById(a.id):a;
+    if(!live || (live.wa && live.wa.n)) return false;
+    const c=(clients||[]).find(function(x){ return x && String(x.id)===String(live.clientId); });
+    const p=rdWaPayload(live, c);
+    if(!p) return false;
+    rdWaSendButtons(live.id, p, c && c.name);
+    return true;
+  }catch(e){ return false; }
 }
 
 // Which future visits still carry the old plan. Pure, like rdWaBackfillScan:
