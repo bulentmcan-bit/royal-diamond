@@ -194,7 +194,8 @@ console.log('10. the opened message shows only the current exchange');
   is(/var keepRem=past\.length \? \[past\[0\]\] : \[\];/.test(html), true, 'only our latest reminder before her reply');
   is(/sent=sent\.filter\(function\(o\)\{ return r\.offerId && String\(o\.id\)===String\(r\.offerId\); \}\)/.test(html), true, '…an offer only when this reply answers it');
   is(/var cut=day0\.getTime\(\); if\(keepRem\.length && Number\(keepRem\[0\]\.at\)>cut\) cut=Number\(keepRem\[0\]\.at\);/.test(html), true, '…her messages from that day, since our message');
-  is(/Eski mesajları göster \('\+hidden\+'\)/.test(html), true, '…one tap brings the rest back');
+  is(/▾ Ayrıntılar ve eski mesajlar/.test(html), true, '…one tap brings the rest back');
+  is(/bub\('Müşteri', rdWrWhen\(m\.ts\)/.test(html), true, 'the plain view reads as a short chat: our message, her words');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
