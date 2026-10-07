@@ -105,8 +105,12 @@ WA_R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","bod
 # once randevu_onay2 is listed, sends the near reminder (WA_CONFIRM_MIN
 # before) under the spec below instead of WA_R1, falling back to it if Piyzi
 # refuses it. The day-before reminder stays WA_R24, a plain heads-up.
+# 6 Ekim: Bülent wanted a green tick and a red X. Meta refuses emoji on
+# buttons, so randevu_onay4 carries ✅/❌ lines in the BODY above the same
+# two plain buttons. It is named first so it wins once approved; until then
+# the highest approved randevu_onay* (randevu_onay2) keeps sending.
 # Empty this line to switch the automatic change off.
-WA_CONFIRM = '{"templateName":"randevu_onay2","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
+WA_CONFIRM = '{"templateName":"randevu_onay4","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}'
 # Once it is live, every customer also gets it this many minutes before the
 # appointment (not only the early ones), so the answer is fresh. 90 leaves
 # half an hour to tap before reception's 1 SAAT KALA call for the silent ones.

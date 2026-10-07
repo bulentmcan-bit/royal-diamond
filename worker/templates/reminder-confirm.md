@@ -119,3 +119,32 @@ template's own `variableCounts`.
 
 Leave the old values in place until that check passes. A reminder that fails
 to send is worse than one nobody answers.
+
+## randevu_onay4 — the ✅ / ❌ version (6 Ekim 2026)
+
+Bülent asked for a green tick and a red X on the buttons. Meta refuses emoji
+on buttons (see above), so they go in the body, just above the same two plain
+quick replies. Same category (Bilgilendirme), language Türkçe, no header, no
+footer, the same two variables in the same order, the same button labels
+(`Geleceğim / Yes`, `Gelemiyorum / No` — the dashboard reads them).
+
+```
+Merhaba, Royal Diamond Nail Studio'dan hatırlatma.
+
+Randevunuz: {{1}} saat {{2}}
+
+✅ Geliyorsanız "Geleceğim" düğmesine dokunun.
+❌ Gelemiyorsanız "Gelemiyorum" düğmesine dokunun.
+
+Hello, a reminder from Royal Diamond Nail Studio.
+
+Your appointment: {{1}} at {{2}}
+
+✅ Coming? Tap "Yes".
+❌ Can't come? Tap "No".
+```
+
+Example values: `{{1}}` = `7 Ekim Çarşamba`, `{{2}}` = `14:00`.
+
+`WA_CONFIRM` names `randevu_onay4` first, so the worker switches to it within
+an hour of approval with no redeploy; until then randevu_onay2 keeps sending.

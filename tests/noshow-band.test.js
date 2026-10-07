@@ -82,6 +82,16 @@ console.log('2. the right message for the right appointment');
   // a message that lands while she is in the chair still belongs to that hour
   is(L({ z: R('z', at + 1800000, 'kapıdayım') }, c, appt).id, 'z', 'a message during the appointment still belongs to it');
   is(L({ z: R('z', at + 9 * 3600000, 'teşekkürler') }, c, appt), null, '…but one nine hours later does not');
+  // 7 Ekim: last night's "Gelemiyorum" for another booking turned a fresh
+  // 09:30 red the moment it was made. A reply older than the booking itself
+  // was about something else.
+  {
+    const nine = new Date('2026-10-07T09:30').getTime();
+    const fresh = { id: nine - 3 * 3600000, clientId: 7, datetime: '2026-10-07T09:30' };
+    const lastNight = { y: R('y', nine - 11 * 3600000, 'Gelemiyorum / No') };
+    is(L(lastNight, c, fresh), null, 'a reply written before the booking existed does not colour it');
+    is(L({ y: R('y', nine - 3600000, 'Gelemiyorum / No') }, c, fresh).id, 'y', '…one written after it still does');
+  }
 }
 
 console.log('3. her words on her own card');
