@@ -13941,6 +13941,14 @@ function rdWrTriage(){
   try{
     var map=(typeof rdWrAll==='function')?rdWrAll():null;
     var now=Date.now();
+    /* One row per VISIT, not per booking (7 Ekim: Ruhşen at 11:00 and
+       12:00 was listed twice). The visit is her same-day bookings
+       (rdWaGroup); the row sits on the first, and what she said about any
+       of them is what she said about the visit. */
+    var visit=function(a){
+      try{ return (typeof rdWaGroup==='function') ? rdWaGroup(a, String(a.datetime).slice(0,10)) : [a]; }
+      catch(e){ return [a]; }
+    };
     (appointments||[]).forEach(function(a){
       if(!a || a.status==='cancelled' || a.status==='completed') return;
       if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)) return;   // a held hour, not a person
@@ -13949,7 +13957,15 @@ function rdWrTriage(){
       if(at > now+14*86400000) return;              // a fortnight is far enough
       var c=(clients||[]).filter(function(x){ return String(x.id)===String(a.clientId); })[0];
       if(!c) return;
-      var r=map?rdWrLatestFor(map, c, a):null;
+      var g=visit(a).filter(function(x){ return x && x.status!=='completed'; });
+      if(g.length && String(g[0].id)!==String(a.id)) return;   // a later booking of a visit already listed
+      if(!g.length) g=[a];
+      var r=null;
+      if(map) g.forEach(function(x){
+        var rx=rdWrLatestFor(map, c, x);
+        if(rx && (!r || (Number(rx.ts)||0)>(Number(r.ts)||0))) r=rx;
+      });
+      var rung=g.filter(function(x){ return x.rdCall==='yes'; })[0];
       var row={a:a, c:c, r:r, at:at};
       /* Reception rang her and she said yes. That is better evidence than any
          message — somebody spoke to her — so it is read FIRST, and it moves
@@ -13957,26 +13973,26 @@ function rdWrTriage(){
          Her own written words, if she sends any afterwards, still win: a
          customer who rings off saying "see you at two" and then writes
          "gelemiyorum" is not coming, whatever she said on the telephone. */
-      if(a.rdCall==='yes' && !(r && rdWrIsCancel(r.text))){
-        green.push({a:a, c:c, at:at, r:{ text:'📞 Telefonla teyit edildi'+(a.rdCallBy?' ('+a.rdCallBy+')':''), ts:a.rdCallAt||at }, byCall:true});
+      if(rung && !(r && rdWrIsCancel(r.text))){
+        green.push({a:rung, c:c, at:at, r:{ text:'📞 Telefonla teyit edildi'+(rung.rdCallBy?' ('+rung.rdCallBy+')':''), ts:rung.rdCallAt||at }, byCall:true});
         return;
       }
       if(r && rdWrIsCancel(r.text)){ red.push(row); return; }
       if(r && rdWrIsConfirm(r.text)){ green.push(row); return; }
       if(r) return;                                 // she wrote something else — her words are on her card
-      // Nothing from her. Only chase where we actually asked, and only for
-      // today and tomorrow: a reminder for next week has not gone yet.
-      if(!(a.r24 || a.r1)) return;
-      if(at > now+36*3600000) return;
+      /* Nothing from her. "Cevap vermedi" is only true once the Geleceğim /
+         Gelemiyorum message has gone, 1.5 hours before her visit
+         (WA_CONFIRM_MIN): before that she has not been asked, and a list
+         of the whole afternoon at nine in the morning is a contradiction
+         (Bülent, 7 Ekim). From that moment she is on it whether or not a
+         message could go — no message is all the more reason to ring. */
+      if(at > now+90*60000) return;
       /* We have just asked her ourselves with 📨 — the Geleceğim / Gelemiyorum
          message is on her phone. Ringing her as well is the pestering the
          owner does not want (7 Ekim): her visit leaves the call list and
          waits for her tap. Any booking of hers that day counts, because one
          message covers the whole visit. */
-      try{
-        var asked=(typeof rdWaGroup==='function') ? rdWaGroup(a, String(a.datetime).slice(0,10)) : [a];
-        if(asked.some(function(x){ return x && x.wa && x.wa.n; })) return;
-      }catch(e){}
+      if(g.some(function(x){ return x && x.wa && x.wa.n; })) return;
       amber.push(row);
     });
   }catch(e){}
@@ -20395,7 +20411,11 @@ function rdWrIsConfirm(text){
      starts with the question particle. Reading them as a yes is the worst
      mistake this function can make: the row goes green, everybody relaxes,
      and the one customer who was actually asking never gets rung. */
-  if(/(^|\s)(mi|mu|ma|me)([a-z]*)?(\s|$)/.test(t)) return false;
+  /* Only the particle itself and its person endings — "mı", "misin",
+     "muyum", "midir". Any word that merely STARTS with mi/mu/ma/me used to
+     count, so "Merhaba … mutlaka geleceğim" read as a question and never
+     went green (7 Ekim). */
+  if(/(^|\s)(mi|mu)(yim|sin|yiz|siniz|sunuz|sun|yum|yuz|dir|dur|ydi|ydu|ymis|ymus)?(?=\s|$|[.,!;:])/.test(t)) return false;
   if(rdWrIsCancel(t)) return false;              // "iptal" wins over "tamam"
   return /\b(tamam|tamamdir|tamamdır|evet|olur|peki|geliyorum|gelecegim|gelicem|gelirim|gorusuruz|gorusmek uzere|oldu|uygun|onayliyorum|kabul)\b/.test(t)
       || /\b(yes|ok|okay|okey|sure|confirmed|confirm|coming|i'?ll be there|see you|fine)\b/.test(t);
