@@ -13389,7 +13389,9 @@ function rdWaRemLine(a){
       else say='📨 '+t+' randevusuyla: '+(s ? s.charAt(0).toLocaleLowerCase('tr')+s.slice(1) : 'hatırlatma kurulmadı');
     }
     // She has already written back (GELİYOR on her card): nothing to ask.
-    const showBtn=!sent && !follow && !rdWaVisitAnswered(a, g);
+    const answered=!follow && rdWaVisitAnswered(a, g);
+    const showBtn=!sent && !follow && !answered;
+    const showRe=!!sent && !follow && !answered;
     return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;font-size:0.6rem;color:#4d6b52;">'
       +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+say+'</span>'
       +badge
@@ -13397,6 +13399,10 @@ function rdWaRemLine(a){
       // messages to the same customer (Bülent, 7 Ekim).
       +(!showBtn ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+')" title="Geleceğim / Gelemiyorum mesajını ŞİMDİ gönder" '
       +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Şimdi gönder</button>')
+      // Gone, but she says it never arrived (Çiğdem, 8 Ekim): a green resend
+      // beside the yellow mark, behind a confirm that says it already went.
+      +(!showRe ? '' : '<button onclick="rdWaSendNow('+JSON.stringify(String(a.id)).replace(/"/g,'&quot;')+',true)" title="Müşteri mesajı almadıysa tekrar gönder" '
+      +'style="flex:0 0 auto;padding:1px 6px;background:#25d366;border:1px solid #1da851;border-radius:4px;color:#fff;font-size:0.6rem;font-weight:800;cursor:pointer;font-family:Nunito,sans-serif;">📨 Tekrar</button>')
       +'</div>';
   }catch(e){ return ''; }
 }
@@ -13417,13 +13423,19 @@ function rdWaVisitAnswered(a, g){
     });
   }catch(e){ return false; }
 }
-function rdWaSendNow(id){
+function rdWaSendNow(id, again){
   try{
     if(!rdWaOn()){ toast('⚠️','WhatsApp kapalı','Bu cihazda WhatsApp anahtarı yok.','r'); return; }
     const a=(typeof apptById==='function')?apptById(id):null;
     const c=a?(clients||[]).find(function(x){ return x && String(x.id)===String(a.clientId); }):null;
     const p=rdWaPayload(a, c);
     if(!p){ toast('📵','Gönderilemez','Bu randevuda geçerli bir telefon numarası yok.','r'); return; }
+    if(again){
+      // 📨 Tekrar: it went (or was due to), and she says it never came.
+      if(!confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nBu mesaj zaten gönderildi.\nMüşteri almadıysa TEKRAR gönderilsin mi?')) return;
+      rdWaSendButtons(id, p, c.name);
+      return;
+    }
     if(rdWaGroup(a, rdWaDayOf(a)).concat([a]).some(function(x){ return x && x.wa && x.wa.n; })){ toast('📨','Zaten gönderildi','Bu müşteriye bugün butonlu mesaj zaten gitti.',''); return; }
     if(!confirm((c.name||'Müşteri')+' — '+p.timeHHMM+'\n\nGeleceğim / Gelemiyorum mesajı ŞİMDİ gönderilsin mi?')) return;
     rdWaSendButtons(id, p, c.name);
