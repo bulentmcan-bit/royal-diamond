@@ -115,7 +115,9 @@ console.log('5. a later booking the same day follows the first one');
     a => !!(a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length));
   const L = id => line(book.find(a => a.id === id));
   is(/Gönderildi 08:39/.test(L('e9')) && !/Şimdi gönder/.test(L('e9')), true, '09:00: a yellow "Gönderildi 08:39", no button');
-  is(/#f5c518/.test(L('e9')) && !/<button/.test(L('e9')), true, '…yellow, and not something to press');
+  is(/#f5c518/.test(L('e9')) && /<span title="Geleceğim[^>]*#f5c518/.test(L('e9')), true, '…yellow, and the mark itself is not something to press');
+  is(/rdWaSendNow\([^)]*,true\)/.test(L('e9')) && /📨 Tekrar/.test(L('e9')), true, '…with a green 📨 Tekrar beside it, for "I never got it" (Çiğdem, 8 Ekim)');
+  is(/📨 Tekrar/.test(L('e10')), false, '10:00 follow-on: no resend of its own');
   is(/İlk randevuyla/.test(L('e10')) && /Gönderildi 08:39/.test(L('e10')), true, '10:00: says it went with the first booking');
   is(/Şimdi gönder/.test(L('e10')), false, '…and has no 📨 to send it again');
   is(/📨 Eski hatırlatma \(butonsuz\)/.test(L('r11')) && /Şimdi gönder/.test(L('r11')), true, '11:00 first booking, not yet asked: keeps its 📨');
@@ -206,6 +208,25 @@ console.log('11. the inbox lists only what a person must answer');
   ['4 olur mu', 'hayir okuldayim', 'Saat 3e alabilir miyiz', 'Hello ı cannot come today'].forEach(t => is(f({ text: t }), false, 'listed: “' + t + '”'));
   is(f({ text: 'Evet / Yes please', offerId: 'x' }), false, 'an answer to a free-slot offer is always listed — it still needs booking');
   is(/Otomatik işlenenleri de göster/.test(html), true, 'one tap shows the rest');
+}
+
+console.log('12. 📨 Tekrar: she says it never came (Çiğdem, 8 Ekim)');
+{
+  const run = (again, ok) => {
+    const sent = []; let asked = '';
+    const a = { id: 'c1', clientId: 1, status: 'confirmed', datetime: '2026-10-08T17:00', wa: { u: ['x'], t: 1, n: 5 } };
+    const f = new Function('rdWaOn', 'apptById', 'clients', 'rdWaPayload', 'rdWaGroup', 'rdWaDayOf', 'toast', 'confirm', 'rdWaSendButtons', grab('rdWaSendNow') + '\nreturn rdWaSendNow;')(
+      () => true, () => a, [{ id: 1, name: 'ÇİĞDEM', phone: '905330000000' }],
+      () => ({ phone: '905330000000', timeHHMM: '17:00' }), () => [a], () => '2026-10-08', () => {},
+      q => { asked = q; return ok; }, id => sent.push(id));
+    f('c1', again);
+    return { sent, asked };
+  };
+  is(run(false, true).sent, [], 'plain 📨 still refuses a visit that already got it');
+  const r = run(true, true);
+  is(r.sent, ['c1'], '📨 Tekrar sends it again');
+  is(/zaten gönderildi/.test(r.asked) && /TEKRAR/.test(r.asked), true, '…after a confirm that says it already went');
+  is(run(true, false).sent, [], '…and nothing if reception says no');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
