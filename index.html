@@ -5724,6 +5724,32 @@ p, span, div, label, h1, h2, h3, h4 {
 </div>
 
 <script>
+/* ── HELEN'S SALARY, DATED ───────────────────────────────────────────────────
+
+   $2,000 a month until Eylül 2026, $2,500 from Ekim 2026 onwards.
+
+   It has to be dated, and this is the only figure in the file that does. Every
+   other cost here is applied to EVERY month the P&L can show: change the rent
+   and August is recalculated with today's rent. For most of them that is a
+   rounding matter nobody will ever look at. For this one it is not. Helen is
+   paid 25% of net profit, so raising her salary retrospectively would lower
+   the profit of every month already settled and quietly restate what she was
+   owed for them — and the figures she has already been paid against.
+
+   "Only for the month of October onwards."
+
+   Newest first; the first entry whose month is not after the one being asked
+   about wins. Add a row to raise it again, never edit the row below. */
+const RD_STAR_SAL = [
+  { from: '2026-10', usd: 2500 },   // Ekim 2026 — raised from $2,000
+  { from: '0000-00', usd: 2000 }    // everything before that
+];
+function rdStarSal(ym){
+  const m = String(ym || '');
+  for (let i = 0; i < RD_STAR_SAL.length; i++) if (m >= RD_STAR_SAL[i].from) return RD_STAR_SAL[i].usd;
+  return RD_STAR_SAL[RD_STAR_SAL.length - 1].usd;
+}
+
 // FORCE RESET — fix corrupted commissions AND tax rates
 (function(){
   try {
@@ -5732,7 +5758,7 @@ p, span, div, label, h1, h2, h3, h4 {
     var costs = costsRaw ? JSON.parse(costsRaw) : {};
     costs.vat = 5;
     costs.tax = 10;
-    costs.starSal = 2000;    costs.starSalCur = 'USD';
+    costs.starSal = rdStarSal(new Date().toISOString().slice(0,7));  costs.starSalCur = 'USD';
     costs.starFlat = 550;    costs.starFlatCur = 'GBP';
     costs.rent = 750;        costs.rentCur = 'GBP';
     costs.utils = 25000;     costs.utilsCur = 'TRY';
@@ -8725,7 +8751,7 @@ function renderSalaryPage(){
       // Fallback: same formula manually
       var kdv   = Math.round(monthRevenue * 0.05 / 1.05);
       var vergi = Math.round(monthRevenue * 0.10);
-      var breakeven = toTRY(2000,'USD') + toTRY(550,'GBP') + toTRY(1300,'USD') + toTRY(1300,'USD') +
+      var breakeven = toTRY(rdStarSal(monthKey),'USD') + toTRY(550,'GBP') + toTRY(1300,'USD') + toTRY(1300,'USD') +
                       60000 + toTRY(150,'GBP') + 15000 + 10000 +
                       toTRY(750,'GBP') + 25000 + toTRY(1000,'USD') + toTRY(1460,'USD') + allTechComms;
       var above = Math.max(0, monthRevenue - breakeven);
@@ -8923,7 +8949,7 @@ function renderHelenBreakdown(c, total){
   }
 
   const usd = mRates.USD, gbp = mRates.GBP;
-  const helenSal   = mCosts.starSal   * usd;
+  const helenSal   = rdStarSal(mViewMonth||mCurrentMonth()) * usd;
   const helenAccom = mCosts.starFlat  * gbp;
   const hannahSal  = (mCosts.extraStaff[4]||0) * usd;
   const lissaSal   = (mCosts.extraStaff[5]||0) * usd;
@@ -17605,7 +17631,7 @@ const MONTHLY_COSTS_KEY = 'rdns_monthly_costs_v3'; // v3 = correct expense defau
 
 // amounts in their native currency; *Cur = currency code
 let mCosts = {
-  starSal:2000,    starSalCur:'USD',   // Helen salary $2,000
+  starSal:2500,    starSalCur:'USD',   // Helen salary — $2,500 from Ekim 2026 (see RD_STAR_SAL)
   starFlat:550,    starFlatCur:'GBP',  // Helen accommodation £550 (business expense)
   rent:750,        rentCur:'GBP',      // Shop rent £750
   utils:25000,     utilsCur:'TRY',     // Utilities ₺25,000
@@ -17707,7 +17733,7 @@ function mGetCalc(rev, viewMonth){
   const gbp = (typeof mRates!=='undefined' && mRates.GBP) ? mRates.GBP : 61.35;
 
   // Staff costs
-  const starSalTRY  = Math.round(2000 * usd);   // Helen $2,000
+  const starSalTRY  = Math.round(rdStarSal(viewMonth) * usd);   // Helen — $2,000, $2,500 from Ekim 2026
   const starFlatTRY = Math.round(550  * gbp);   // Lojman £550
   const hannahSal   = Math.round(1300 * usd);   // Hannah $1,300
   const lissaSal    = Math.round(1300 * usd);   // Lissa $1,300
@@ -17787,7 +17813,7 @@ function mInitCosts(){
   // Always use confirmed values — never load stale localStorage costs
   mCosts.vat = 5;
   mCosts.tax = 10;
-  mCosts.starSal = 2000;    mCosts.starSalCur = 'USD';
+  mCosts.starSal = rdStarSal(mCurrentMonth());    mCosts.starSalCur = 'USD';
   mCosts.starFlat = 550;    mCosts.starFlatCur = 'GBP';
   mCosts.rent = 750;        mCosts.rentCur = 'GBP';
   mCosts.utils = 25000;     mCosts.utilsCur = 'TRY';
