@@ -483,7 +483,10 @@ var CROWN = {
       .replace(/i̇/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ı/g, 'i')
       .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ç/g, 'c');
     if (!s.trim()) return null;
-    if (/pedik|pedic/.test(s)) return 'pedikur';
+    // "Man Pedi" — fiyat listesinin 4 numarası — "pedik" içermediği için
+    // hiçbir gruba düşmüyordu, yani salondaki HERKESİN yapabileceği bir iş
+    // gibi görünüyordu. Tek başına "pedi" kelimesi de pedikürdür.
+    if (/pedik|pedic|\bpedi\b/.test(s)) return 'pedikur';
     if (/kirpi|lash/.test(s)) return 'kirpik';
     if (/\bkas\b|microblad|brow/.test(s)) return 'kas';
     if (/agda|wax/.test(s)) return 'agda';

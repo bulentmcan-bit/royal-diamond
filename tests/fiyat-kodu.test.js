@@ -178,6 +178,30 @@ console.log('12. the design box is D1–D6, and still sets the time');
      'addonMins reads the minutes off data-min instead of the value');
 }
 
+console.log('13. the four new names land in the right skill group');
+{
+  // "Man Pedi" fell through every branch of serviceGroup — the pedicure test
+  // looks for "pedik", and "Man Pedi" has not got it. A service in no group is
+  // open to EVERYONE, so Beyhan, who does not touch nails, was bookable for it.
+  require(path.join(__dirname, '..', 'crown-config.js'));
+  const C = globalThis.CROWN;
+  is(C.serviceGroup('Man Pedi'), 'pedikur', 'Man Pedi is a pedicure, not a free-for-all');
+  is(C.canDo('beyhan', 'Man Pedi'), false, '…so Beyhan is no longer offered it');
+  ['helen','lissa','zara','hannah'].forEach(w =>
+    is(C.canDo(w, 'Man Pedi'), true, `…and ${w} still is`));
+  is(C.serviceGroup('Pedikür'), 'pedikur', '5 Pedikür lands right');
+  is(C.serviceGroup('Renkli Jel — El'), 'manikur', '6 Renkli Jel — El is hand work');
+  is(C.serviceGroup('Renkli Jel — Ayak'), 'manikur',
+     '7 Renkli Jel — Ayak reads as manikur on the word "jel" — harmless while both groups hold the same four, but it is foot work');
+
+  // Nothing else moved group because of the widened test.
+  is(C.serviceGroup('Kirpik Dolgu'), 'kirpik', 'lashes unmoved');
+  is(C.serviceGroup('Kaş Boyama'), 'kas', 'brows unmoved');
+  is(C.serviceGroup('Tüm Yüz Ağda'), 'agda', 'waxing unmoved');
+  is(C.serviceGroup('Dolgu (Infill)'), 'manikur', 'infill unmoved');
+  is(C.serviceGroup('Güzellik Uygulaması'), null, '…and the one that belongs to nobody still does');
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);

@@ -5443,9 +5443,6 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
       <div class="fg"><label class="flabel" id="flabel-a-service">Hizmet *</label>
         <select class="fctrl" id="a-service">
-          <!-- The number in front is the wall price list (RD_SVC_CODES). It is
-               on the LABEL only: the value is what gets written on the
-               appointment and what every other screen matches on. -->
           <optgroup label="💅 MANİKÜR"><option value="Jel Başlangıç (Full Set)">1 · Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">2 · Dolgu (Infill)</option><option value="Klasik Manikür">3 · Klasik Manikür</option><option value="Renkli Jel — El">6 · Renkli Jel — El</option><option value="Tırnak Çıkarma">10 · Tırnak Çıkarma</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option></optgroup>
           <optgroup label="🦶 PEDİKÜR"><option value="Man Pedi">4 · Man Pedi</option><option value="Pedikür">5 · Pedikür</option><option value="Renkli Jel — Ayak">7 · Renkli Jel — Ayak</option><option value="Medikal Pedikür">8 · Medikal Pedikür</option><option value="Klasik Pedikür (Ojesiz)">9 · Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
           <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Lifting &amp; Boyama">Kirpik Lifting &amp; Boyama</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
@@ -5469,18 +5466,15 @@ p, span, div, label, h1, h2, h3, h4 {
         <div id="a-dur-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel">✨ Tasarım (D1–D6)</label>
-        <!-- Same codes as the till (RD_DSG_CODES). The value is the code;
-             the minutes live on data-min because the value used to BE the
-             minutes and addonMins() still has to answer. -->
+      <div class="fg"><label class="flabel">✨ Tasarım (ek hizmet)</label>
         <select class="fctrl" id="a-addon">
-          <option value="0">Yok</option>
-          <option value="D1" data-min="15" data-p="300">D1 · ₺300  (+15 dk)</option>
-          <option value="D2" data-min="15" data-p="600">D2 · ₺600  (+15 dk)</option>
-          <option value="D3" data-min="30" data-p="750">D3 · ₺750  (+30 dk)</option>
-          <option value="D4" data-min="30" data-p="1000">D4 · ₺1.000  (+30 dk)</option>
-          <option value="D5" data-min="45" data-p="1200">D5 · ₺1.200  (+45 dk)</option>
-          <option value="D6" data-min="60" data-p="1500">D6 · ₺1.500  (+60 dk)</option>
+          <option value="0" data-min="0">Yok</option>
+          <option value="D1" data-min="15" data-p="300">D1 · Tasarım — ₺300  (+15 dk)</option>
+          <option value="D2" data-min="30" data-p="600">D2 · Tasarım — ₺600  (+30 dk)</option>
+          <option value="D3" data-min="30" data-p="750">D3 · Tasarım — ₺750  (+30 dk)</option>
+          <option value="D4" data-min="60" data-p="1000">D4 · Tasarım — ₺1.000  (+60 dk)</option>
+          <option value="D5" data-min="60" data-p="1200">D5 · Tasarım — ₺1.200  (+60 dk)</option>
+          <option value="D6" data-min="60" data-p="1500">D6 · Tasarım — ₺1.500  (+60 dk)</option>
         </select></div>
       <div class="fg"></div>
     </div>
@@ -6395,9 +6389,7 @@ function openModal(id){
     try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
-    const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
-    const ph=document.getElementById('a-price-hint'); if(ph) ph.textContent='';
-    const ao=document.getElementById('a-addon'); if(ao) ao.value='0';
+    const pr=document.getElementById('a-price'); if(pr) pr.value='';
     const st=document.getElementById('a-staff'); if(st){ st.value=''; try{ rdStaffSelChanged(); }catch(e){} }
     const saveBtn=document.getElementById('btn-save-appt');
     if(saveBtn){ saveBtn.textContent='+ Randevu'; saveBtn.onclick=saveAppt; }
@@ -6871,8 +6863,7 @@ function dashEditAppt(id){
     // still be: the amount sent to Daily Takings, the saved override, and
     // finally today's Daily Takings entries, which carry the appointment id.
     const shownPrice = apptKnownPrice(a);
-    if(pr){ pr.value = shownPrice || ''; delete pr.dataset.rdAuto; }
-    try{ const ph=document.getElementById('a-price-hint'); if(ph) ph.textContent=''; }catch(e){}
+    if(pr) pr.value = shownPrice || '';
     // 💚 Family discount reminder — show it right on the popup
     try{
       let fd = document.getElementById('a-fam-disc');
@@ -16961,10 +16952,10 @@ function dtRenderHistory(){
 /* ── Fiyat kodları ─────────────────────────────────
    Duvardaki fiyat listesiyle BİREBİR aynı olmak zorunda. Fiyat
    değişinceburası değişir, başka hiçbir yer değişmez.            */
+/* n = duvardaki ad · p = fiyat · v = randevu ekranındaki liste değeri.
+   v, kayıtlarda duran hizmet adıdır; ESKİ randevuları bozmamak için
+   listedeki değerler hiç değiştirilmedi, sadece önüne numara kondu.  */
 var RD_SVC_CODES = {
-  /* n = what the till writes on the entry · p = lira · v = the VALUE the
-     booking dropdown stores on an appointment (the old names, untouched, so
-     not one booking already in the diary changes meaning). */
   1:{ n:'Jel Başlangıç (Full Set)', p:1900, v:'Jel Başlangıç (Full Set)' },
   2:{ n:'Dolgu',                    p:1700, v:'Dolgu (Infill)' },
   3:{ n:'Klasik Manikür',           p:1200, v:'Klasik Manikür' },
@@ -21480,7 +21471,7 @@ function rdWrWindow(r, now){
 /* ══════════════════════════════════════════════════════════════
    RANDEVU SÜRE & ÇAKIŞMA SİSTEMİ
    · Her hizmetin gerçek süresi otomatik gelir
-   · Tasarım ek süresi eklenir  (D1–D6, dakikası seçeneğin data-min'inde)
+   · Nail Art ek süresi eklenir  (French/Ombre +15 · Full Design +60)
    · Randevular arasında 10 dakika boşluk zorunlu
    · Çakışma varsa uyarır ve ilk uygun saati önerir
    ══════════════════════════════════════════════════════════════ */
@@ -21547,7 +21538,7 @@ function rdWrWindow(r, now){
     const el = document.getElementById('a-addon');
     if(!el) return 0;
     const o = el.options[el.selectedIndex];
-    // The value is D1–D6 now; the minutes sit on the option itself.
+    // D1–D6 taşıdığı için değer artık dakika değil; dakika data-min'de.
     if(o && o.getAttribute('data-min') != null) return parseInt(o.getAttribute('data-min'))||0;
     return parseInt(el.value)||0;
   }
@@ -21669,44 +21660,37 @@ function rdWrWindow(r, now){
     return _origSave.apply(this, arguments);
   };
 
-  /* ── Fiyat listesinden fiyat ─────────────────────────────────
-     Hizmet veya tasarım seçilince Fiyat kutusu listeden dolar. Kutuda
-     sistemin yazmadığı bir rakam varsa (indirim, yuvarlama, kıyak) ona
-     DOKUNULMAZ — sistem resepsiyonla tartışmaya başladığı an rakam yanlıştır.
-     Kendi yazdığını data-rdAuto'da tutar; yalnız onu değiştirir. */
+  /* ── Formu bağla ─────────────────────────────────────────── */
+  /* Fiyat kendiliğinden: hizmet seçilince fiyat listesindeki tutar kutuya
+     düşer, tasarım seçiliyse üstüne eklenir. ELLE yazılmış bir fiyat ASLA
+     ezilmez — sadece boş kutu ya da sistemin kendi yazdığı rakam değişir. */
+  window.rdApptPriceFor = function(){
+    var sv = document.getElementById('a-service'), ad = document.getElementById('a-addon');
+    var total = 0, found = false;
+    if(sv && sv.value){
+      for(var k in RD_SVC_CODES){
+        if(RD_SVC_CODES[k].v === sv.value){ total += RD_SVC_CODES[k].p; found = true; break; }
+      }
+    }
+    if(ad){
+      var o = ad.options[ad.selectedIndex];
+      var dp = o ? parseInt(o.getAttribute('data-p')||'0', 10) : 0;
+      if(dp){ total += dp; found = true; }
+    }
+    return found ? total : 0;
+  };
   window.rdApptAutoPrice = function(){
-    const sv = document.getElementById('a-service');
-    const ad = document.getElementById('a-addon');
-    const pr = document.getElementById('a-price');
-    const hint = document.getElementById('a-price-hint');
-    if(!sv || !pr) return;
-    let base = null, code = '';
-    Object.keys(RD_SVC_CODES).forEach(function(k){
-      if(RD_SVC_CODES[k].v === sv.value){ base = RD_SVC_CODES[k].p; code = k; }
-    });
-    let dsg = 0, dcode = '';
-    if(ad && ad.value && RD_DSG_CODES[ad.value] != null){ dsg = RD_DSG_CODES[ad.value]; dcode = ad.value; }
-    const cur = String(pr.value==null?'':pr.value).trim();
-    const mine = pr.dataset.rdAuto || '';
+    var pr = document.getElementById('a-price'), hint = document.getElementById('a-price-hint');
+    if(!pr) return;
+    var cur = String(pr.value==null?'':pr.value).trim();
+    var mine = String(pr.dataset.rdAuto||'');
     if(cur && cur !== '0' && cur !== mine){ if(hint) hint.textContent=''; return; }
-    if(base == null && !dsg){
-      if(mine && cur === mine) pr.value = '';
-      delete pr.dataset.rdAuto;
-      if(hint) hint.textContent = '';
-      return;
-    }
-    const v = (base||0) + dsg;
-    pr.value = v;
-    pr.dataset.rdAuto = String(v);
-    if(hint){
-      const bits = [];
-      if(code) bits.push(code + ' · ₺' + (base||0).toLocaleString('tr-TR'));
-      if(dcode) bits.push(dcode + ' · ₺' + dsg.toLocaleString('tr-TR'));
-      hint.textContent = 'Fiyat listesinden geldi: ' + bits.join(' + ') + ' — elle değiştirebilirsiniz';
-    }
+    var v = rdApptPriceFor();
+    if(!v){ if(hint) hint.textContent=''; return; }
+    pr.value = String(v); pr.dataset.rdAuto = String(v);
+    if(hint) hint.textContent = 'Fiyat listesinden geldi — farklıysa üzerine yazın.';
   };
 
-  /* ── Formu bağla ─────────────────────────────────────────── */
   function wire(){
     const sv = document.getElementById('a-service');
     const ad = document.getElementById('a-addon');
@@ -22133,7 +22117,7 @@ function rdWrWindow(r, now){
       const st=document.getElementById('a-staff');
       if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===tech){ st.value=tech; break; } } try{ rdStaffSelChanged(); }catch(e){} }
       const sv=document.getElementById('a-service');
-      if(sv && svc){ sv.value=svc; if(typeof rdAutoDur==='function') rdAutoDur(); if(typeof rdApptAutoPrice==='function') rdApptAutoPrice(); }
+      if(sv && svc){ sv.value=svc; if(typeof rdAutoDur==='function') rdAutoDur(); }
     }, 140);
   };
 })();
