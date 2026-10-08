@@ -21526,7 +21526,7 @@ function rdWrWindow(r, now){
       }catch(e){}
     }
     const s = String(service||'').toLowerCase();
-    if(/pedik|pedic/.test(s)) return 60;   // her pedikür 60 dk
+    if(/pedik|pedic|\bpedi\b/.test(s)) return 60;   // her pedikür 60 dk ("Man Pedi" dahil)
     let best = null, len = 0;
     Object.keys(RD_SVC_DUR).forEach(function(k){
       if(s.indexOf(k) !== -1 && k.length > len){ len = k.length; best = RD_SVC_DUR[k]; }

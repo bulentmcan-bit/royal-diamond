@@ -191,8 +191,9 @@ console.log('13. the four new names land in the right skill group');
     is(C.canDo(w, 'Man Pedi'), true, `…and ${w} still is`));
   is(C.serviceGroup('Pedikür'), 'pedikur', '5 Pedikür lands right');
   is(C.serviceGroup('Renkli Jel — El'), 'manikur', '6 Renkli Jel — El is hand work');
-  is(C.serviceGroup('Renkli Jel — Ayak'), 'manikur',
-     '7 Renkli Jel — Ayak reads as manikur on the word "jel" — harmless while both groups hold the same four, but it is foot work');
+  is(C.serviceGroup('Renkli Jel — Ayak'), 'pedikur',
+     '7 Renkli Jel — Ayak is foot work, whatever the word "jel" in the middle of it says');
+  is(C.serviceGroup('Renkli Jel — El'), 'manikur', '…and its hand twin is still a manicure');
 
   // Nothing else moved group because of the widened test.
   is(C.serviceGroup('Kirpik Dolgu'), 'kirpik', 'lashes unmoved');

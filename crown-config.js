@@ -486,7 +486,9 @@ var CROWN = {
     // "Man Pedi" — fiyat listesinin 4 numarası — "pedik" içermediği için
     // hiçbir gruba düşmüyordu, yani salondaki HERKESİN yapabileceği bir iş
     // gibi görünüyordu. Tek başına "pedi" kelimesi de pedikürdür.
-    if (/pedik|pedic|\bpedi\b/.test(s)) return 'pedikur';
+    // Ayak işi ayak işidir: "Renkli Jel — Ayak" üzerindeki "jel" yüzünden
+    // aşağıda maniküre düşüyordu. Salonda "ayak" geçen başka hizmet yok.
+    if (/pedik|pedic|\bpedi\b|\bayak\b/.test(s)) return 'pedikur';
     if (/kirpi|lash/.test(s)) return 'kirpik';
     if (/\bkas\b|microblad|brow/.test(s)) return 'kas';
     if (/agda|wax/.test(s)) return 'agda';
