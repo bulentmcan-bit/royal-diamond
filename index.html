@@ -4699,7 +4699,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="sec-hdr">
         <div class="sec-title" style="display:flex;align-items:center;gap:12px;">Client Directory <span id="client-count-pill" style="background:var(--wa,#25d366);color:#fff;font-size:0.95rem;font-weight:800;padding:4px 14px;border-radius:20px;letter-spacing:0.3px;">0</span></div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="btn btn-ghost btn-sm" style="border-color:#b8860b;color:#b8860b;" onclick="phoneCleanupToggle()">🧹 Numara Temizliği</button>
+          <button class="btn btn-ghost btn-sm" style="border-color:#b8860b;color:#b8860b;" onclick="phoneCleanupToggle()">🧹 Liste Temizliği</button>
           <button class="btn btn-ghost btn-sm" style="border-color:#c94040;color:#c94040;" onclick="bdayCampToggle()">🎂 Doğum Günü Kampanyası</button>
           <button class="btn btn-ghost btn-sm" id="clients-page-import-btn" onclick="openModal(&#39;mImport&#39;)">📥 Excel/CSV İçe Aktar</button>
           <button class="btn btn-rose btn-sm" id="clients-page-add-btn" onclick="openModal(&#39;mClient&#39;)">+ Müşteri Ekle</button>
@@ -9417,43 +9417,186 @@ function phoneCleanupToggle(){
   if(p.style.display!=='none'){p.style.display='none';return;}
   renderPhoneCleanup(); p.style.display='block';
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧹 LİSTE TEMİZLİĞİ — çift kayıtlar ve numarasız müşteriler (8 Eki 2026).
+// Bülent asked for the Müşteriler list without customers who have no number
+// and without the same customer written twice. Nothing here runs on its own:
+// the panel shows what it found, ticked where it is safe, and acts only after
+// the owner PIN and a confirm, from the owner's own browser.
+//  • A DOUBLE is merged, never deleted: one record is kept (the one with a
+//    good number, then the one with the most bookings), every booking,
+//    payment and rebook item of the others is moved onto it, and only then
+//    are the empty copies tombstoned. History is never lost.
+//  • Same number + compatible name ("Ayşe" / "AYŞE KAYA") → ticked.
+//    Same name, one number between them (others blank) → ticked.
+//    Same number, DIFFERENT names → shown unticked: a mother and daughter
+//    share a phone. Same name, two different numbers → two people, left alone.
+//  • A customer with NO number and NO bookings is ticked for removal. One
+//    with bookings is listed unticked — removing her removes her history.
+// rdCleanupPlan is pure (tests/client-cleanup.test.js runs it on a fixture).
+// ═══════════════════════════════════════════════════════════════════════════
+function _rdCleanPhoneKey(p){
+  const iss=_phoneIssue(p);
+  if(iss==='yok'||iss==='hatali') return '';
+  const d=String(p||'').replace(/\D/g,'');
+  return d.length>10?d.slice(-10):d;
+}
+function _rdCleanNameKey(n){ return rdNorm(n).replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim(); }
+// "ayse" and "ayse kaya" are the same customer; "ayse kaya" and "elif kaya" are not.
+function _rdNamesCompatible(a,b){
+  const x=_rdCleanNameKey(a), y=_rdCleanNameKey(b);
+  if(!x||!y) return true;
+  if(x===y) return true;
+  const tx=x.split(' '), ty=y.split(' ');
+  const [s,l]=tx.length<=ty.length?[tx,ty]:[ty,tx];
+  return s.every(t=>l.includes(t));
+}
+function rdCleanupPlan(cls, appts){
+  cls=(cls||[]).filter(c=>c&&c.id!=null);
+  const nAppt={};
+  (appts||[]).forEach(a=>{ if(a&&a.clientId!=null){ const k=String(a.clientId); nAppt[k]=(nAppt[k]||0)+1; } });
+  const parent={};
+  const find=k=>{ while(parent[k]!==k){ parent[k]=parent[parent[k]]; k=parent[k]; } return k; };
+  const join=(a,b)=>{ a=find(a); b=find(b); if(a!==b) parent[b]=a; };
+  cls.forEach(c=>{ parent[String(c.id)]=String(c.id); });
+  // same number
+  const byPhone={};
+  cls.forEach(c=>{ const p=_rdCleanPhoneKey(c.phone); if(p)(byPhone[p]=byPhone[p]||[]).push(c); });
+  Object.values(byPhone).forEach(list=>list.slice(1).forEach(c=>join(String(list[0].id),String(c.id))));
+  // same name, at most one number between them
+  const byName={};
+  cls.forEach(c=>{ const n=_rdCleanNameKey(c.name); if(n)(byName[n]=byName[n]||[]).push(c); });
+  Object.values(byName).forEach(list=>{
+    if(list.length<2) return;
+    const phones=new Set(list.map(c=>_rdCleanPhoneKey(c.phone)).filter(Boolean));
+    if(phones.size>1) return;
+    list.slice(1).forEach(c=>join(String(list[0].id),String(c.id)));
+  });
+  const groups={};
+  cls.forEach(c=>{ const r=find(String(c.id)); (groups[r]=groups[r]||[]).push(c); });
+  const rank=c=>[_rdCleanPhoneKey(c.phone)?1:0, nAppt[String(c.id)]||0, Number(c.visits)||0, -(parseFloat(c.id)||0)];
+  const better=(a,b)=>{ const x=rank(a), y=rank(b); for(let i=0;i<x.length;i++){ if(x[i]!==y[i]) return x[i]>y[i]; } return false; };
+  const dups=[];
+  const dropped=new Set();
+  Object.values(groups).forEach(list=>{
+    if(list.length<2) return;
+    let keep=list[0];
+    list.forEach(c=>{ if(better(c,keep)) keep=c; });
+    const drop=list.filter(c=>c!==keep);
+    const auto=list.every(a=>list.every(b=>_rdNamesCompatible(a.name,b.name)));
+    drop.forEach(c=>dropped.add(String(c.id)));
+    let name=keep.name;
+    drop.forEach(c=>{ if(_rdCleanNameKey(c.name).split(' ').length>_rdCleanNameKey(name).split(' ').length&&_rdNamesCompatible(c.name,name)) name=c.name; });
+    dups.push({keep, drop, auto, name,
+      appts:list.reduce((s,c)=>s+(nAppt[String(c.id)]||0),0),
+      why: auto?'aynı müşteri':'aynı numara, farklı isim — aile olabilir'});
+  });
+  dups.sort((a,b)=>(b.auto-a.auto)||String(a.keep.name||'').localeCompare(String(b.keep.name||''),'tr'));
+  const nophone=[];
+  cls.forEach(c=>{
+    if(dropped.has(String(c.id))) return;
+    const iss=_phoneIssue(c.phone);
+    if(iss!=='yok'&&iss!=='hatali') return;
+    const n=nAppt[String(c.id)]||0;
+    nophone.push({c, issue:iss, appts:n, auto: iss==='yok'&&n===0});
+  });
+  nophone.sort((a,b)=>(b.auto-a.auto)||String(a.c.name||'').localeCompare(String(b.c.name||''),'tr'));
+  return {dups, nophone};
+}
+let _rdCleanPlan=null;
 function renderPhoneCleanup(){
   const p=document.getElementById('phone-cleanup-panel'); if(!p)return;
-  const items=clients.map(c=>({c,issue:_phoneIssue(c.phone)})).filter(x=>x.issue);
-  if(!items.length){p.innerHTML='<div class="card" style="padding:16px;margin-bottom:14px;">\u2705 Harika! Numaras\u0131z veya hatal\u0131 numaral\u0131 m\u00fc\u015fteri yok.</div>';return;}
-  const lbl={yok:'\ud83d\udcf5 Numara yok',hatali:'\u274c Hatal\u0131 numara',kontrol:'\u26a0\ufe0f Kontrol edin'};
+  const plan=_rdCleanPlan=rdCleanupPlan(clients, appointments);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  const row='display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid rgba(0,0,0,0.07);cursor:pointer;';
   let h='<div class="card" style="padding:16px;margin-bottom:14px;border:1px solid #b8860b;">';
-  h+='<div style="font-weight:800;margin-bottom:4px;">\ud83e\uddf9 Numara Temizli\u011fi \u00b7 '+items.length+' m\u00fc\u015fteri bulundu</div>';
-  h+='<div style="color:var(--muted);font-size:0.85rem;margin-bottom:12px;">Silmek istediklerinizi i\u015faretli b\u0131rak\u0131n \u2014 m\u00fc\u015fteriyle birlikte randevular\u0131 da silinir. \u26a0\ufe0f Kontrol edin i\u015faretli olanlar yurt d\u0131\u015f\u0131 numaras\u0131 olabilir, o y\u00fczden bo\u015f b\u0131rak\u0131ld\u0131.</div>';
-  items.forEach(x=>{
-    const chk=x.issue!=='kontrol'?'checked':'';
-    h+='<label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid rgba(0,0,0,0.07);cursor:pointer;">'
-      +'<input type="checkbox" class="pc-chk" data-id="'+x.c.id+'" '+chk+'>'
-      +'<span style="flex:1;font-weight:600;">'+(x.c.name||'(isimsiz)')+'</span>'
-      +'<span style="color:var(--muted);min-width:130px;">'+(x.c.phone||'\u2014')+'</span>'
-      +'<span style="font-size:0.8rem;">'+lbl[x.issue]+'</span></label>';
-  });
-  h+='<div style="display:flex;gap:8px;margin-top:12px;">'
-    +'<button class="btn btn-sm" style="background:#c94040;color:#fff;" onclick="phoneCleanupDelete()">\ud83d\uddd1 Se\u00e7ilenleri Sil</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="phoneCleanupToggle()">Kapat</button></div></div>';
+  h+='<div style="font-weight:800;margin-bottom:4px;">🧹 Liste Temizliği · '+clients.length+' müşteri</div>';
+  h+='<div style="color:var(--muted);font-size:0.85rem;margin-bottom:12px;">İşaretli olanlar güvenli görünenler. Basmadan önce yedek dosyası otomatik iner.</div>';
+  // 1 — doubles
+  h+='<div style="font-weight:800;margin:6px 0;">👥 Çift kayıtlar · '+plan.dups.length+' grup</div>';
+  if(!plan.dups.length) h+='<div style="color:var(--muted);padding:4px 0 10px;">✅ Çift kayıt yok.</div>';
+  else{
+    h+='<div style="color:var(--muted);font-size:0.82rem;margin-bottom:6px;">Silinmez, BİRLEŞTİRİLİR: randevular ve geçmiş üstteki (✓) kayda taşınır, boş kopyalar kalkar.</div>';
+    plan.dups.forEach((g,i)=>{
+      h+='<label style="'+row+'"><input type="checkbox" class="cl-dup" data-i="'+i+'" '+(g.auto?'checked':'')+'>'
+        +'<span style="flex:1;"><b>✓ '+esc(g.name||'(isimsiz)')+'</b> <span style="color:var(--muted);">'+esc(g.keep.phone||'—')+'</span>'
+        +g.drop.map(c=>'<br><span style="color:var(--muted);font-size:0.82rem;">✕ '+esc(c.name||'(isimsiz)')+' · '+esc(c.phone||'numara yok')+'</span>').join('')+'</span>'
+        +'<span style="font-size:0.78rem;'+(g.auto?'':'color:#b8860b;font-weight:700;')+'">'+(g.auto?'':'⚠️ ')+esc(g.why)+(g.appts?' · '+g.appts+' randevu':'')+'</span></label>';
+    });
+    h+='<div style="margin:10px 0 16px;"><button class="btn btn-sm" style="background:#b8860b;color:#fff;" onclick="rdCleanMergeRun()">👥 Seçilenleri Birleştir</button></div>';
+  }
+  // 2 — no number
+  h+='<div style="font-weight:800;margin:6px 0;">📵 Numarasız müşteriler · '+plan.nophone.length+'</div>';
+  if(!plan.nophone.length) h+='<div style="color:var(--muted);padding:4px 0 10px;">✅ Numarasız müşteri yok.</div>';
+  else{
+    h+='<div style="color:var(--muted);font-size:0.82rem;margin-bottom:6px;">Randevusu olmayanlar işaretli. Randevusu olan biri silinirse randevuları da silinir — o yüzden işaretsiz.</div>';
+    plan.nophone.forEach((x,i)=>{
+      h+='<label style="'+row+'"><input type="checkbox" class="cl-np" data-i="'+i+'" '+(x.auto?'checked':'')+'>'
+        +'<span style="flex:1;font-weight:600;">'+esc(x.c.name||'(isimsiz)')+'</span>'
+        +'<span style="color:var(--muted);min-width:110px;">'+esc(x.c.phone||'—')+'</span>'
+        +'<span style="font-size:0.8rem;'+(x.appts?'color:#c94040;font-weight:700;':'')+'">'+(x.issue==='yok'?'📵 Numara yok':'❌ Hatalı numara')+(x.appts?' · '+x.appts+' randevu':' · randevu yok')+'</span></label>';
+    });
+    h+='<div style="margin-top:10px;"><button class="btn btn-sm" style="background:#c94040;color:#fff;" onclick="rdCleanNoPhoneRun()">🗑 Seçilenleri Sil</button></div>';
+  }
+  h+='<div style="margin-top:14px;"><button class="btn btn-ghost btn-sm" onclick="phoneCleanupToggle()">Kapat</button></div></div>';
   p.innerHTML=h;
 }
-function phoneCleanupDelete(){
-  const ids=[...document.querySelectorAll('#phone-cleanup-panel .pc-chk:checked')].map(el=>el.getAttribute('data-id'));
-  if(!ids.length){alert('Silmek i\u00e7in en az bir m\u00fc\u015fteri i\u015faretleyin.');return;}
-  if(!ownerPin())return;
-  const names=ids.map(id=>clients.find(c=>String(c.id)===String(id))?.name).filter(Boolean);
-  if(!confirm('\u26a0\ufe0f KALICI S\u0130LME \u2014 geri al\u0131namaz!\n\n'+ids.length+' m\u00fc\u015fteri ve t\u00fcm randevular\u0131 silinecek:\n\n\u2022 '+names.slice(0,15).join('\n\u2022 ')+(names.length>15?'\n\u2026':'')+'\n\nOnayl\u0131yor musunuz?'))return;
-  const idset=new Set(ids.map(String));
-  clientTombAddMany(ids.map(String),'bulk client cleanup (renderPhoneCleanup)');
-  clients=clients.filter(c=>!idset.has(String(c.id)));
-  apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id),'bulk client cleanup (renderPhoneCleanup)');
-  appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
+function _rdCleanAfter(){
   saveAll();
   renderClients();renderDash();renderAppts();updateApptBadge();
   try{buildWAQueue();renderWA();}catch(e){}
   renderPhoneCleanup();
-  toast('\ud83d\uddd1','Temizlik Tamam',ids.length+' m\u00fc\u015fteri silindi.','r');
+}
+// Fold the copies into the kept record, then remove the empty copies.
+function rdCleanMergeGroup(g){
+  // a cloud snapshot may have swapped the array since the panel was drawn
+  const keep=clients.find(c=>c&&String(c.id)===String(g.keep.id));
+  if(!keep) return;
+  const kid=keep.id;
+  const ids=new Set(g.drop.map(c=>String(c.id)));
+  g.drop.forEach(c=>{
+    if(_rdCleanNameKey(c.name).split(' ').length>_rdCleanNameKey(keep.name).split(' ').length&&_rdNamesCompatible(c.name,keep.name)) keep.name=c.name;
+    if(!_rdCleanPhoneKey(keep.phone)&&_rdCleanPhoneKey(c.phone)) keep.phone=c.phone;
+    ['birthday','source','referredBy','discount','email'].forEach(f=>{ if((keep[f]==null||keep[f]===''||keep[f]===0)&&c[f]!=null&&c[f]!=='') keep[f]=c[f]; });
+    if(c.notes&&String(keep.notes||'').indexOf(c.notes)<0) keep.notes=keep.notes?keep.notes+' · '+c.notes:c.notes;
+    keep.visits=(Number(keep.visits)||0)+(Number(c.visits)||0);
+    keep.points=(Number(keep.points)||0)+(Number(c.points)||0);
+    if(c.lastVisit&&c.lastVisit!=='—'&&(!keep.lastVisit||keep.lastVisit==='—'||String(c.lastVisit)>String(keep.lastVisit))) keep.lastVisit=c.lastVisit;
+  });
+  appointments.forEach(a=>{ if(a&&ids.has(String(a.clientId))){ a.clientId=kid; if(a.clientName) a.clientName=keep.name; } });
+  (payments||[]).forEach(p=>{ if(p&&ids.has(String(p.clientId))) p.clientId=kid; });
+  clients.forEach(c=>{ if(c&&c.referredBy!=null&&ids.has(String(c.referredBy))) c.referredBy=kid; });
+  try{ rbItems().forEach(it=>{ if(ids.has(String(it.clientId))){ it.clientId=kid; rbUpsert(it); } }); }catch(e){}
+  clientTombAddMany([...ids],'merged into '+kid+' (Liste Temizliği)');
+  clients=clients.filter(c=>!ids.has(String(c.id)));
+}
+function rdCleanMergeRun(){
+  const plan=_rdCleanPlan; if(!plan)return;
+  const gs=[...document.querySelectorAll('#phone-cleanup-panel .cl-dup:checked')].map(el=>plan.dups[+el.getAttribute('data-i')]).filter(Boolean);
+  if(!gs.length){alert('Birleştirmek için en az bir grup işaretleyin.');return;}
+  if(!ownerPin())return;
+  const n=gs.reduce((s,g)=>s+g.drop.length,0);
+  if(!confirm('👥 '+gs.length+' müşteri birleştirilecek ('+n+' kopya kalkacak).\n\nRandevular ve geçmiş korunur, tutulan kayda taşınır.\nÖnce yedek dosyası inecek.\n\nOnaylıyor musunuz?'))return;
+  try{ rdnsExportData(); }catch(e){}
+  gs.forEach(rdCleanMergeGroup);
+  _rdCleanAfter();
+  toast('👥','Birleştirme Tamam',gs.length+' müşteri birleştirildi, '+n+' kopya kaldırıldı.','g');
+}
+function rdCleanNoPhoneRun(){
+  const plan=_rdCleanPlan; if(!plan)return;
+  const xs=[...document.querySelectorAll('#phone-cleanup-panel .cl-np:checked')].map(el=>plan.nophone[+el.getAttribute('data-i')]).filter(Boolean);
+  if(!xs.length){alert('Silmek için en az bir müşteri işaretleyin.');return;}
+  if(!ownerPin())return;
+  const withAppts=xs.filter(x=>x.appts).length;
+  if(!confirm('⚠️ KALICI SİLME — geri alınamaz!\n\n'+xs.length+' numarasız müşteri silinecek'+(withAppts?' ('+withAppts+' tanesinin randevuları da silinecek)':'')+':\n\n• '+xs.slice(0,15).map(x=>x.c.name).join('\n• ')+(xs.length>15?'\n…':'')+'\n\nÖnce yedek dosyası inecek. Onaylıyor musunuz?'))return;
+  try{ rdnsExportData(); }catch(e){}
+  const idset=new Set(xs.map(x=>String(x.c.id)));
+  clientTombAddMany([...idset],'no phone (Liste Temizliği)');
+  clients=clients.filter(c=>!idset.has(String(c.id)));
+  apptTombAddMany(appointments.filter(a=>idset.has(String(a.clientId))).map(a=>a.id),'client without phone removed (Liste Temizliği)');
+  appointments=appointments.filter(a=>!idset.has(String(a.clientId)));
+  _rdCleanAfter();
+  toast('🗑','Temizlik Tamam',xs.length+' numarasız müşteri silindi.','r');
 }
 function deleteClient(id){
   const c = clients.find(x=>x.id===id);
