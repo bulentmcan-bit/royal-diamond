@@ -189,12 +189,23 @@ console.log('9. once her hour has begun, the card is plain');
   is(/if\(_at && _at<=Date\.now\(\)\) return '';\s+\/\/ her hour has begun: plain card/.test(html), true, '…and no 🟢 by her name');
 }
 
-console.log('10. the opened message shows only the current conversation');
+console.log('10. the opened message shows only the current exchange');
 {
-  is(/cut=\(Number\(r\.ts\)\|\|Date\.now\(\)\)-2\*86400000/.test(html), true, 'from two days before her message');
-  is(/thread=thread\.filter\(function\(m\)\{ return \(Number\(m\.ts\)\|\|0\)>=cut/.test(html), true, '…her older messages are folded away');
-  is(/rems=rems\.filter\(function\(x\)\{ return !x\.at \|\| Number\(x\.at\)>=cut; \}\)/.test(html), true, '…and older reminders');
-  is(/Eski mesajları göster \('\+hidden\+'\)/.test(html), true, '…one tap brings them back');
+  is(/var keepRem=past\.length \? \[past\[0\]\] : \[\];/.test(html), true, 'only our latest reminder before her reply');
+  is(/sent=sent\.filter\(function\(o\)\{ return r\.offerId && String\(o\.id\)===String\(r\.offerId\); \}\)/.test(html), true, '…an offer only when this reply answers it');
+  is(/var cut=day0\.getTime\(\); if\(keepRem\.length && Number\(keepRem\[0\]\.at\)>cut\) cut=Number\(keepRem\[0\]\.at\);/.test(html), true, '…her messages from that day, since our message');
+  is(/▾ Ayrıntılar ve eski mesajlar/.test(html), true, '…one tap brings the rest back');
+  is(/bub\('Müşteri', rdWrWhen\(m\.ts\)/.test(html), true, 'the plain view reads as a short chat: our message, her words');
+}
+
+console.log('11. the inbox lists only what a person must answer');
+{
+  const g = n => { const i = html.indexOf('function ' + n + '('); let d = 0; for (let k = html.indexOf('{', i); ; k++) { if (html[k] === '{') d++; else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); } } };
+  const f = new Function(g('rdWrIsCancel') + g('rdWrIsConfirm') + g('rdWrNoActionNeeded') + ';return rdWrNoActionNeeded;')();
+  ['Geleceğim / Yes', 'Gelemiyorum / No', 'Çok teşekkür ederim 🌸✨', 'Tamamdır 🙏', 'Tamam teşekkürler'].forEach(t => is(f({ text: t }), true, 'left out: “' + t + '”'));
+  ['4 olur mu', 'hayir okuldayim', 'Saat 3e alabilir miyiz', 'Hello ı cannot come today'].forEach(t => is(f({ text: t }), false, 'listed: “' + t + '”'));
+  is(f({ text: 'Evet / Yes please', offerId: 'x' }), false, 'an answer to a free-slot offer is always listed — it still needs booking');
+  is(/Otomatik işlenenleri de göster/.test(html), true, 'one tap shows the rest');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
