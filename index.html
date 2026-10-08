@@ -3456,6 +3456,10 @@ textarea.fctrl{resize:vertical;min-height:70px;}
 #page-takings .dt-inp::placeholder { color: var(--muted); }
 #page-takings .dt-inp-service { flex: 1; min-width: 0; }
 #page-takings .dt-inp-amount { width: 72px; flex-shrink: 0; }
+.dt-echo { font-size: 0.74rem; line-height: 1.4; margin-top: 6px; min-height: 16px; }
+.dt-echo-ok { color: var(--wa); }
+.dt-echo-ok b { color: var(--text); font-weight: 800; }
+.dt-echo-warn { color: var(--goldLight); }
 #page-takings .btn-add-dt {
   background: var(--wa); color: #ffffff; border: none; border-radius: 7px;
   width: 30px; height: 30px; font-size: 1rem; font-weight: 800;
@@ -5439,8 +5443,11 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
       <div class="fg"><label class="flabel" id="flabel-a-service">Hizmet *</label>
         <select class="fctrl" id="a-service">
-          <optgroup label="💅 MANİKÜR"><option value="Klasik Manikür">Klasik Manikür</option><option value="Jel Başlangıç (Full Set)">Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">Dolgu (Infill)</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option><option value="Tırnak Çıkarma">Tırnak Çıkarma</option></optgroup>
-          <optgroup label="🦶 PEDİKÜR"><option value="Klasik Pedikür (Ojesiz)">Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Medikal Pedikür">Medikal Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
+          <!-- The number in front is the wall price list (RD_SVC_CODES). It is
+               on the LABEL only: the value is what gets written on the
+               appointment and what every other screen matches on. -->
+          <optgroup label="💅 MANİKÜR"><option value="Jel Başlangıç (Full Set)">1 · Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">2 · Dolgu (Infill)</option><option value="Klasik Manikür">3 · Klasik Manikür</option><option value="Renkli Jel — El">6 · Renkli Jel — El</option><option value="Tırnak Çıkarma">10 · Tırnak Çıkarma</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option></optgroup>
+          <optgroup label="🦶 PEDİKÜR"><option value="Man Pedi">4 · Man Pedi</option><option value="Pedikür">5 · Pedikür</option><option value="Renkli Jel — Ayak">7 · Renkli Jel — Ayak</option><option value="Medikal Pedikür">8 · Medikal Pedikür</option><option value="Klasik Pedikür (Ojesiz)">9 · Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
           <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Lifting &amp; Boyama">Kirpik Lifting &amp; Boyama</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
           <optgroup label="🤨 KAŞ"><option value="Altın Oran Kaş Alımı">Altın Oran Kaş Alımı</option><option value="Kaş Boyama">Kaş Boyama</option><option value="Kaş Laminasyon">Kaş Laminasyon</option><option value="Microblading">Microblading</option><option value="Pudralama">Pudralama</option><option value="Kaş Vitamini (dermapen)">Kaş Vitamini (dermapen)</option><option value="Kaş Silme (solüsyon)">Kaş Silme (solüsyon)</option></optgroup>
           <optgroup label="🪒 AĞDA"><option value="Bıyık / Çene Ağda">Bıyık / Çene Ağda</option><option value="Tüm Yüz Ağda">Tüm Yüz Ağda</option><option value="Koltuk Altı Ağda">Koltuk Altı Ağda</option><option value="Yarım Bacak Ağda">Yarım Bacak Ağda</option><option value="Tam Bacak Ağda">Tam Bacak Ağda</option><option value="Bikini Ağda">Bikini Ağda</option><option value="Özel Bölge Ağda">Özel Bölge Ağda</option><option value="Tüm Vücut Ağda">Tüm Vücut Ağda</option><option value="Tam Kol Ağda">Tam Kol Ağda</option></optgroup>
@@ -5462,16 +5469,24 @@ p, span, div, label, h1, h2, h3, h4 {
         <div id="a-dur-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel">✨ Nail Art (ek hizmet)</label>
+      <div class="fg"><label class="flabel">✨ Tasarım (D1–D6)</label>
+        <!-- Same codes as the till (RD_DSG_CODES). The value is the code;
+             the minutes live on data-min because the value used to BE the
+             minutes and addonMins() still has to answer. -->
         <select class="fctrl" id="a-addon">
           <option value="0">Yok</option>
-          <option value="15">French / Ombre  (+15 dk)</option>
-          <option value="60">Full Design  (+60 dk)</option>
+          <option value="D1" data-min="15" data-p="300">D1 · ₺300  (+15 dk)</option>
+          <option value="D2" data-min="15" data-p="600">D2 · ₺600  (+15 dk)</option>
+          <option value="D3" data-min="30" data-p="750">D3 · ₺750  (+30 dk)</option>
+          <option value="D4" data-min="30" data-p="1000">D4 · ₺1.000  (+30 dk)</option>
+          <option value="D5" data-min="45" data-p="1200">D5 · ₺1.200  (+45 dk)</option>
+          <option value="D6" data-min="60" data-p="1500">D6 · ₺1.500  (+60 dk)</option>
         </select></div>
       <div class="fg"></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="number" id="a-price" placeholder="0"></div>
+      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="number" id="a-price" placeholder="0">
+        <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
         <select class="fctrl" id="a-staff"><!-- populated from Daily Takings operators --></select></div>
     </div>
@@ -6380,7 +6395,9 @@ function openModal(id){
     try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
-    const pr=document.getElementById('a-price'); if(pr) pr.value='';
+    const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
+    const ph=document.getElementById('a-price-hint'); if(ph) ph.textContent='';
+    const ao=document.getElementById('a-addon'); if(ao) ao.value='0';
     const st=document.getElementById('a-staff'); if(st){ st.value=''; try{ rdStaffSelChanged(); }catch(e){} }
     const saveBtn=document.getElementById('btn-save-appt');
     if(saveBtn){ saveBtn.textContent='+ Randevu'; saveBtn.onclick=saveAppt; }
@@ -6854,7 +6871,8 @@ function dashEditAppt(id){
     // still be: the amount sent to Daily Takings, the saved override, and
     // finally today's Daily Takings entries, which carry the appointment id.
     const shownPrice = apptKnownPrice(a);
-    if(pr) pr.value = shownPrice || '';
+    if(pr){ pr.value = shownPrice || ''; delete pr.dataset.rdAuto; }
+    try{ const ph=document.getElementById('a-price-hint'); if(ph) ph.textContent=''; }catch(e){}
     // 💚 Family discount reminder — show it right on the popup
     try{
       let fd = document.getElementById('a-fam-disc');
@@ -15161,12 +15179,15 @@ function renderDashTakings(){
       </div>
       <div class="dt-op-entries" id="dtDashEntries${realIdx}">${entriesHtml}</div>
       <div class="dt-op-add">
-        <input class="dt-op-inp dt-op-inp-svc" id="dtDashSvc${realIdx}" type="text" placeholder="Service…"
-          onkeydown="if(event.key==='Tab'||event.key==='Enter'){event.preventDefault();document.getElementById('dtDashAmt${realIdx}').focus();}"/>
+        <input class="dt-op-inp dt-op-inp-svc" id="dtDashSvc${realIdx}" type="text" placeholder="Kod veya hizmet…"
+          autocomplete="off" oninput="rdDashEcho(${realIdx})"
+          onkeydown="rdDashSvcKey(event,${realIdx})"/>
         <input class="dt-op-inp dt-op-inp-amt" id="dtDashAmt${realIdx}" type="number" min="0" step="0.01" placeholder="0.00"
+          oninput="rdDashEcho(${realIdx})"
           onkeydown="if(event.key==='Enter'){dtDashAddEntry(${realIdx});}"/>
         <button class="dt-op-btn-add" onclick="dtDashAddEntry(${realIdx})">+</button>
-      </div>`;
+      </div>
+      <div class="dt-echo" id="dtDashEcho${realIdx}"></div>`;
     grid.appendChild(col);
   });
 }
@@ -15175,13 +15196,17 @@ function dtDashAddEntry(opIdx){
   const svcEl = document.getElementById("dtDashSvc"+opIdx);
   const amtEl = document.getElementById("dtDashAmt"+opIdx);
   if(!svcEl||!amtEl) return;
-  const svc = svcEl.value.trim() || "Service";
-  const amt = parseFloat(amtEl.value);
+  const parsed = rdParseCode(svcEl.value, amtEl.value);
+  const svc = parsed.name || svcEl.value.trim() || "Service";
+  const amt = parsed.amount;
   if(isNaN(amt)||amt<=0){ amtEl.style.borderColor="var(--red)"; setTimeout(()=>amtEl.style.borderColor="",600); amtEl.focus(); return; }
   const now = new Date();
   const time = String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
-  dtState.operators[opIdx].entries.push({service:svc,amount:amt,time});
+  const _dEnt={service:svc,amount:amt,time};
+  if(parsed.code) _dEnt.code = parsed.code;
+  dtState.operators[opIdx].entries.push(_dEnt);
   svcEl.value=""; amtEl.value="";
+  const _dec=document.getElementById("dtDashEcho"+opIdx); if(_dec) _dec.innerHTML="";
   dtSaveState();
   renderDashTakings();
   toast("💰","Payment Added",svc+" — "+dtFmt(amt),"g");
@@ -16851,12 +16876,15 @@ function dtRenderOperators(){
       <div class="op-entries" id="dtOpEntries${idx}">${dtRenderEntries(op,idx)}</div>
       <div class="op-card-footer">
         <div class="add-entry-row">
-          <input class="dt-inp dt-inp-service" id="dtSvc${idx}" type="text" placeholder="Service…"
-            onkeydown="if(event.key==='Tab'||event.key==='Enter'){event.preventDefault();document.getElementById('dtAmt${idx}').focus();}"/>
+          <input class="dt-inp dt-inp-service" id="dtSvc${idx}" type="text" placeholder="Kod veya hizmet…"
+            autocomplete="off" oninput="rdDtEcho(${idx})"
+            onkeydown="rdDtSvcKey(event,${idx})"/>
           <input class="dt-inp dt-inp-amount" id="dtAmt${idx}" type="number" min="0" step="0.01" placeholder="0.00"
+            oninput="rdDtEcho(${idx})"
             onkeydown="if(event.key==='Enter'){dtAddEntry(${idx});}"/>
           <button class="btn-add-dt" onclick="dtAddEntry(${idx})">+</button>
         </div>
+        <div class="dt-echo" id="dtEcho${idx}"></div>
       </div>`;
     grid.appendChild(card);
   });
@@ -16930,17 +16958,126 @@ function dtRenderHistory(){
 }
 
 // ── Actions ──
+/* ── Fiyat kodları ─────────────────────────────────
+   Duvardaki fiyat listesiyle BİREBİR aynı olmak zorunda. Fiyat
+   değişinceburası değişir, başka hiçbir yer değişmez.            */
+var RD_SVC_CODES = {
+  /* n = what the till writes on the entry · p = lira · v = the VALUE the
+     booking dropdown stores on an appointment (the old names, untouched, so
+     not one booking already in the diary changes meaning). */
+  1:{ n:'Jel Başlangıç (Full Set)', p:1900, v:'Jel Başlangıç (Full Set)' },
+  2:{ n:'Dolgu',                    p:1700, v:'Dolgu (Infill)' },
+  3:{ n:'Klasik Manikür',           p:1200, v:'Klasik Manikür' },
+  4:{ n:'Man Pedi',                 p:1700, v:'Man Pedi' },
+  5:{ n:'Pedikür',                  p:1700, v:'Pedikür' },
+  6:{ n:'Renkli Jel — El',           p:1500, v:'Renkli Jel — El' },
+  7:{ n:'Renkli Jel — Ayak',         p:1000, v:'Renkli Jel — Ayak' },
+  8:{ n:'Medikal Pedikür',          p:2500, v:'Medikal Pedikür' },
+  9:{ n:'Klasik Pedikür',           p:1500, v:'Klasik Pedikür (Ojesiz)' },
+  10:{ n:'Tırnak Çıkarma',          p:800,  v:'Tırnak Çıkarma' }
+};
+var RD_DSG_CODES = { D1:300, D2:600, D3:750, D4:1000, D5:1200, D6:1500 };
+
+/* Yazılanı ada ve tutara çevirir.
+     "2"           -> Dolgu, 1700
+     "2 D3"        -> Dolgu + D3, 2450
+     "1750"        -> (ad yok), 1750        100 ve üzeri = gerçek lira
+     "Kirpik 1800" -> Kirpik, 1800          eski usul hiç bozulmadı
+   amtTyped (tutar kutusu) doluysa her zaman o kazanır.             */
+function rdParseCode(text, amtTyped){
+  var raw = String(text==null?'':text).trim();
+  var out = { name:'', amount:0, parts:[], free:[], used:false, override:false, code:'' };
+  if(raw){
+    raw.split(/[\s+,]+/).forEach(function(tok){
+      if(!tok) return;
+      var d = tok.toUpperCase();
+      if(RD_DSG_CODES[d] != null){
+        out.parts.push({ label:d, amount:RD_DSG_CODES[d], design:true }); out.used=true; return;
+      }
+      if(/^\d{1,2}$/.test(tok)){
+        var n = parseInt(tok,10);
+        if(RD_SVC_CODES[n]){
+          out.parts.push({ label:RD_SVC_CODES[n].n, code:n, amount:RD_SVC_CODES[n].p });
+          out.used=true; return;
+        }
+      }
+      if(/^\d+$/.test(tok) && parseInt(tok,10) >= 100){
+        out.parts.push({ label:null, amount:parseInt(tok,10), money:true }); out.used=true; return;
+      }
+      out.free.push(tok);
+    });
+  }
+  out.amount = out.parts.reduce(function(a,x){ return a + x.amount; }, 0);
+  var names = out.parts.filter(function(x){ return x.label; }).map(function(x){ return x.label; });
+  if(out.free.length) names.unshift(out.free.join(' '));
+  out.name = names.join(' + ');
+  if(out.used && !out.free.length) out.code = raw.toUpperCase();
+
+  var typed = parseFloat(String(amtTyped==null?'':amtTyped).replace(/[^0-9.]/g,''));
+  if(!isNaN(typed) && typed > 0){ out.amount = typed; out.override = true; }
+  return out;
+}
+
+/* Kaydetmeden ÖNCE ne olduğunu kelimeyle gösterir. Tek parmak kayması
+   ₺1.300 fark demek ve ekranda hiçbir izi yok; okuma satırı o yüzden var. */
+function rdDtEcho(opIdx){
+  var sv = document.getElementById('dtSvc'+opIdx), am = document.getElementById('dtAmt'+opIdx),
+      ec = document.getElementById('dtEcho'+opIdx);
+  if(!sv || !ec) return;
+  if(!sv.value.trim() && !(am && am.value.trim())){ ec.innerHTML=''; return; }
+  var p = rdParseCode(sv.value, am?am.value:'');
+  if(!p.amount){ ec.innerHTML = '<span class="dt-echo-warn">\u26A0 Tanınmayan kod \u2014 tutarı elle yazın</span>'; return; }
+  ec.innerHTML = '<span class="dt-echo-ok">\u2192 <b>'+dtEscHtml(p.name||'Hizmet')+'</b> = <b>'+dtFmt(p.amount)+'</b>'
+    + (p.override ? ' <span class="dt-echo-warn">(tutar elle yazıldı)</span>' : '') + '</span>';
+}
+
+/* Panodaki kasa kutusu da aynı şekilde okur. Günlük iş orada giriliyor;
+   davranışı sayfadakiyle birebir aynı olmak zorunda.                  */
+function rdDashEcho(opIdx){
+  var sv = document.getElementById('dtDashSvc'+opIdx), am = document.getElementById('dtDashAmt'+opIdx),
+      ec = document.getElementById('dtDashEcho'+opIdx);
+  if(!sv || !ec) return;
+  if(!sv.value.trim() && !(am && am.value.trim())){ ec.innerHTML=''; return; }
+  var p = rdParseCode(sv.value, am?am.value:'');
+  if(!p.amount){ ec.innerHTML = '<span class="dt-echo-warn">\u26A0 Tanınmayan kod \u2014 tutarı elle yazın</span>'; return; }
+  ec.innerHTML = '<span class="dt-echo-ok">\u2192 <b>'+dtEscHtml(p.name||'Hizmet')+'</b> = <b>'+dtFmt(p.amount)+'</b>'
+    + (p.override ? ' <span class="dt-echo-warn">(tutar elle yazıldı)</span>' : '') + '</span>';
+}
+
+/* Hizmet kutusunda Enter: kod tanındıysa doğrudan ekle, tanınmadıysa
+   eskisi gibi tutar kutusuna geç. Tab her zaman tutara geçer.       */
+function rdDtSvcKey(ev, opIdx){
+  if(ev.key === 'Tab'){ ev.preventDefault(); document.getElementById('dtAmt'+opIdx).focus(); return; }
+  if(ev.key !== 'Enter') return;
+  ev.preventDefault();
+  var sv = document.getElementById('dtSvc'+opIdx), am = document.getElementById('dtAmt'+opIdx);
+  var p = rdParseCode(sv.value, am?am.value:'');
+  if(p.amount > 0) dtAddEntry(opIdx); else document.getElementById('dtAmt'+opIdx).focus();
+}
+
+function rdDashSvcKey(ev, opIdx){
+  if(ev.key === 'Tab'){ ev.preventDefault(); document.getElementById('dtDashAmt'+opIdx).focus(); return; }
+  if(ev.key !== 'Enter') return;
+  ev.preventDefault();
+  var sv = document.getElementById('dtDashSvc'+opIdx), am = document.getElementById('dtDashAmt'+opIdx);
+  var p = rdParseCode(sv.value, am?am.value:'');
+  if(p.amount > 0) dtDashAddEntry(opIdx); else document.getElementById('dtDashAmt'+opIdx).focus();
+}
+
 function dtAddEntry(opIdx){
   const svcEl = document.getElementById('dtSvc'+opIdx);
   const amtEl = document.getElementById('dtAmt'+opIdx);
-  const svc = svcEl.value.trim() || 'Service';
-  const amt = parseFloat(amtEl.value);
+  const parsed = rdParseCode(svcEl.value, amtEl.value);
+  const svc = parsed.name || svcEl.value.trim() || 'Service';
+  const amt = parsed.amount;
   if(isNaN(amt)||amt<=0){ amtEl.style.borderColor='var(--red)'; setTimeout(()=>amtEl.style.borderColor='',600); amtEl.focus(); return; }
   const now = new Date();
   const time = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const _pmE={service:svc,amount:amt,time};
+  if(parsed.code) _pmE.code = parsed.code;
   dtState.operators[opIdx].entries.push(_pmE);
   svcEl.value=''; amtEl.value='';
+  const _ec=document.getElementById('dtEcho'+opIdx); if(_ec) _ec.innerHTML='';
   dtSaveState(); dtRender();
   toast('💰','Payment Added',svc+' — '+dtFmt(amt),'g');
   try{ pmAsk(_pmE); }catch(e){}
@@ -21343,7 +21480,7 @@ function rdWrWindow(r, now){
 /* ══════════════════════════════════════════════════════════════
    RANDEVU SÜRE & ÇAKIŞMA SİSTEMİ
    · Her hizmetin gerçek süresi otomatik gelir
-   · Nail Art ek süresi eklenir  (French/Ombre +15 · Full Design +60)
+   · Tasarım ek süresi eklenir  (D1–D6, dakikası seçeneğin data-min'inde)
    · Randevular arasında 10 dakika boşluk zorunlu
    · Çakışma varsa uyarır ve ilk uygun saati önerir
    ══════════════════════════════════════════════════════════════ */
@@ -21408,7 +21545,11 @@ function rdWrWindow(r, now){
 
   function addonMins(){
     const el = document.getElementById('a-addon');
-    return el ? (parseInt(el.value)||0) : 0;
+    if(!el) return 0;
+    const o = el.options[el.selectedIndex];
+    // The value is D1–D6 now; the minutes sit on the option itself.
+    if(o && o.getAttribute('data-min') != null) return parseInt(o.getAttribute('data-min'))||0;
+    return parseInt(el.value)||0;
   }
 
   // Hizmet veya ek seçilince süreyi otomatik doldur — ek hizmet dahil hiçbir
@@ -21528,12 +21669,49 @@ function rdWrWindow(r, now){
     return _origSave.apply(this, arguments);
   };
 
+  /* ── Fiyat listesinden fiyat ─────────────────────────────────
+     Hizmet veya tasarım seçilince Fiyat kutusu listeden dolar. Kutuda
+     sistemin yazmadığı bir rakam varsa (indirim, yuvarlama, kıyak) ona
+     DOKUNULMAZ — sistem resepsiyonla tartışmaya başladığı an rakam yanlıştır.
+     Kendi yazdığını data-rdAuto'da tutar; yalnız onu değiştirir. */
+  window.rdApptAutoPrice = function(){
+    const sv = document.getElementById('a-service');
+    const ad = document.getElementById('a-addon');
+    const pr = document.getElementById('a-price');
+    const hint = document.getElementById('a-price-hint');
+    if(!sv || !pr) return;
+    let base = null, code = '';
+    Object.keys(RD_SVC_CODES).forEach(function(k){
+      if(RD_SVC_CODES[k].v === sv.value){ base = RD_SVC_CODES[k].p; code = k; }
+    });
+    let dsg = 0, dcode = '';
+    if(ad && ad.value && RD_DSG_CODES[ad.value] != null){ dsg = RD_DSG_CODES[ad.value]; dcode = ad.value; }
+    const cur = String(pr.value==null?'':pr.value).trim();
+    const mine = pr.dataset.rdAuto || '';
+    if(cur && cur !== '0' && cur !== mine){ if(hint) hint.textContent=''; return; }
+    if(base == null && !dsg){
+      if(mine && cur === mine) pr.value = '';
+      delete pr.dataset.rdAuto;
+      if(hint) hint.textContent = '';
+      return;
+    }
+    const v = (base||0) + dsg;
+    pr.value = v;
+    pr.dataset.rdAuto = String(v);
+    if(hint){
+      const bits = [];
+      if(code) bits.push(code + ' · ₺' + (base||0).toLocaleString('tr-TR'));
+      if(dcode) bits.push(dcode + ' · ₺' + dsg.toLocaleString('tr-TR'));
+      hint.textContent = 'Fiyat listesinden geldi: ' + bits.join(' + ') + ' — elle değiştirebilirsiniz';
+    }
+  };
+
   /* ── Formu bağla ─────────────────────────────────────────── */
   function wire(){
     const sv = document.getElementById('a-service');
     const ad = document.getElementById('a-addon');
-    if(sv && !sv._rdWired){ sv._rdWired = true; sv.addEventListener('change', rdAutoDur); }
-    if(ad && !ad._rdWired){ ad._rdWired = true; ad.addEventListener('change', rdAutoDur); }
+    if(sv && !sv._rdWired){ sv._rdWired = true; sv.addEventListener('change', rdAutoDur); sv.addEventListener('change', rdApptAutoPrice); }
+    if(ad && !ad._rdWired){ ad._rdWired = true; ad.addEventListener('change', rdAutoDur); ad.addEventListener('change', rdApptAutoPrice); }
   }
 
   const _origOpen = window.openModal;
@@ -21955,7 +22133,7 @@ function rdWrWindow(r, now){
       const st=document.getElementById('a-staff');
       if(st){ for(let i=0;i<st.options.length;i++){ if(st.options[i].value===tech){ st.value=tech; break; } } try{ rdStaffSelChanged(); }catch(e){} }
       const sv=document.getElementById('a-service');
-      if(sv && svc){ sv.value=svc; if(typeof rdAutoDur==='function') rdAutoDur(); }
+      if(sv && svc){ sv.value=svc; if(typeof rdAutoDur==='function') rdAutoDur(); if(typeof rdApptAutoPrice==='function') rdApptAutoPrice(); }
     }, 140);
   };
 })();
