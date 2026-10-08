@@ -6170,15 +6170,27 @@ function rdVerify(entry){
   return false;
 }
 // ── Price list quick-send ──
+// The message is BUILT from the price table (RD_SVC_CODES / RD_DSG_CODES),
+// not typed out. When it was typed, the wall list moved and WhatsApp kept
+// quoting the old figures, so every price enquiry was answered short. A
+// price changes in the table and nowhere else. The lash lines are kept by
+// hand: real prices, but the wall list has no numbered line for them.
+function rdPriceTL(n){
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+}
 function rdDefaultPriceMsg(){
+  var lines=[];
+  Object.keys(RD_SVC_CODES).map(Number).sort(function(a,b){ return a-b; }).forEach(function(k){
+    lines.push(k+'. '+RD_SVC_CODES[k].n+': '+rdPriceTL(RD_SVC_CODES[k].p)+' TL');
+  });
+  var d=function(c){ return c+' '+rdPriceTL(RD_DSG_CODES[c]); };
   return "https://bulentmcan-bit.github.io/royal-diamond/logo.jpg\n\n"+
     "*ROYAL DIAMOND NAIL STUDIO*\n"+
     "G\u00fcncel Fiyat Listesi\n\n"+
-    "Jel Ba\u015flang\u0131\u00e7: 1.700 TL\n"+
-    "Dolgu: 1.600 TL\n"+
-    "Pedik\u00fcr (Ojesiz): 1.400 TL\n"+
-    "Kal\u0131c\u0131 Ojeli Pedik\u00fcr: 1.600 TL\n"+
-    "*Nail Art: ekstra \u00fccretlidir*\n"+
+    lines.join("\n")+"\n\n"+
+    "*Tasar\u0131m (hizmete ek \u00fccret)*\n"+
+    d('D1')+"  \u00b7  "+d('D2')+"  \u00b7  "+d('D3')+" TL\n"+
+    d('D4')+"  \u00b7  "+d('D5')+"  \u00b7  "+d('D6')+" TL\n\n"+
     "\u0130pek Kirpik Klasik: 1.800 TL\n"+
     "\u0130pek Kirpik Volume: 2.000 TL\n\n"+
     "Di\u011fer hizmetler ve detayl\u0131 bilgi i\u00e7in bize yazabilirsiniz.\n"+
@@ -21703,7 +21715,6 @@ function rdWrWindow(r, now){
     if(!pr) return;
     var cur = String(pr.value==null?'':pr.value).trim();
     var mine = String(pr.dataset.rdAuto||'');
-    // Elle yazılmış bir şey var: dokunma, ama okuma satırı yine söylesin.
     if(cur && cur !== '0' && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
     var v = rdApptPriceFor();
     if(!v){ if(hint) hint.textContent=''; return; }

@@ -239,6 +239,41 @@ console.log('15. a technician is not offered work she does not do');
   is(/if\(!cid\|\|!svc\|\|!dt\)\{toast/.test(html), true, '…and an empty service still cannot be saved');
 }
 
+console.log('16. the WhatsApp price message is built from the same table');
+{
+  // It used to be typed out by hand, and nobody remembered to update it: the
+  // wall said Dolgu ₺1.700 while WhatsApp was still telling customers ₺1.600.
+  // Every price enquiry was being answered ₺100 light.
+  const body = html.slice(html.indexOf('function rdPriceTL'),
+                          html.indexOf('function rdPriceMsg'));
+  is(/RD_SVC_CODES\[k\]/.test(body), true, 'the services come out of the price table');
+  is(/RD_DSG_CODES\[c\]/.test(body), true, '…and so do D1–D6');
+  ['1.700 TL','1.600 TL','1.400 TL'].forEach(n =>
+    is(body.includes(n), false, `the hand-typed ${n} is gone`));
+  is(body.indexOf('hizmete ek') > -1, true, 'design is named as an extra on top');
+
+  // Run it for real and check the figures match the wall list to the lira.
+  const ctx2 = { RD_SVC_CODES: ctx.RD_SVC_CODES, RD_DSG_CODES: ctx.RD_DSG_CODES };
+  vm.createContext(ctx2);
+  vm.runInContext(body, ctx2);
+  const msg = ctx2.rdDefaultPriceMsg();
+  is(/^1\. Jel Ba.*: 1\.900 TL$/m.test(msg), true, '1 quotes ₺1.900');
+  is(/^2\. Dolgu: 1\.700 TL$/m.test(msg), true, '2 quotes ₺1.700, not the old ₺1.600');
+  is(/^10\. T.rnak .*: 800 TL$/m.test(msg), true, '10 quotes ₺800');
+  is(/D1 300  \u00b7  D2 600  \u00b7  D3 750 TL/.test(msg), true, 'D1–D3 on one line');
+  is(/D4 1\.000  \u00b7  D5 1\.200  \u00b7  D6 1\.500 TL/.test(msg), true, 'D4–D6 on the next');
+  is(msg.indexOf('0548 893 3333') > -1, true, 'the salon number is still on it');
+  is(msg.indexOf('booking.html') > -1, true, '…and the online booking link');
+  is(msg.indexOf('pek Kirpik Klasik: 1.800 TL') > -1, true,
+     'the lash prices are kept — they are real prices and the wall list has no line for them');
+  // Nothing may quote a figure the table does not hold.
+  (msg.match(/^\d+\. .*: ([\d.]+) TL$/gm)||[]).forEach(line => {
+    const n = parseInt(line.split(':').pop().replace(/[^\d]/g,''), 10);
+    const ok = Object.keys(ctx.RD_SVC_CODES).some(k => ctx.RD_SVC_CODES[k].p === n);
+    is(ok, true, `"${line.trim()}" matches the price table`);
+  });
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);
