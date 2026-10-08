@@ -158,8 +158,8 @@ console.log('11. a price typed by hand is never overwritten');
 {
   // This is the one that protects the takings. Reception discounts, rounds and
   // does favours; the moment the system argues with her the figure is wrong.
-  is(/if\(cur && cur !== '0' && cur !== mine\)\{ if\(hint\) hint\.textContent=''; return; \}/.test(html), true,
-     'anything in the box that the system did not put there is left alone');
+  is(/if\(cur && cur !== '0' && cur !== mine\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true,
+     'anything in the box that the system did not put there is left alone — and still reads back');
   is(/pr\.dataset\.rdAuto = String\(v\)/.test(html), true, '…it remembers what it wrote so it may replace that');
   is(/Fiyat listesinden geldi/.test(html), true, '…and says on screen where the figure came from');
 }
@@ -201,6 +201,42 @@ console.log('13. the four new names land in the right skill group');
   is(C.serviceGroup('Tüm Yüz Ağda'), 'agda', 'waxing unmoved');
   is(C.serviceGroup('Dolgu (Infill)'), 'manikur', 'infill unmoved');
   is(C.serviceGroup('Güzellik Uygulaması'), null, '…and the one that belongs to nobody still does');
+}
+
+console.log('14. the Fiyat box at checkout takes a code too');
+{
+  // This is where the money is actually entered: a technician finishes, you
+  // open the booking and type the price. It was type="number", so "D3" could
+  // not even be typed into it.
+  is(/id="a-price" placeholder="Kod veya ₺/.test(html), true, 'the box says a code is allowed');
+  is(/<input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price"/.test(html), true,
+     '…and it is a text box now, so the letter in D3 goes in');
+  is(html.includes('type="number" id="a-price"'), false, '…the old number box is gone');
+
+  // Every place that READS it must go through the parser. A half-typed "2 D3"
+  // read by parseInt is ₺2 — the sort of thing that empties a till quietly.
+  is(/let enteredPrice = rdApptPriceValue\(\);/.test(html), true, 'the checkout save reads it through the parser');
+  is(/price:rdApptPriceValue\(\),/.test(html), true, '…and so does a brand new booking');
+  is(/parseInt\(document\.getElementById\('a-price'\)\.value\)/.test(html), false,
+     '…no raw parseInt is left anywhere on that box');
+  is(/parseInt\(document\.getElementById\("a-price"\)\.value\)/.test(html), false, '…in either quote style');
+
+  is(/oninput="rdApptPriceEcho\(\)"/.test(html), true, 'it reads back as you type');
+  is(/delete pr\.dataset\.rdAuto/.test(html), true,
+     '…and once you type in it yourself, the list never overwrites you again');
+}
+
+console.log('15. a technician is not offered work she does not do');
+{
+  // Beyhan does brows and the lash lift. The box had no "nothing chosen" row,
+  // so the browser selected the first manicure on its own — and the filter,
+  // seeing a selection, PROTECTED it. Her list opened on
+  // "Jel Başlangıç — Beyhan bu hizmeti yapmıyor", under a MANİKÜR heading, and
+  // + Randevu would have booked exactly that.
+  is(/<select class="fctrl" id="a-service">\s*<option value="">— Hizmet seçin —<\/option>/.test(html), true,
+     'the list opens on an empty row, not on the first manicure');
+  // saveAppt already refuses an empty service, so the empty row cannot be saved.
+  is(/if\(!cid\|\|!svc\|\|!dt\)\{toast/.test(html), true, '…and an empty service still cannot be saved');
 }
 
 console.log('');

@@ -5443,6 +5443,7 @@ p, span, div, label, h1, h2, h3, h4 {
       </div>
       <div class="fg"><label class="flabel" id="flabel-a-service">Hizmet *</label>
         <select class="fctrl" id="a-service">
+          <option value="">— Hizmet seçin —</option>
           <optgroup label="💅 MANİKÜR"><option value="Jel Başlangıç (Full Set)">1 · Jel Başlangıç (Full Set)</option><option value="Dolgu (Infill)">2 · Dolgu (Infill)</option><option value="Klasik Manikür">3 · Klasik Manikür</option><option value="Renkli Jel — El">6 · Renkli Jel — El</option><option value="Tırnak Çıkarma">10 · Tırnak Çıkarma</option><option value="Nail Art">Nail Art</option><option value="Tırnak Onarımı">Tırnak Onarımı</option></optgroup>
           <optgroup label="🦶 PEDİKÜR"><option value="Man Pedi">4 · Man Pedi</option><option value="Pedikür">5 · Pedikür</option><option value="Renkli Jel — Ayak">7 · Renkli Jel — Ayak</option><option value="Medikal Pedikür">8 · Medikal Pedikür</option><option value="Klasik Pedikür (Ojesiz)">9 · Klasik Pedikür (Ojesiz)</option><option value="Jel Pedikür">Jel Pedikür</option><option value="Lüks Spa Pedikür">Lüks Spa Pedikür</option><option value="Renk Değişimi (Pedikür)">Renk Değişimi (Pedikür)</option></optgroup>
           <optgroup label="👁 KİRPİK"><option value="Klasik Kirpik Uygulaması">Klasik Kirpik Uygulaması</option><option value="Volume / Rus Kirpiği">Volume / Rus Kirpiği</option><option value="Kirpik Dolgu">Kirpik Dolgu</option><option value="Kirpik Lifting &amp; Boyama">Kirpik Lifting &amp; Boyama</option><option value="Kirpik Çıkarma">Kirpik Çıkarma</option></optgroup>
@@ -5479,7 +5480,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="fg"></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="number" id="a-price" placeholder="0">
+      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Kod veya ₺  — örn. 2 D3" oninput="rdApptPriceEcho()">
         <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
         <select class="fctrl" id="a-staff"><!-- populated from Daily Takings operators --></select></div>
@@ -6935,7 +6936,7 @@ function dashEditAppt(id){
         const _oldDt = live.datetime;   // to spot a moved booking below
         live.datetime  = document.getElementById('a-dt').value;
         live.duration  = Math.min(60, parseInt(document.getElementById('a-dur').value)||60);
-        let enteredPrice = parseInt(document.getElementById('a-price').value)||0;
+        let enteredPrice = rdApptPriceValue();
         // 😊 MANDATORY: a price that will complete this appointment or put its
         // money in the till for the first time is a checkout — and a checkout
         // does not finish until the satisfaction question is answered. Park
@@ -10159,7 +10160,7 @@ function saveAppt(){
     if(typeof rdIsClosedDay==='function'&&rdIsClosedDay(dt)&&
        !confirm('🚫 Bu tarih salonun KAPALI günü (Pazar veya kapalı işaretli gün).\nYine de randevu kaydedilsin mi?')){return;}
   }catch(e){}
-  const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:Math.min(60, parseInt(document.getElementById("a-dur").value)||60),price:parseInt(document.getElementById("a-price").value)||0,staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
+  const a={id:Date.now(),clientId:cid,service:svc,datetime:dt,duration:Math.min(60, parseInt(document.getElementById("a-dur").value)||60),price:rdApptPriceValue(),staff:document.getElementById("a-staff").value,status:"confirmed",r24:false,r1:false,autoRebooked:false,parentId:null};
   if(isBirthdayAppt(cid, dt)){ a.birthday = true; }
   appointments.push(a);
   try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
@@ -21526,7 +21527,7 @@ function rdWrWindow(r, now){
       }catch(e){}
     }
     const s = String(service||'').toLowerCase();
-    if(/pedik|pedic|\bpedi\b/.test(s)) return 60;   // her pedikür 60 dk ("Man Pedi" dahil)
+    if(/pedik|pedic|\bpedi\b|\bayak\b/.test(s)) return 60;   // her pedikür 60 dk ("Man Pedi", "… Ayak" dahil)
     let best = null, len = 0;
     Object.keys(RD_SVC_DUR).forEach(function(k){
       if(s.indexOf(k) !== -1 && k.length > len){ len = k.length; best = RD_SVC_DUR[k]; }
@@ -21679,16 +21680,35 @@ function rdWrWindow(r, now){
     }
     return found ? total : 0;
   };
+  /* Fiyat kutusundaki yazıyı paraya çevirir. Kasadaki kuralların AYNISI:
+     1–10 hizmet kodu, D1–D6 tasarım, 100 ve üzeri gerçek lira.             */
+  window.rdApptPriceValue = function(){
+    var pr = document.getElementById('a-price');
+    if(!pr) return 0;
+    return rdParseCode(pr.value, '').amount || 0;
+  };
+  /* Kaydetmeden önce kelimeyle okunur — kasadaki satırın aynısı. */
+  window.rdApptPriceEcho = function(){
+    var pr = document.getElementById('a-price'), hint = document.getElementById('a-price-hint');
+    if(!pr || !hint) return;
+    delete pr.dataset.rdAuto;          // elle yazıldı: artık sistem üzerine yazmaz
+    var raw = String(pr.value==null?'':pr.value).trim();
+    if(!raw){ hint.textContent=''; return; }
+    var p = rdParseCode(raw, '');
+    if(!p.amount){ hint.textContent = '\u26A0 Tanınmayan kod'; return; }
+    hint.textContent = (p.name ? '\u2192 ' + p.name + ' = ' : '\u2192 ') + '₺' + p.amount.toLocaleString('tr-TR');
+  };
   window.rdApptAutoPrice = function(){
     var pr = document.getElementById('a-price'), hint = document.getElementById('a-price-hint');
     if(!pr) return;
     var cur = String(pr.value==null?'':pr.value).trim();
     var mine = String(pr.dataset.rdAuto||'');
-    if(cur && cur !== '0' && cur !== mine){ if(hint) hint.textContent=''; return; }
+    // Elle yazılmış bir şey var: dokunma, ama okuma satırı yine söylesin.
+    if(cur && cur !== '0' && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
     var v = rdApptPriceFor();
     if(!v){ if(hint) hint.textContent=''; return; }
     pr.value = String(v); pr.dataset.rdAuto = String(v);
-    if(hint) hint.textContent = 'Fiyat listesinden geldi — farklıysa üzerine yazın.';
+    if(hint) hint.textContent = 'Fiyat listesinden geldi — farklıysa üzerine yazın (kod da yazabilirsiniz).';
   };
 
   function wire(){
