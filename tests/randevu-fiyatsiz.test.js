@@ -189,6 +189,47 @@ console.log('6. KOD kutusu — "put the code in, and it does the price automatic
   is(box(dom), '', 'kod silinince sistemin yazdığı lira da gider');
 }
 
+console.log('7. tuş takımı — basılan kod eklenir, kutu kendini bırakır');
+{
+  // "I want ALL to clear once the price lands." Basılan şey ekranda basılı
+  // kalmaz; yapılan işin kaydı KOD kutusudur.
+  const dom = makeDom({});
+  const ctx = load(dom);
+  ctx.rdApptAddCode('2');
+  is([dom.el['a-code'].value, box(dom)], ['2', '1700'], '2 basıldı → kod "2", lira ₺1.700');
+  ctx.rdApptAddCode('5');
+  is([dom.el['a-code'].value, box(dom)], ['2 5', '3400'], '…5 basıldı → EKLENDİ, "2 5" ve ₺3.400');
+  ctx.rdApptAddCode('D3');
+  is([dom.el['a-code'].value, box(dom)], ['2 5 D3', '4200'], '…D3 de eklendi → ₺4.200');
+  is(ctx.rdCodeServiceName(), 'Dolgu (Infill) + Pedikür', 'randevuya yazılacak iş adı kodlardan okunur — tasarım adın parçası değil');
+  // rdApptServiceValue sayfanın başka bir yerinde tanımlı (bu dosya yalnızca
+  // fiyat kutusunun kodunu yükler); onun kodları önce okuduğu
+  // tests/ikinci-hizmet.test.js'te çivilendi.
+}
+{
+  // Aynı işe iki kere basmak adı iki kere yazmasın.
+  const dom = makeDom({ code: '2 2' });
+  const ctx = load(dom);
+  is(ctx.rdCodeServiceName(), 'Dolgu (Infill)', 'aynı koda iki kere basılırsa ad bir kere yazılır');
+  ctx.rdApptCodeRecalc();
+  is(box(dom), '3400', '…ama PARA iki kere sayılır: iki dolgu iki dolgudur');
+}
+{
+  const dom = makeDom({ code: '2 5 D3', price: '4200', dataset: { rdAuto: '4200' } });
+  const ctx = load(dom);
+  ctx.rdApptClearWork();
+  is([dom.el['a-code'].value, box(dom), dom.el['a-service'].value, dom.el['a-service2'].value, dom.el['a-addon'].value],
+     ['', '', '', '', '0'], 'Temizle → kod, lira ve üç kutunun üçü birden sıfırlanır');
+}
+{
+  // Elle yazılan lira, tuşlara basmaya devam edilse bile korunur.
+  const dom = makeDom({ code: '2', price: '1500' });
+  const ctx = load(dom);
+  ctx.rdApptAddCode('5');
+  is(box(dom), '1500', 'FİYAT elle yazılmışsa tuşlar onu ezmez');
+  is(/Fiyat elle yazıldı/.test(line(dom)), true, '…ve satır bunu açıkça söyler');
+}
+
 console.log('');
 console.log(fail ? `✗ ${fail} FAILED, ${pass} passed` : `✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);

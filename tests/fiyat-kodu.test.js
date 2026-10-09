@@ -149,8 +149,10 @@ console.log('10. picking a service fills the price');
     is(html.includes('<option value="'+ctx.RD_SVC_CODES[k].v+'">'+k+' · '), true,
        `code ${k} points at a real option in the list`);
   });
-  is(/if\(RD_SVC_CODES\[k\]\.v === sv\.value\)/.test(html), true, 'the price is looked up by that value');
-  is(/sv\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, '…whenever the service changes');
+  is(/RD_SVC_CODES\[k\]\.v === sv\.value/.test(html), true, 'the price is looked up by that value');
+  // 9 Ekim, akşam: the dropdown no longer HOLDS a service — it adds its code
+  // to the KOD box and lets go. So what fires is the adder, not a rewrite.
+  is(/if\(code\) rdApptAddCode\(code\);|rdApptAddCode\(code\);/.test(html), true, '…and pressing it adds that code to the box');
   is(/ad\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, '…and whenever the design changes');
 }
 

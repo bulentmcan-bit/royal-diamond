@@ -6941,6 +6941,11 @@ function rdSvc2Sync(){
 }
 /* Kaydedilecek hizmet adı: tek iş ya da "iş1 + iş2". */
 function rdApptServiceValue(){
+  // Tuş takımı kullanıldıysa yapılan işin kaydı KOD kutusudur.
+  try{
+    var fromCode = (typeof rdCodeServiceName==='function') ? rdCodeServiceName() : '';
+    if(fromCode) return fromCode;
+  }catch(e){}
   var a = document.getElementById('a-service'), b = document.getElementById('a-service2');
   var v1 = a ? String(a.value||'').trim() : '';
   var v2 = b ? String(b.value||'').trim() : '';
@@ -6995,15 +7000,17 @@ function rdAddonChips(){
     opts.forEach(function(o){
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'rd-chip'; b.dataset.v = o.value;
-      var code = (o.value && o.value !== '0') ? o.value : 'Yok';
+      var code = (o.value && o.value !== '0') ? o.value : 'Temizle';
       var p = parseInt(o.getAttribute('data-p')||'0', 10);
       var m = parseInt(o.getAttribute('data-min')||'0', 10);
-      b.innerHTML = '<b>' + code + '</b><span>' + (p ? ('₺' + p.toLocaleString('tr-TR') + ' · +' + m + 'dk') : '—') + '</span>';
+      b.innerHTML = '<b>' + code + '</b><span>' + (p ? ('₺' + p.toLocaleString('tr-TR') + ' · +' + m + 'dk') : 'hepsini sil') + '</span>';
       b.addEventListener('click', function(){
-        // Seçiliye tekrar basmak seçimi kaldırır — yanlış dokunuş bir
-        // dokunuşla geri alınır, listeyi açmaya gerek kalmaz.
-        sel.value = (sel.value === b.dataset.v && b.dataset.v !== '0') ? '0' : b.dataset.v;
-        sel.dispatchEvent(new Event('change'));
+        var v = b.dataset.v;
+        if(!v || v === '0'){ try{ rdApptClearWork(); }catch(e){} return; }
+        sel.value = v;
+        try{ rdAutoDur(); }catch(e){}        // süre seçili iken hesaplanır
+        try{ rdApptAddCode(v); }catch(e){}
+        sel.value = '0';                      // ⬅ basılı kalmaz
         rdAddonChipsPaint();
       });
       box.appendChild(b);
@@ -7017,7 +7024,10 @@ function rdAddonChipsPaint(){
   if(!sel || !box) return;
   var cur = String(sel.value || '0');
   Array.prototype.slice.call(box.querySelectorAll('.rd-chip')).forEach(function(b){
-    b.setAttribute('aria-pressed', String(b.dataset.v === cur));
+    // Hiçbiri "basılı" kalmaz — ne D3, ne "Temizle". Basılan kod KOD
+    // kutusuna gitti; ekranda basılı duran bir kutucuk, hâlâ bir şey
+    // seçiliymiş gibi görünüyor ve iki kere eklendi sanılıyor.
+    b.setAttribute('aria-pressed', 'false');
   });
 }
 try{ document.addEventListener('DOMContentLoaded', rdAddonChips); }catch(e){}
@@ -22350,6 +22360,68 @@ function rdWrWindow(r, now){
     return out;
   };
   /* KOD kutusuna yazıldı: lira yandaki kutuya düşsün. */
+  /* ➕ 9 Ekim 2026 — "After it registers in the FİYAT column, I want the
+     number 2 and pedicure to go back to zero, not stick on what I pressed."
+     "I want ALL to clear once the price lands." "If I press D3 and it lands,
+     then I don't want D3 to look as if it's still pressed."
+     Seçim kutuları artık bir KAYIT değil, bir TUŞ TAKIMI. Basılan kod KOD
+     kutusuna EKLENİR, lira yeniden hesaplanır, ve basılan şey kendini
+     bırakır: hizmet kutuları "— Hizmet seçin —"e döner, tasarım kutucuğu
+     sönük kalır. Üst üste basarsın: 2, sonra 5, sonra D3.
+     Yapılan işin kaydı artık KOD kutusudur — randevuya yazılan hizmet adı
+     da oradan okunur (rdApptServiceValue). Yanlış basarsan "Temizle".     */
+  window.rdApptAddCode = function(code){
+    var cd = document.getElementById('a-code');
+    if(!cd || !code) return;
+    var cur = String(cd.value||'').trim();
+    cd.value = cur ? (cur + ' ' + code) : String(code);
+    cd.dataset.rdAuto = cd.value;            // tuşlardan geldi, elle yazılmadı
+    try{ rdApptCodeRecalc(); }catch(e){}
+  };
+  /* KOD kutusundaki her şeyi paraya çevirir ve okuma satırını yazar. */
+  window.rdApptCodeRecalc = function(){
+    var cd = document.getElementById('a-code'), pr = document.getElementById('a-price'),
+        hint = document.getElementById('a-price-hint');
+    if(!cd || !pr) return;
+    var raw = String(cd.value||'').trim();
+    if(!raw){
+      if(pr.dataset.rdAuto != null && pr.value === pr.dataset.rdAuto){ pr.value=''; delete pr.dataset.rdAuto; }
+      if(hint) hint.textContent = rdApptPriceGuide();
+      return;
+    }
+    var pp = rdParseCode(raw, '');
+    if(!pp.amount){ if(hint) hint.textContent = '\u26A0 Tanınmayan kod'; return; }
+    // FİYAT elle yazıldıysa dokunma — indirim, yuvarlama, hatır.
+    var elle = pr.value.trim() && pr.value !== pr.dataset.rdAuto;
+    if(!elle){ pr.value = String(pp.amount); pr.dataset.rdAuto = String(pp.amount); }
+    if(hint) hint.textContent = (pp.name ? pp.name + ' = ' : '') + '\u20BA' + pp.amount.toLocaleString('tr-TR')
+                              + (elle ? ' — Fiyat elle yazıldı.' : ' — farklıysa Fiyat kutusuna yazın.');
+  };
+  /* KOD kutusundaki HİZMET kodlarının adları — randevuya bu yazılır. */
+  window.rdCodeServiceName = function(){
+    var cd = document.getElementById('a-code');
+    if(!cd) return '';
+    var names = [];
+    String(cd.value||'').trim().split(/[\s+,]+/).forEach(function(tok){
+      var nn = parseInt(tok, 10);
+      if(/^\d{1,2}$/.test(tok) && RD_SVC_CODES[nn] && names.indexOf(RD_SVC_CODES[nn].v) === -1){
+        names.push(RD_SVC_CODES[nn].v);
+      }
+    });
+    return names.join(' + ');
+  };
+  /* Her şeyi sıfırla — "Temizle". */
+  window.rdApptClearWork = function(){
+    var cd = document.getElementById('a-code'), pr = document.getElementById('a-price'),
+        a = document.getElementById('a-service'), b2 = document.getElementById('a-service2'),
+        ad = document.getElementById('a-addon');
+    if(cd){ cd.value=''; delete cd.dataset.rdAuto; }
+    if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
+    if(a) a.value=''; if(b2) b2.value=''; if(ad) ad.value='0';
+    try{ rdAddonChipsPaint(); }catch(e){}
+    try{ rdSvc2Sync(); }catch(e){}
+    try{ rdApptCodeRecalc(); }catch(e){}
+  };
   window.rdApptCodeTyped = function(){
     var cd = document.getElementById('a-code'), pr = document.getElementById('a-price'),
         hint = document.getElementById('a-price-hint');
@@ -22368,12 +22440,7 @@ function rdWrWindow(r, now){
       if(hint) hint.textContent = rdApptPriceGuide();
       return;
     }
-    var pp = rdParseCode(raw, '');
-    if(!pp.amount){ if(hint) hint.textContent = '\u26A0 Tanınmayan kod'; return; }
-    pr.value = String(pp.amount);
-    pr.dataset.rdAuto = String(pp.amount);
-    if(hint) hint.textContent = (pp.name ? pp.name + ' = ' : '') + '\u20BA' + pp.amount.toLocaleString('tr-TR')
-                              + ' — farklıysa Fiyat kutusuna yazın.';
+    try{ rdApptCodeRecalc(); }catch(e){}
   };
   window.rdApptPriceGuide = function(){
     return 'Kod kutusuna duvardaki numaraları yazın — örnek: 2 5 D2 · lira yanına düşer.';
@@ -22382,7 +22449,19 @@ function rdWrWindow(r, now){
   function wire(){
     const sv = document.getElementById('a-service');
     const ad = document.getElementById('a-addon');
-    if(sv && !sv._rdWired){ sv._rdWired = true; sv.addEventListener('change', rdAutoDur); sv.addEventListener('change', rdApptAutoPrice); }
+    if(sv && !sv._rdWired){
+      sv._rdWired = true;
+      sv.addEventListener('change', function(){
+        if(!sv.value) return;
+        try{ rdAutoDur(); }catch(e){}                 // süre kutu DOLU iken hesaplanır
+        var code = null;
+        for(var k in RD_SVC_CODES){ if(RD_SVC_CODES[k].v === sv.value){ code = k; break; } }
+        if(!code){ try{ rdApptAutoPrice(); }catch(e){} return; }   // listede olmayan eski ad
+        rdApptAddCode(code);
+        sv.value = '';                                // ⬅ kendini bırakır
+        try{ rdSvc2Sync(); }catch(e){}
+      });
+    }
     if(ad && !ad._rdWired){ ad._rdWired = true; ad.addEventListener('change', rdAutoDur); ad.addEventListener('change', rdApptAutoPrice); }
     /* ⚠ 9 Ekim 2026 — the read-back line was going stale. The box carried
        oninput="rdApptPriceEcho()" as an ATTRIBUTE, and on the live page that
@@ -22394,7 +22473,16 @@ function rdWrWindow(r, now){
        input covers typing and pasting, change and blur cover autofill and
        anything that fills the box without keystrokes. */
     const sv2 = document.getElementById('a-service2');
-    if(sv2 && !sv2._rdWired){ sv2._rdWired = true; sv2.addEventListener('change', rdApptAutoPrice); }
+    if(sv2 && !sv2._rdWired){
+      sv2._rdWired = true;
+      sv2.addEventListener('change', function(){
+        if(!sv2.value) return;
+        var code = null;
+        for(var k in RD_SVC_CODES){ if(RD_SVC_CODES[k].v === sv2.value){ code = k; break; } }
+        if(code) rdApptAddCode(code);
+        sv2.value = '';
+      });
+    }
     const cd = document.getElementById('a-code');
     if(cd && !cd._rdEchoWired){
       cd._rdEchoWired = true;

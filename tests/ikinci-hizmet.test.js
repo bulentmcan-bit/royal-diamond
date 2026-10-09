@@ -80,36 +80,24 @@ console.log('3. the form');
   is(/value="90"|value="120"/.test(dur), false, '…and nothing longer was slipped into the Süre list');
 }
 
-console.log('3b. the three choices are added up IN THE PRICE BOX');
+console.log('3b. the pickers are a KEYPAD, not a record');
 {
-  // "If I press number 2, I want it to come out where it says Çıkışta. I want
-  //  it to be there, not at the bottom. That's confusing, not for me, for the
-  //  others. If I then press number 5 then the figure … to add that on."
-  // The figure now lands in the box the girl types into, not on a line below
-  // it. tests/randevu-fiyatsiz.test.js runs that behaviour for real.
-  is(/window\.rdApptPickedSum = function\(\)/.test(html), true, 'the form adds up what has been picked');
-  is(/\['a-service','a-service2'\]\.forEach/.test(html), true, '…both treatments');
-  is(/parseInt\(o\.getAttribute\('data-p'\)\|\|'0', 10\)/.test(html), true, '…and the design on top');
-  is(/pr\.value = String\(k\.total\);/.test(html), true, 'and the total goes INTO the price box');
-  is(/k\.parts\.join\(' \+ '\)/.test(html), true, '…with the names of all three under it');
-  is(/sv2\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, 'picking the second treatment changes the figure');
-  is(/Randevuda boş kalır — fiyat çıkışta yazılır/.test(html), false, "and the morning's \"the box stays empty\" line is no longer shown to anyone");
-}
-
-
-console.log('3c. Tasarım: altı kutucuk, tek dokunuş');
-{
-  // "Instead of having a dropdown on Tasarım, why don't we just have D1, D2,
-  //  up to D6 in boxes so that we can tick any one of those?"
-  // The <select> is still there, hidden, because the duration maths, the
-  // price total and the saved record all read it — none of that changed.
-  // The boxes only write to it and fire 'change'.
-  is(/id="a-addon-chips"/.test(html), true, 'the six designs are boxes on the form');
-  is(/<select class="fctrl" id="a-addon" style="display:none;">/.test(html), true, '…and the old dropdown is hidden, not deleted: other code still reads it');
-  is(/function rdAddonChips\(\)/.test(html) && /sel\.dispatchEvent\(new Event\('change'\)\)/.test(html), true, 'a tap sets the hidden value and fires the same change everything already listens for');
-  is(/sel\.value = \(sel\.value === b\.dataset\.v && b\.dataset\.v !== '0'\) \? '0' : b\.dataset\.v;/.test(html), true, 'tapping the chosen one again clears it — a wrong tap costs one tap to undo');
-  is(/b\.innerHTML = '<b>' \+ code \+ '<\/b><span>'/.test(html), true, '…and each box shows its price and the minutes it adds');
-  is(/box\.innerHTML = '';[\s\S]{0,200}sel\.options/.test(html), true, 'the boxes are built FROM the dropdown, so the two can never disagree');
+  // "After it registers in the FİYAT column, I want the number 2 and pedicure
+  //  to go back to zero, not stick on what I pressed." … "I want ALL to clear
+  //  once the price lands." … "If I press D3 and it lands, then I don't want
+  //  D3 to look as if it's still pressed."
+  // So: press 2 → the code box gets "2", the money lands, the dropdown lets
+  // go. Press 5 → "2 5". Press D3 → "2 5 D3". Nothing stays lit.
+  // The KOD box is now what the job IS, and the saved service name is read
+  // from it — tests/randevu-fiyatsiz.test.js runs that for real.
+  is(/window\.rdApptAddCode = function\(code\)/.test(html), true, 'pressing something ADDS its code rather than replacing the last one');
+  is(/cd\.value = cur \? \(cur \+ ' ' \+ code\) : String\(code\);/.test(html), true, '…by appending to what is already in the box');
+  is(/sv\.value = '';[\s\S]{0,80}kendini bırakır/.test(html), true, 'the service dropdown clears itself after it has been counted');
+  is(/sel\.value = '0';[\s\S]{0,60}basılı kalmaz/.test(html), true, '…and so does the design box');
+  is(/b\.setAttribute\('aria-pressed', 'false'\);/.test(html), true, 'no design box is ever left looking pressed');
+  is(/window\.rdCodeServiceName = function\(\)/.test(html), true, 'the saved service name is read back out of the codes');
+  is(/if\(fromCode\) return fromCode;/.test(html), true, '…and that is what the appointment is saved with, so the record is never blank');
+  is(/window\.rdApptClearWork = function\(\)/.test(html) && /'Temizle'/.test(html), true, 'and one box clears the lot when a wrong key is pressed');
 }
 
 console.log('4. the price read-back is bound for real');
