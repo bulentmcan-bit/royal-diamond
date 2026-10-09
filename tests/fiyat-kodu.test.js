@@ -49,7 +49,7 @@ console.log('1. the table is the wall list, to the lira');
   is(ctx.RD_SVC_CODES[2].n, 'Dolgu', '2 is Dolgu');
   is(ctx.RD_SVC_CODES[10].n, 'Tırnak Çıkarma', '10 is Tırnak Çıkarma — the row he moved up from 11');
   is(Object.keys(ctx.RD_SVC_CODES).length, 10, 'ten services, no more: French/Ombre came off the sheet');
-  is(ctx.RD_DSG_CODES, { D1:300, D2:600, D3:750, D4:1000, D5:1200, D6:1500 }, 'D1–D6 as he set them');
+  is(ctx.RD_DSG_CODES, { D1:300, D2:600, D3:800, D4:1000, D5:1200, D6:1500 }, 'D1–D6 as he set them — D3 went 750 → 800 on 9 Ekim 2026');
 }
 
 console.log('2. a bare number is a service');
@@ -63,11 +63,11 @@ console.log('2. a bare number is a service');
 
 console.log('3. design is added on top, never instead');
 {
-  is(P('2 D3').amount, 2450, '2 D3 → 1700 + 750');
+  is(P('2 D3').amount, 2500, '2 D3 → ₺1.700 + ₺800');
   is(P('2 D3').name, 'Dolgu + D3', '…and it reads as both');
-  is(P('2+D3').amount, 2450, 'a + between them works the same');
+  is(P('2+D3').amount, 2500, 'a + between them works the same');
   is(P('8 D6').amount, 4000, '8 D6 → 2500 + 1500');
-  is(P('2 d3').amount, 2450, 'lower-case d3 is the same code');
+  is(P('2 d3').amount, 2500, 'lower-case d3 is the same code');
   is(P('D4').amount, 1000, 'design on its own is allowed — she only did the art');
 }
 
@@ -167,7 +167,10 @@ console.log('11. a price typed by hand is never overwritten — and the system w
   // 9 Ekim, akşam: the figure is back IN the box, now covering BOTH treatments
   // and the design, because a total shown anywhere else reads as a different
   // number to the person typing. It still never overwrites a hand-typed one.
-  is(/pr\.value = String\(k\.total\);\s*pr\.dataset\.rdAuto = String\(k\.total\);/.test(html), true,
+  // NB: \s+ between the two statements, not \n — index.html is CRLF on the
+  // salon's machine and LF here, and a regex anchored on a bare newline
+  // passes in one place and fails in the other.
+  is(/pr\.value = String\(k\.total\);\s+pr\.dataset\.rdAuto = String\(k\.total\);/.test(html), true,
      'the list price goes in the box, and the system marks it as its own');
   is(/farklıysa üzerine yazın/.test(html), true, "…and says plainly that it can be written over");
 }
@@ -181,7 +184,7 @@ console.log('11b. two treatments in one go');
   is(P('2+5').amount, 3400, 'a plus between them works too');
   is(P('2,5').amount, 3400, '…and a comma, because that is what a hurried hand types');
   is(P('2 5 D3').name, 'Dolgu + Pedikür + D3', 'two treatments and a design: all three read back');
-  is(P('2 5 D3').amount, 4150, '…₺1.700 + ₺1.700 + ₺750');
+  is(P('2 5 D3').amount, 4200, '…₺1.700 + ₺1.700 + ₺800');
   is(P('1 7 D1').amount, 3200, 'a full set, colour on the feet and a small design = ₺3.200');
   is(P('2 5 1').amount, 5300, 'three treatments add up as readily as two');
   // The trap this read-back exists to catch: a bare number over 100 is LIRA,
@@ -194,7 +197,7 @@ console.log('11b. two treatments in one go');
 
 console.log('12. the design box is D1–D6, and still sets the time');
 {
-  is(/<option value="D3" data-min="30" data-p="750">/.test(html), true, 'D3 — ₺750, +30 dk');
+  is(/<option value="D3" data-min="30" data-p="800">/.test(html), true, 'D3 — ₺800, +30 dk');
   is(/<option value="D1" data-min="15" data-p="300">/.test(html), true, 'D1 — ₺300, +15 dk');
   is(/<option value="D6" data-min="60" data-p="1500">/.test(html), true, 'D6 — ₺1.500, +60 dk');
   ['D2','D4','D5'].forEach(d => is(new RegExp('<option value="'+d+'" data-min=').test(html), true, d+' is there'));
@@ -292,7 +295,7 @@ console.log('16. the WhatsApp price message is built from the same table');
   is(/^1\. Jel Ba.*: 1\.900 TL$/m.test(msg), true, '1 quotes ₺1.900');
   is(/^2\. Dolgu: 1\.700 TL$/m.test(msg), true, '2 quotes ₺1.700, not the old ₺1.600');
   is(/^10\. T.rnak .*: 800 TL$/m.test(msg), true, '10 quotes ₺800');
-  is(/D1 300  \u00b7  D2 600  \u00b7  D3 750 TL/.test(msg), true, 'D1–D3 on one line');
+  is(/D1 300  \u00b7  D2 600  \u00b7  D3 800 TL/.test(msg), true, 'D1–D3 on one line');
   is(/D4 1\.000  \u00b7  D5 1\.200  \u00b7  D6 1\.500 TL/.test(msg), true, 'D4–D6 on the next');
   is(msg.indexOf('0548 893 3333') > -1, true, 'the salon number is still on it');
   is(msg.indexOf('booking.html') > -1, true, '…and the online booking link');

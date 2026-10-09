@@ -124,7 +124,7 @@ console.log('3. elle yazılan rakam kutsaldır');
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(box(dom), '2 5 D3', 'elle yazılan KOD da öyle: sistem üzerine yazmaz');
-  is(ctx.rdApptPriceValue(), 4150, '…ve ₺4.150 olarak kaydedilir');
+  is(ctx.rdApptPriceValue(), 4200, '…ve ₺4.200 olarak kaydedilir');
 }
 
 console.log('4. kaydedilen rakam');
