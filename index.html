@@ -2918,10 +2918,14 @@
   },4500));
   </script>
 <style>
-/* Tasarım kutucukları — tek dokunuş, altısı birden görünür */
-.rd-chips{display:flex;flex-wrap:wrap;gap:7px}
+/* Tasarım kutucukları — tek dokunuş, altısı birden görünür.
+   IZGARA, sarma değil: 4 eşit sütun, iki sıra, "Yok" son iki hücreyi kaplar.
+   Böylece blok tam bir dikdörtgen olur ve kenarları altındaki KOD + FİYAT
+   çiftiyle birebir hizalanır — "make it look neat to the eye". */
+.rd-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:stretch}
+.rd-chips .rd-chip[data-v="0"]{grid-column:span 2}
 .rd-chip{appearance:none;cursor:pointer;border:1.5px solid var(--line,#ddd);background:#fff;
-  border-radius:11px;padding:7px 11px;min-width:62px;text-align:center;font:inherit;line-height:1.15;
+  border-radius:11px;padding:8px 6px;width:100%;min-width:0;text-align:center;font:inherit;line-height:1.15;
   color:inherit;transition:border-color .12s,background .12s,box-shadow .12s}
 .rd-chip b{display:block;font-size:.95rem;font-weight:800}
 .rd-chip span{display:block;font-size:.68rem;color:var(--muted,#8e8782);margin-top:1px}
@@ -2929,7 +2933,13 @@
 .rd-chip[aria-pressed="true"]{border-color:var(--gold,#c99a4e);background:rgba(212,169,106,.16);
   box-shadow:0 0 0 2px rgba(212,169,106,.22)}
 .rd-chip[aria-pressed="true"] span{color:var(--gold,#c99a4e)}
-@media (max-width:420px){.rd-chip{min-width:56px;padding:6px 8px}}
+@media (max-width:520px){
+  .rd-chips{grid-template-columns:repeat(3,1fr);gap:6px}
+  .rd-chips .rd-chip[data-v="0"]{grid-column:span 3}
+  .rd-chip{padding:7px 4px}
+  .rd-chip b{font-size:.9rem}
+  .rd-chip span{font-size:.62rem}
+}
 
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -6978,7 +6988,11 @@ function rdAddonChips(){
   if(!sel || !box) return;
   if(!box.dataset.built){
     box.innerHTML = '';
-    Array.prototype.slice.call(sel.options).forEach(function(o){
+    // D1…D6 önce, "Yok" en sona: ızgaranın son iki hücresini o kapatır.
+    var opts = Array.prototype.slice.call(sel.options);
+    opts = opts.filter(function(o){ return o.value && o.value !== '0'; })
+               .concat(opts.filter(function(o){ return !o.value || o.value === '0'; }));
+    opts.forEach(function(o){
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'rd-chip'; b.dataset.v = o.value;
       var code = (o.value && o.value !== '0') ? o.value : 'Yok';
