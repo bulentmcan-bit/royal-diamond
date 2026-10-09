@@ -452,10 +452,34 @@ var CROWN = {
   reviewAsk: {
     enabled: true,
     dryRun: false,
-    dailyCap: 15,
+    /* 9 Ekim 2026 — the ask moved to the moment of checkout.
+       😊 Memnun at the desk now sends the review request on the spot
+       (worker: reviewNow, page: rdReviewNow). The 19:00 run below stays as
+       the safety net for anyone the instant send could not reach.
+
+       dailyCap 15 → 40: the cap was sized for an evening batch. Twenty
+       happy customers in a day is an ordinary Saturday, and a cap of 15
+       would have silenced the last five of them. It is a circuit breaker
+       now, not a ration.
+
+       cooldownDays 180 → 60: the real brake. Of 219 happy customers in the
+       30 days to 9 Ekim, 113 had been asked inside 30 days, 21 inside 60
+       and 62 inside 90 — so at 180 days almost everyone was locked out and
+       the evening run was reaching three people a night out of twenty.
+       Sixty days still protects the number's standing with Meta (a review
+       request is a MARKETING template; blocks and reports are what cost
+       the salon its reminders) while letting a monthly regular be asked
+       every second or third visit. She can only leave one review — this
+       is about catching the ones who never did, not asking twice.
+
+       lookbackDays 3 → 7: only the evening run uses this. A customer the
+       instant send missed — no key on that device, Piyzi down, a bad
+       number fixed later — now has a week to be picked up instead of three
+       days.                                                              */
+    dailyCap: 40,
     sendHourLocal: 19,
-    lookbackDays: 3,
-    cooldownDays: 180
+    lookbackDays: 7,
+    cooldownDays: 60
   },
 
   /* Which GROUP a service name belongs to — the headings of the service list:

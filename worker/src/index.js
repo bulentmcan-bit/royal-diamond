@@ -969,6 +969,16 @@ async function handleWa(req, env, ctx, url) {
     return waJson({ ok: false, error: err }, r.status >= 400 ? r.status : 502);
   }
 
+  // ── POST /wa/review-now — the desk pressed 😊 Memnun; ask her NOW ────
+  // The evening run (19:00) still exists as the safety net. This is the one
+  // that matters: she is at the desk, the nails are new, and that is when a
+  // customer actually writes something. 😕 Memnun değil never reaches
+  // here — the page only calls this for 'happy'.
+  if (route === '/wa/review-now') {
+    const r = await reviewNow(env, ctx, b || {}, new Date());
+    return waJson(r);
+  }
+
   // ── POST /wa/gapfill-preview — what the gap-filler would do right now ─────
   // The plan only: reads the diary and the offers log, writes nothing, sends
   // nothing, whatever mode the config is in. The app panel's "Şimdi dene".
@@ -1731,6 +1741,104 @@ async function runReviewAsk(env, now, opts) {
     for (const k of Object.keys(sent)) { const ts = Number(sent[k] && sent[k].ts); if (ts && ts < cutoff) await fbWrite(env, 'DELETE', RA + '/sent/' + k); }
   } catch (e) { log('prune failed:', String(e)); }
   return { ok: true, mode, run };
+}
+
+
+/* ── one customer, right now ────────────────────────────────────
+   Reception presses 😊 Memnun at checkout and the review request goes out
+   on the spot. Every guard the 19:00 run applies applies here too, and for
+   the same reasons — one of them is the whole point of the feature:
+
+     · 😕 Memnun değil sends NOTHING. The page calls this only for 'happy',
+       and nothing in here can be reached any other way. A review request to
+       an unhappy customer invites a 1-star onto the salon's own profile.
+     · KAPALI is not a customer. No phone, no message.
+     · STOP is STOP — the gap-filler's opt-out list governs this too.
+     · The cooldown holds. She can only leave one review; asking the same
+       woman every visit earns nothing and spends the number's standing with
+       Meta, which is what carries the appointment reminders.
+     · The daily cap is the circuit breaker, counted against the same log
+       as the evening run so the two can never double up.
+
+   The send is claimed in rdns_review_v1/sent BEFORE it goes, exactly as the
+   batch does it, so the evening run sees it and skips her, and a request
+   that dies mid-flight leaves a record that may not have gone — never a
+   customer asked twice.                                                   */
+async function reviewNow(env, ctx, body, now) {
+  const log = (...a) => console.log('[review-now]', ...a);
+  const cfg = raConfig();
+  if (!cfg) return { ok: false, error: 'NO_CONFIG' };
+  if (!cfg.enabled) return { ok: true, sent: false, skipped: 'kapalı (reviewAsk.enabled=false)' };
+  if (!env.FB_SECRET) return { ok: false, error: 'NO_FB_SECRET' };
+  const cid = String(body.clientId == null ? '' : body.clientId).trim();
+  if (!cid) return { ok: false, error: 'BAD_REQUEST' };
+  const todayYmd = nicosiaYmd(now);
+
+  let control, raw, sent, optout;
+  try {
+    control = await fbRead(env, RA + '/control');
+    if (control && control.paused) return { ok: true, sent: false, skipped: 'duraklatıldı' };
+    raw = await fbRead(env, 'rdns_main_v1');
+    sent = (await fbRead(env, RA + '/sent')) || {};
+    optout = (await fbRead(env, GF + '/optout')) || {};
+  } catch (e) { log('read failed:', String(e)); return { ok: false, error: String(e) }; }
+
+  const data = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+  const clients = (data && Array.isArray(data.clients)) ? data.clients : [];
+  const c = clients.find(x => x && String(x.id) === cid);
+  if (!c) return { ok: true, sent: false, skipped: 'müşteri kaydı yok' };
+  if (waBlockedName(c.name)) return { ok: true, sent: false, skipped: 'KAPALI' };
+  const phone = waPhone(c.phone);
+  if (!phone) return { ok: true, sent: false, skipped: 'geçerli telefon yok' };
+  if (gfOptedOut(c, phone, optout)) return { ok: true, sent: false, skipped: 'mesaj istemiyor' };
+
+  // Her whole history, by id and by number — the book holds the same woman
+  // twice with one telephone, and she is one customer.
+  const mine = clients.filter(x => x && waPhone(x.phone) === phone).map(x => String(x.id));
+  if (mine.indexOf(cid) < 0) mine.push(cid);
+  let last = 0, sentToday = 0;
+  for (const id of Object.keys(sent)) {
+    const s = sent[id];
+    if (!s || !(s.st === 'sending' || s.st === 'sent')) continue;
+    if (s.day === todayYmd) sentToday++;
+    if (String(s.phone || '') === phone || mine.indexOf(String(s.cid || '')) >= 0) {
+      last = Math.max(last, Number(s.ts) || 0);
+    }
+  }
+  for (const k of mine) {
+    const cc = clients.find(x => x && String(x.id) === k);
+    if (cc && Number(cc.reviewAskedTs)) last = Math.max(last, Number(cc.reviewAskedTs));
+  }
+  const nowMs = now.getTime();
+  if (last && nowMs - last < cfg.cooldownDays * 86400e3) {
+    const days = Math.round((nowMs - last) / 86400e3);
+    return { ok: true, sent: false, skipped: days + ' gün önce zaten istendi (sınır ' + cfg.cooldownDays + ' gün)' };
+  }
+  if (sentToday >= cfg.dailyCap) return { ok: true, sent: false, skipped: 'günlük sınır doldu (' + cfg.dailyCap + ')' };
+
+  if (cfg.dryRun) { log('WOULD SEND', c.name, phone); return { ok: true, sent: false, skipped: 'deneme modu (dryRun)' }; }
+  const spec = waSpec(env.WA_REVIEW);
+  if (!spec) return { ok: false, error: 'TEMPLATES_NOT_CONFIGURED' };
+  if (!env.PIYZI_API_KEY) return { ok: false, error: 'PIYZI_KEY_NOT_SET' };
+
+  const id = (nowMs + '-' + cid).replace(/[.#$\/\[\]:]/g, '');
+  const rec = { cid, name: String(c.name || ''), phone, service: String(body.service || ''),
+                d: todayYmd, apptId: String(body.apptId || ''), why: 'çıkışta 😊 memnun — anında',
+                ts: nowMs, day: todayYmd, st: 'sending', src: 'checkout' };
+  try { await fbWrite(env, 'PUT', RA + '/sent/' + id, rec); }
+  catch (e) { log('claim refused:', String(e)); return { ok: false, error: 'CLAIM_FAILED' }; }
+
+  let r = null, uid = null, err = '';
+  try { r = await piyziCall(env, 'POST', '/whatsapp/messages', { phone, ...waFill(spec, {}) }); }
+  catch (e) { err = 'PIYZI_UNREACHABLE'; }
+  if (r && r.body && r.body.success) uid = (r.body.data && r.body.data.messageUid) || null;
+  else if (r) err = piyziErr(r).code;
+  const ok = !!(r && r.body && r.body.success);
+  await fbWrite(env, 'PATCH', RA + '/sent/' + id, ok ? { st: 'sent', uid } : { st: 'failed', err: String(err).slice(0, 120) })
+    .catch(e => log('mark failed:', String(e)));
+  waLog(env, ctx, { op: 'review', apptId: rec.apptId || ('rv-' + id), to: phone, uid, outcome: ok ? 'sent' : 'failed:' + err });
+  log(ok ? 'SENT' : 'FAILED', c.name, phone, err || '');
+  return ok ? { ok: true, sent: true, uid } : { ok: false, sent: false, error: err || 'SEND_FAILED' };
 }
 
 /* ── the Piyzi webhook — /wa/hook ──────────────────────────────────────────

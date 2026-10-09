@@ -5496,7 +5496,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="fg"></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Kod veya ₺  — örn. 2 D3" oninput="rdApptPriceEcho()">
+      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Çıkışta — kod veya ₺ (örn. 2 D3)" oninput="rdApptPriceEcho()">
         <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
         <select class="fctrl" id="a-staff"><!-- populated from Daily Takings operators --></select></div>
@@ -6418,7 +6418,10 @@ function openModal(id){
     try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
-    const pr=document.getElementById('a-price'); if(pr) pr.value='';
+    const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
+    // Fiyat randevuda yazılmaz — kutunun altındaki satır bunu söyler.
+    const prh=document.getElementById('a-price-hint');
+    if(prh) prh.textContent = (typeof rdApptPriceGuide==='function' ? rdApptPriceGuide() : '');
     const st=document.getElementById('a-staff'); if(st){ st.value=''; try{ rdStaffSelChanged(); }catch(e){} }
     const saveBtn=document.getElementById('btn-save-appt');
     if(saveBtn){ saveBtn.textContent='+ Randevu'; saveBtn.onclick=saveAppt; }
@@ -6892,7 +6895,11 @@ function dashEditAppt(id){
     // still be: the amount sent to Daily Takings, the saved override, and
     // finally today's Daily Takings entries, which carry the appointment id.
     const shownPrice = apptKnownPrice(a);
-    if(pr) pr.value = shownPrice || '';
+    if(pr){
+      pr.value = shownPrice || '';
+      delete pr.dataset.rdAuto;                    // bu rakam KAYITTAN geldi, sistemin tahmini değil
+      try{ rdApptPriceEcho(); }catch(e){}          // altındaki satırı da ona göre yaz
+    }
     // 💚 Family discount reminder — show it right on the popup
     try{
       let fd = document.getElementById('a-fam-disc');
@@ -10441,7 +10448,45 @@ function satPick(val){
   var a=(typeof apptById==='function'?apptById(ctx.id):null)
         ||appointments.find(function(x){return String(x.id)===String(ctx.id);});
   if(a){ a.sat=val; a.satAt=new Date().toISOString(); }
+  // ⭐ THE SWITCH. 😊 Memnun — and ONLY 😊 Memnun — sends the review
+  // request, on the spot, while she is still at the desk. 😕 Memnun değil
+  // falls straight past this line and sends nothing, deliberately: a review
+  // request to an unhappy customer invites a 1-star onto the salon's own
+  // profile. Fire-and-forget — the checkout below must never wait on it.
+  if(val==='happy'){ try{ rdReviewNow(a); }catch(e){} }
   if(ctx.cb) ctx.cb();   // the parked checkout finishes NOW — nothing else is asked
+}
+
+/* ⭐ The review request, sent the instant the desk presses 😊 Memnun.
+   Every decision about WHETHER to send lives in the worker (reviewNow):
+   the telephone, KAPALI, the STOP list, the cooldown and the daily cap, all
+   read from the same records the 19:00 run reads, so the two can never ask
+   the same woman twice. This end only says "she was happy, now".
+   A device with no WhatsApp key stays silent, like everything else here. */
+function rdReviewNow(a){
+  try{
+    if(!a || a.sat!=='happy' || a.rvAsked) return;
+    if(typeof rdWaOn!=='function' || !rdWaOn()) return;
+    var cid=String(a.clientId==null?'':a.clientId); if(!cid) return;
+    rdWaFetch('/wa/review-now', { clientId:cid, apptId:String(a.id==null?'':a.id), service:String(a.service||'') })
+      .then(function(j){
+        var live=(typeof apptById==='function'?apptById(a.id):null)||a;
+        var c=(clients||[]).find(function(x){ return x&&String(x.id)===cid; });
+        if(j && j.ok && j.sent){
+          live.rvAsked=Date.now();
+          if(c) c.reviewAskedTs=Date.now();
+          try{ apptTouch(live); }catch(e){}
+          try{ saveAll(); }catch(e){}
+          try{ renderReviewCard(); }catch(e){}
+          toast('⭐','Yorum isteği gönderildi', ((c&&c.name)||'Müşteri')+' — değerlendirme mesajı gitti.','g');
+        } else if(j && j.skipped){
+          console.log('[review-now] atlandı:', j.skipped);
+        } else if(j && j.error){
+          console.warn('[review-now] hata:', j.error);
+        }
+      })
+      .catch(function(e){ console.warn('[review-now] ulaşılamadı:', e); });
+  }catch(e){ console.warn('[review-now]', e); }
 }
 
 // The slot-blocker "client" reception books when a technician is out (doctor,
@@ -21848,6 +21893,9 @@ function rdWrWindow(r, now){
   /* Fiyat kendiliğinden: hizmet seçilince fiyat listesindeki tutar kutuya
      düşer, tasarım seçiliyse üstüne eklenir. ELLE yazılmış bir fiyat ASLA
      ezilmez — sadece boş kutu ya da sistemin kendi yazdığı rakam değişir. */
+  /* Liste fiyatını hesaplar. 9 Ekim 2026'dan beri HİÇBİR YERE yazmıyor —
+     randevu kutusunu artık doldurmuyor. Duruyor çünkü fiyat listesi ile
+     hizmet listesinin birbirini tuttuğunu test eden yer burası. */
   window.rdApptPriceFor = function(){
     var sv = document.getElementById('a-service'), ad = document.getElementById('a-addon');
     var total = 0, found = false;
@@ -21876,21 +21924,32 @@ function rdWrWindow(r, now){
     if(!pr || !hint) return;
     delete pr.dataset.rdAuto;          // elle yazıldı: artık sistem üzerine yazmaz
     var raw = String(pr.value==null?'':pr.value).trim();
-    if(!raw){ hint.textContent=''; return; }
+    if(!raw){ hint.textContent = (typeof rdApptPriceGuide==='function' ? rdApptPriceGuide() : ''); return; }
     var p = rdParseCode(raw, '');
     if(!p.amount){ hint.textContent = '\u26A0 Tanınmayan kod'; return; }
     hint.textContent = (p.name ? '\u2192 ' + p.name + ' = ' : '\u2192 ') + '₺' + p.amount.toLocaleString('tr-TR');
   };
+  /* ⛔ 9 Ekim 2026 — RANDEVU ALIRKEN FİYAT YAZILMAZ.
+     Randevu alınırken iş daha belli değil: kız tasarım önerebilir, müşteri
+     ayağı da ekletebilir, el değiştirebilir. Kutuya o anda bir rakam düşmesi
+     hem müşteriye söz vermek olur hem de o rakam kasaya "bu işin fiyatı" diye
+     geçer. Bu yüzden kutu BOŞ kalır; fiyat ÇIKIŞTA, iş bittikten sonra
+     yazılır — ister lira ister kod (1-10, D1-D6).
+     Bu fonksiyon artık fiyat YAZMAZ. Tek yaptığı, daha önce sistemin kendi
+     yazdığı bir rakam kaldıysa onu temizlemek: hizmet değiştirilince eski
+     hizmetin fiyatı kutuda unutulmasın. ELLE yazılmış rakama dokunmaz. */
   window.rdApptAutoPrice = function(){
     var pr = document.getElementById('a-price'), hint = document.getElementById('a-price-hint');
     if(!pr) return;
     var cur = String(pr.value==null?'':pr.value).trim();
     var mine = String(pr.dataset.rdAuto||'');
-    if(cur && cur !== '0' && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
-    var v = rdApptPriceFor();
-    if(!v){ if(hint) hint.textContent=''; return; }
-    pr.value = String(v); pr.dataset.rdAuto = String(v);
-    if(hint) hint.textContent = 'Fiyat listesinden geldi — farklıysa üzerine yazın (kod da yazabilirsiniz).';
+    if(cur && cur === mine){ pr.value=''; delete pr.dataset.rdAuto; cur=''; }   // sistemin eski rakamı
+    if(cur){ try{ rdApptPriceEcho(); }catch(e){} return; }                      // elle yazılmış: dokunma
+    if(hint) hint.textContent = rdApptPriceGuide();
+  };
+  /* Boş kutunun altındaki satır. Rakam DEĞİL — ne zaman yazılacağını söyler. */
+  window.rdApptPriceGuide = function(){
+    return 'Randevuda boş kalır — fiyat çıkışta yazılır (lira ya da kod: 1-10, D1-D6).';
   };
 
   function wire(){

@@ -5,10 +5,13 @@
 // fetch. No network, no Piyzi, no key.
 //
 //   1. the settings, as crown-config.js has them TODAY: live (dry run OFF
-//      since 15 Eylül 2026), enabled, cap 15, hour 19, 3 days back,
-//      180-day cooldown; and the safe readings of a broken config. Every
-//      other section runs on REH — the same config with dry run ON — so the
-//      rehearsal keeps its numbers whatever Bülent sets the live switch to.
+//      since 15 Eylül 2026), enabled, cap 40, hour 19, 7 days back,
+//      60-day cooldown (9 Ekim 2026 — the ask moved to the moment of
+//      checkout, so the evening run is only the safety net); and the safe
+//      readings of a broken config. Every other section runs on REH — the
+//      same config with dry run ON and the REHEARSAL's own numbers pinned
+//      (cap 15, 3 days back, 180-day cooldown) — so sections 2-5 test the
+//      planner's LOGIC and keep their numbers whatever Bülent sets.
 //   2. who is asked: completed, in the window, sat 'happy', a phone
 //   3. who is not: 'unhappy', 'not_asked', a MISSING sat (nobody chased
 //      retroactively), not completed, outside the window, no client, no
@@ -42,7 +45,8 @@ function loadCrown() {
   return c.window.CROWN;
 }
 const C = loadCrown();
-const REH = Object.assign({}, C, { reviewAsk: Object.assign({}, C.reviewAsk, { dryRun: true, dailyCap: 15 }) });
+const REH = Object.assign({}, C, { reviewAsk: Object.assign({}, C.reviewAsk,
+  { dryRun: true, dailyCap: 15, lookbackDays: 3, cooldownDays: 180 }) });
 const withRa = (base, over) => Object.assign({}, base, { reviewAsk: Object.assign({}, base.reviewAsk, over) });
 
 function makeWorker(store, opts) {
@@ -141,9 +145,10 @@ const planOf = (crown, over) => makeWorker({}, { crown }).api.raPlan(Object.assi
 
 console.log('1. the settings');
 {
-  is(cfgOf(C), { enabled: true, dryRun: false, dailyCap: 15, sendHourLocal: 19, lookbackDays: 3, cooldownDays: 180 }, 'crown-config.js today: LIVE (dry run off since 15 Eylül 2026), enabled, cap 15, 19:00, 3 days back, 180-day cooldown');
+  is(cfgOf(C), { enabled: true, dryRun: false, dailyCap: 40, sendHourLocal: 19, lookbackDays: 7, cooldownDays: 60 }, 'crown-config.js today: LIVE (dry run off since 15 Eylül 2026), enabled, cap 40, 19:00, 7 days back, 60-day cooldown — the numbers of 9 Ekim 2026, when the ask moved to checkout and the evening run became the safety net');
   is(cfgOf(Object.assign({}, C, { reviewAsk: undefined })), { enabled: true, dryRun: true, dailyCap: 15, sendHourLocal: 19, lookbackDays: 3, cooldownDays: 180 }, 'no reviewAsk block at all → the defaults, with dry run ON');
-  is(cfgOf(withRa(C, { dryRun: 'no', dailyCap: 'lots', sendHourLocal: 'evening', lookbackDays: 0 })), { enabled: true, dryRun: true, dailyCap: 0, sendHourLocal: 0, lookbackDays: 1, cooldownDays: 180 }, 'nonsense: dry run ON, cap 0 (nothing sent), hour 0 (no cron fires then), at least one day back');
+  is(cfgOf(withRa(C, { dryRun: 'no', dailyCap: 'lots', sendHourLocal: 'evening', lookbackDays: 0 })), { enabled: true, dryRun: true, dailyCap: 0, sendHourLocal: 0, lookbackDays: 1, cooldownDays: 60 }, 'nonsense: dry run ON, cap 0 (nothing sent), hour 0 (no cron fires then), at least one day back — and the cooldown it DOES have is kept');
+  is(cfgOf(withRa(C, { cooldownDays: 0 })), { enabled: true, dryRun: false, dailyCap: 40, sendHourLocal: 19, lookbackDays: 7, cooldownDays: 0 }, 'cooldown 0 is honoured as written: a zero here would ask the same woman every visit, so it is a setting to make deliberately, not a typo the code quietly rounds up');
 }
 
 console.log('2. who is asked');
@@ -183,6 +188,11 @@ console.log('3. who is not, and why');
   is(planOf(withRa(REH, { dailyCap: 0 })).asks, [], 'cap 0 → nobody');
   // the cooldown edge
   is(planOf(withRa(REH, { cooldownDays: 200 })).asks.map(a => a.name), ['Bella', 'Ayşe', 'Nur'], 'cooldown 200 → Melek (181 days) is inside it again');
+  // the live cooldown since 9 Ekim 2026. This is the whole point of the change:
+  // Kader and Lale were asked 100 days ago and at 180 days they were locked out
+  // of the evening run for another two and a half months.
+  is(planOf(withRa(REH, { cooldownDays: 60 })).asks.map(a => a.name), ['Bella', 'Ayşe', 'Kader', 'Lale', 'Melek', 'Nur'], 'cooldown 60 (what is live now) → Kader and Lale, asked 100 days ago, are free again');
+  is(planOf(withRa(REH, { cooldownDays: 60 })).skipped.filter(x => /zaten istendi/.test(x.why)).map(x => [x.name, x.why]), [['Jale', 'son 60 günde zaten istendi']], '…and only Jale, asked by hand 10 days ago, is still inside it — the reason names the live number, not a hard-coded 180');
   // the window edge
   is(planOf(withRa(REH, { lookbackDays: 4 })).asks.map(a => a.name), ['Filiz', 'Bella', 'Ayşe', 'Melek', 'Nur'], 'lookback 4 → the 12th is in, and Filiz comes first');
   is(planOf(withRa(REH, { lookbackDays: 1 })).asks.map(a => a.name), ['Ayşe', 'Melek', 'Nur'], 'lookback 1 → today only');
