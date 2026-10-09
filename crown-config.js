@@ -507,6 +507,11 @@ var CROWN = {
      service she actually does; nothing of hers changes. */
   soloServices: ['Pudralama', 'Kaş Vitamini (dermapen)', 'Kaş Silme (solüsyon)'],
   serviceGroup: function(service){
+    // 9 Ekim 2026 — bir randevu artık iki iş taşıyabilir: "Dolgu + Pedikür".
+    // Grup TEK olmak zorunda (tahtadaki sütun, rapor, filtre), ve bir işin
+    // grubu baştaki işidir: müşteri asıl onun için gelmiştir.
+    var _plus = String(service || '').indexOf(' + ');
+    if (_plus > 0) return this.serviceGroup(String(service).slice(0, _plus));
     var self = this, want = this.svcKey(service);
     if (want && (this.soloServices || []).some(function(n){ return self.svcKey(n) === want; })) return null;
     var s = String(service || '').toLowerCase()
@@ -582,6 +587,14 @@ var CROWN = {
   canDo: function(who, service){
     var o = this.find(who);
     if (!o) return true;
+    // İki işli randevuda ikisini de yapabiliyor olmalı. Gruba göre karar
+    // verilseydi "Dolgu + Pedikür" yalnızca pedikür diye okunur, manikür
+    // yapmayan biri o randevuya yazılabilirdi.
+    var _plus = String(service || '').indexOf(' + ');
+    if (_plus > 0) {
+      return this.canDo(who, String(service).slice(0, _plus))
+          && this.canDo(who, String(service).slice(_plus + 3));
+    }
     // 1. Her own list, where she has one, is the whole of her work. Beyhan's
     //    names the lash LIFT and not lash extensions, which the groups cannot
     //    tell apart, and that distinction is the point of the list existing.

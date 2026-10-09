@@ -5487,7 +5487,18 @@ p, span, div, label, h1, h2, h3, h4 {
         </select>
         <label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:0.76rem;color:var(--muted);cursor:pointer;">
           <input type="checkbox" id="a-allsvc" style="width:auto;margin:0;"> Tüm hizmetleri göster
-        </label></div>
+        </label>
+        <!-- 9 Ekim 2026 — İKİNCİ HİZMET. Aynı müşteriye hem manikür hem
+             pedikür yapıldığında tek randevuda ikisi birden yazılsın diye.
+             Tasarım kutusu D1–D6 içindir, ikinci bir iş için yeri yoktu.
+             Seçilirse kayıt "Dolgu + Pedikür" diye durur: ekranların hepsi
+             zaten a.service okuduğu için her yerde ikisi birden görünür. -->
+        <label class="flabel" id="flabel-a-service2" style="display:block;margin-top:12px;">2. Hizmet (isteğe bağlı)</label>
+        <select class="fctrl" id="a-service2"><option value="">— Yok —</option></select>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">
+          Aynı müşteriye iki iş yapıldıysa ikincisini buradan seçin — kayıtta
+          <b>Dolgu + Pedikür</b> diye görünür. Fiyatı çıkışta <b>2 5</b> diye yazarsınız.
+        </div></div>
     </div>
     <div class="form-row fr2">
       <div class="fg"><label class="flabel" id="flabel-a-dt">Tarih &amp; Saat *</label><input class="fctrl" type="datetime-local" id="a-dt"></div>
@@ -6434,6 +6445,7 @@ function openModal(id){
     // gets cancelled instead of saved, this guarantees it can't stay stuck
     // pointing at the old appointment the next time this modal opens.)
     try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
+    try{ const s2=document.getElementById('a-service2'); if(s2) s2.value=''; rdSvc2Sync(); }catch(e){}
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
     const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
@@ -6846,6 +6858,81 @@ function apptSvcSet(value){
   svc.value = v;
 }
 
+/* ══════════════════════════════════════════════
+   İKİNCİ HİZMET — 9 Ekim 2026
+   Bülent: "if you have a pedicure and a manicure done for the same customer,
+   how do we add them both together? At the moment it's either one or the
+   other." Haklı: formdaki tek "ek hizmet" kutusu tasarım (D1–D6) içindi.
+
+   Kayıt nasıl durur: tek bir isim — "Dolgu + Pedikür". Sayfada 56 ayrı yer
+   a.service okuyor (pano, tahta, listeler, hatırlatmalar, raporlar); ayrı
+   bir alan açmak o 56 yeri de değiştirmek demekti. Birleşik isim, hiçbirine
+   dokunmadan her yerde doğru görünür.
+
+   İki yer bu "+"yı BİLMEK zorunda ve crown-config.js'de öyle yapıldı:
+   serviceGroup (hangi gruba düşüyor) ilk işe bakar, canDo (bu kız bu işi
+   yapar mı) her iki işi de sorar.
+
+   SÜRE'ye dokunulmadı. Tavan hâlâ 60 dakika, çünkü taç kuralı ona bağlı:
+   iki iş iki saat sürüyorsa iki slot alınır — bu kutu işin ADINI düzeltir,
+   saatini değil.                                                          */
+function rdSvc2Sync(){
+  var a = document.getElementById('a-service'), b = document.getElementById('a-service2');
+  if(!a || !b) return;
+  var keep = b.value;
+  // Birinci kutunun seçenekleri personele göre filtreleniyor; ikincisi onun
+  // aynısı olmalı, yoksa Lissa'nın yapmadığı bir iş ikinci sıradan girer.
+  b.innerHTML = a.innerHTML;
+  var first = b.querySelector('option[value=""]');
+  if(first) first.textContent = '— Yok —'; else b.insertBefore(new Option('— Yok —',''), b.firstChild);
+  // Birinci kutuda seçili olan iş ikincide seçilemesin: aynı işi iki kere.
+  Array.prototype.slice.call(b.querySelectorAll('option')).forEach(function(o){
+    if(o.value && o.value === a.value) o.remove();
+  });
+  b.value = keep;
+  if(b.selectedIndex < 0) b.value = '';
+}
+/* Kaydedilecek hizmet adı: tek iş ya da "iş1 + iş2". */
+function rdApptServiceValue(){
+  var a = document.getElementById('a-service'), b = document.getElementById('a-service2');
+  var v1 = a ? String(a.value||'').trim() : '';
+  var v2 = b ? String(b.value||'').trim() : '';
+  if(!v2 || v2 === v1) return v1;
+  if(!v1) return v2;
+  return v1 + ' + ' + v2;
+}
+/* Kayıttaki birleşik ismi iki kutuya geri açar. Bölme YALNIZCA iki parça da
+   listede varsa yapılır — "Renkli Jel — El" gibi içinde tire olan adlar ya da
+   eskiden elle yazılmış "Kirpik + boya" bozulmasın. */
+function rdApptServiceSet(value){
+  var b = document.getElementById('a-service2');
+  var v = String(value||'');
+  if(b) b.value = '';
+  var i = v.indexOf(' + ');
+  if(i > 0 && b){
+    var p1 = v.slice(0, i).trim(), p2 = v.slice(i+3).trim();
+    var a = document.getElementById('a-service');
+    var has = function(sel, val){
+      if(!sel) return false;
+      return Array.prototype.slice.call(sel.querySelectorAll('option')).some(function(o){ return o.value === val; });
+    };
+    if(has(a, p1)){
+      try{ apptSvcSet(p1); }catch(e){ if(a) a.value = p1; }
+      rdSvc2Sync();
+      if(has(b, p2)){ b.value = p2; return; }
+      // İkinci parça listede yok: birleşik adı olduğu gibi göster, bölme.
+    }
+  }
+  try{ apptSvcSet(v); }catch(e){ var a2=document.getElementById('a-service'); if(a2) a2.value=v; }
+  rdSvc2Sync();
+}
+try{
+  var _sv1 = document.getElementById('a-service');
+  if(_sv1) _sv1.addEventListener('change', function(){ try{ rdSvc2Sync(); }catch(e){} });
+  var _all = document.getElementById('a-allsvc');
+  if(_all) _all.addEventListener('change', function(){ setTimeout(function(){ try{ rdSvc2Sync(); }catch(e){} }, 30); });
+}catch(e){ console.warn('[2.hizmet]', e); }
+
 // Every place the money for an appointment can still be found, best first.
 // An appointment written before the price stuck properly often has price 0 on
 // the record while the amount is sitting in Daily Takings — so the Fiyat box
@@ -6896,7 +6983,7 @@ function dashEditAppt(id){
     // over the record — which is how appointments end up with a blank Hizmet.
     // Carry the appointment's own name in as an option so it shows, and so it
     // survives the round trip untouched.
-    apptSvcSet(a.service);
+    rdApptServiceSet(a.service);      // "Dolgu + Pedikür" → iki kutuya ayrılır
     const dt = document.getElementById('a-dt');
     if(dt) dt.value = dtLocal(new Date(a.datetime));
     const dur = document.getElementById('a-dur');
@@ -6976,7 +7063,7 @@ function dashEditAppt(id){
         // correction on an old job — is never even asked about for what it
         // always was.
         {
-          const _stv=document.getElementById('a-staff').value, _svv=document.getElementById('a-service').value||live.service;
+          const _stv=document.getElementById('a-staff').value, _svv=rdApptServiceValue()||live.service;
           if(_stv && _svv && (_stv!==live.staff || _svv!==live.service) && typeof rdCanDo==='function' && !rdCanDo(_stv,_svv)){
             if(!confirm(_stv+' — '+_svv+' — bu hizmeti yapmıyor olarak kayıtlı.\n\nYine de kaydedilsin mi?')) return;
           }
@@ -6984,7 +7071,7 @@ function dashEditAppt(id){
         // Never let an empty select wipe a service name. Old appointments carry
         // names that are no longer in the dropdown, and writing that blank back
         // is what left records with no Hizmet at all.
-        const _svcVal = document.getElementById('a-service').value;
+        const _svcVal = rdApptServiceValue();
         if(_svcVal) live.service = _svcVal;
         const _oldDt = live.datetime;   // to spot a moved booking below
         live.datetime  = document.getElementById('a-dt').value;
@@ -10346,7 +10433,7 @@ function isBirthdayAppt(clientId, datetime){
 function saveAppt(){
   const cid = document.getElementById("a-client").value;
   if(!cid){ toast("⚠","No Client","Please select a client.","r"); return; }
-  const svc=document.getElementById("a-service").value;
+  const svc=rdApptServiceValue();
   let dt=document.getElementById("a-dt").value;
   if(!cid||!svc||!dt){toast("⚠️","Missing Fields","Fill in all required fields.","r");return;}
   // A closed day (crown-config.js: closedWeekdays / closedDates) is not
@@ -11071,7 +11158,7 @@ function rbGiveTime(id){
     const hid=document.getElementById('a-client'); if(hid) hid.value=it.clientId;
     const cs=document.getElementById('a-client-search'); if(cs) cs.value=c?c.name:'';
     const dd=document.getElementById('a-client-dropdown'); if(dd) dd.style.display='none';
-    try{ apptSvcSet(it.service||''); }catch(e){ const sv=document.getElementById('a-service'); if(sv) sv.value=it.service||''; }
+    try{ rdApptServiceSet(it.service||''); }catch(e){ const sv=document.getElementById('a-service'); if(sv) sv.value=it.service||''; }
     const st=document.getElementById('a-staff'); if(st){ st.value=it.staff||''; try{ rdStaffSelChanged(); }catch(e){} }
     const du=document.getElementById('a-dur'); if(du) du.value=String(Math.min(60,it.duration||60));
     const dt=document.getElementById('a-dt');
@@ -22121,6 +22208,22 @@ function rdWrWindow(r, now){
     const ad = document.getElementById('a-addon');
     if(sv && !sv._rdWired){ sv._rdWired = true; sv.addEventListener('change', rdAutoDur); sv.addEventListener('change', rdApptAutoPrice); }
     if(ad && !ad._rdWired){ ad._rdWired = true; ad.addEventListener('change', rdAutoDur); ad.addEventListener('change', rdApptAutoPrice); }
+    /* ⚠ 9 Ekim 2026 — the read-back line was going stale. The box carried
+       oninput="rdApptPriceEcho()" as an ATTRIBUTE, and on the live page that
+       attribute was not compiled into a handler (el.oninput read back null),
+       so typing "2 5" left yesterday's figure sitting underneath it. The
+       amount SAVED was always correct — it is re-parsed on save — but the
+       line a person is told to trust was lying, which is worse than no line.
+       A real listener, bound here, does not depend on that attribute at all.
+       input covers typing and pasting, change and blur cover autofill and
+       anything that fills the box without keystrokes. */
+    const pr = document.getElementById('a-price');
+    if(pr && !pr._rdEchoWired){
+      pr._rdEchoWired = true;
+      ['input','change','blur','keyup','paste'].forEach(function(ev){
+        pr.addEventListener(ev, function(){ setTimeout(function(){ try{ rdApptPriceEcho(); }catch(e){} }, 0); });
+      });
+    }
   }
 
   const _origOpen = window.openModal;
