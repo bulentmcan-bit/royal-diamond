@@ -80,19 +80,20 @@ console.log('3. the form');
   is(/value="90"|value="120"/.test(dur), false, '…and nothing longer was slipped into the Süre list');
 }
 
-console.log('3b. the three choices are added up on screen');
+console.log('3b. the three choices are added up IN THE PRICE BOX');
 {
-  // "I've picked 2 Dolgu, then 5 Pedikür, then D2. Where does it combine all
-  //  three?" — it didn't. The parts were on screen, the total was nowhere.
-  // It is shown UNDER the box, not written INTO it: the morning's rule holds,
-  // the booking is still saved with no price, because the work can still
-  // change between the chair and the till.
+  // "If I press number 2, I want it to come out where it says Çıkışta. I want
+  //  it to be there, not at the bottom. That's confusing, not for me, for the
+  //  others. If I then press number 5 then the figure … to add that on."
+  // The figure now lands in the box the girl types into, not on a line below
+  // it. tests/randevu-fiyatsiz.test.js runs that behaviour for real.
   is(/window\.rdApptPickedSum = function\(\)/.test(html), true, 'the form adds up what has been picked');
   is(/\['a-service','a-service2'\]\.forEach/.test(html), true, '…both treatments');
   is(/parseInt\(o\.getAttribute\('data-p'\)\|\|'0', 10\)/.test(html), true, '…and the design on top');
-  is(/'Seçilenler: ' \+ k\.parts\.join\(' \+ '\)/.test(html), true, 'and it names them: "Dolgu + Pedikür + D2"');
-  is(/kutu boş kalır, çıkışta yazılır/.test(html), true, '…while saying plainly that the box stays empty');
-  is(/sv2\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, 'picking the second treatment refreshes the total');
+  is(/pr\.value = String\(k\.total\);/.test(html), true, 'and the total goes INTO the price box');
+  is(/k\.parts\.join\(' \+ '\)/.test(html), true, '…with the names of all three under it');
+  is(/sv2\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, 'picking the second treatment changes the figure');
+  is(/Randevuda boş kalır — fiyat çıkışta yazılır/.test(html), false, "and the morning's \"the box stays empty\" line is no longer shown to anyone");
 }
 
 console.log('4. the price read-back is bound for real');

@@ -5497,7 +5497,7 @@ p, span, div, label, h1, h2, h3, h4 {
         <select class="fctrl" id="a-service2"><option value="">— Yok —</option></select>
         <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">
           Aynı müşteriye iki iş yapıldıysa ikincisini buradan seçin — kayıtta
-          <b>Dolgu + Pedikür</b> diye görünür. Fiyatı çıkışta <b>2 5</b> diye yazarsınız.
+          <b>Dolgu + Pedikür</b> diye görünür, fiyat kutusuna ikisinin toplamı düşer.
         </div></div>
     </div>
     <div class="form-row fr2">
@@ -5525,7 +5525,7 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="fg"></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Çıkışta — kod veya ₺ (örn. 2 D3)" oninput="rdApptPriceEcho()">
+      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Kod veya ₺ — örn. 2 5 D2" oninput="rdApptPriceEcho()">
         <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
         <select class="fctrl" id="a-staff"><!-- populated from Daily Takings operators --></select></div>
@@ -22180,32 +22180,42 @@ function rdWrWindow(r, now){
     if(!p.amount){ hint.textContent = '\u26A0 Tanınmayan kod'; return; }
     hint.textContent = (p.name ? '\u2192 ' + p.name + ' = ' : '\u2192 ') + '₺' + p.amount.toLocaleString('tr-TR');
   };
-  /* ⛔ 9 Ekim 2026 — RANDEVU ALIRKEN FİYAT YAZILMAZ.
-     Randevu alınırken iş daha belli değil: kız tasarım önerebilir, müşteri
-     ayağı da ekletebilir, el değiştirebilir. Kutuya o anda bir rakam düşmesi
-     hem müşteriye söz vermek olur hem de o rakam kasaya "bu işin fiyatı" diye
-     geçer. Bu yüzden kutu BOŞ kalır; fiyat ÇIKIŞTA, iş bittikten sonra
-     yazılır — ister lira ister kod (1-10, D1-D6).
-     Bu fonksiyon artık fiyat YAZMAZ. Tek yaptığı, daha önce sistemin kendi
-     yazdığı bir rakam kaldıysa onu temizlemek: hizmet değiştirilince eski
-     hizmetin fiyatı kutuda unutulmasın. ELLE yazılmış rakama dokunmaz. */
+  /* 💰 FİYAT KUTUSU — 9 Ekim 2026, iki kere değişti; ikisi de doğruydu.
+     SABAH: "randevu alırken fiyat çıkmasın — kız tasarım öneriyor olabilir."
+     Kutuyu boşalttık, toplamı kutunun ALTINDA ayrı bir satırda gösterdik
+     (o satır artık yok).
+     AKŞAM, deneyince: "2'ye basınca ÇIKIŞTA yazan yere gelsin, aşağıya
+     değil. Bu karışık — bana değil, KIZLARA. 5'e de basarsam oradaki rakam
+     eklensin ve değişsin."
+     İkincisi kazandı, ve haklı: rakamın YAZILDIĞI yer ile GÖRÜNDÜĞÜ yer
+     aynı olmak zorunda. Ayrı bir satır, tezgâhın arkasındaki kıza iki ayrı
+     şey gibi görünüyor — biri doğru biri yanlış olabilirmiş gibi.
+     Bu yüzden: kutuya yazılır, her seçimde yenilenir, ELLE yazılana asla
+     dokunulmaz. Sabahki endişe de karşılıksız değil — altındaki satır
+     rakamın nereden geldiğini ve üzerine yazılabileceğini söyler.        */
   window.rdApptAutoPrice = function(){
     var pr = document.getElementById('a-price'), hint = document.getElementById('a-price-hint');
     if(!pr) return;
     var cur = String(pr.value==null?'':pr.value).trim();
     var mine = String(pr.dataset.rdAuto||'');
-    if(cur && cur === mine){ pr.value=''; delete pr.dataset.rdAuto; cur=''; }   // sistemin eski rakamı
-    if(cur){ try{ rdApptPriceEcho(); }catch(e){} return; }                      // elle yazılmış: dokunma
-    if(hint) hint.textContent = rdApptPriceGuide();
+    // ELLE yazılmışsa karışma. Kutudaki rakam sistemin kendi yazdığıysa (ya
+    // da kutu boşsa) yeni seçime göre yenilenir.
+    if(cur && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
+    var k = rdApptPickedSum();
+    if(!k.total){
+      pr.value = ''; delete pr.dataset.rdAuto;
+      if(hint) hint.textContent = rdApptPriceGuide();
+      return;
+    }
+    pr.value = String(k.total);
+    pr.dataset.rdAuto = String(k.total);
+    if(hint) hint.textContent = k.parts.join(' + ') + ' = \u20BA' + k.total.toLocaleString('tr-TR')
+                              + ' — farklıysa üzerine yazın.';
   };
-  /* Boş kutunun altındaki satır.
-     9 Ekim 2026, ikinci tur — Bülent: "I've picked 2 Dolgu, then 5 Pedikür,
-     then D2. Where does it combine all three?" Haklı: seçimler ekranda ayrı
-     ayrı duruyor, toplamı hiçbir yerde yazmıyordu.
-     Toplam artık BURADA yazıyor — ama kutuya DÜŞMÜYOR. Sabahki kural aynen
-     duruyor: randevu alınırken kutu boş kalır, çünkü iş daha belli değil ve
-     kutudaki rakam kasaya "bu işin fiyatı" diye geçer. Bu satır bir hesap,
-     bir söz değil: "seçtiklerin şu kadar tutuyor, çıkışta yazacaksın".      */
+  /* Seçilen her şeyin toplamı — iki hizmet ve tasarım.
+     "I've picked 2 Dolgu, then 5 Pedikür, then D2. Where does it combine
+     all three?" Üçünü toplayan tek yer burası; hem kutuya yazılan rakam hem
+     altındaki okuma satırı bunu kullanır, ki ikisi asla ayrı şey söylemesin. */
   window.rdApptPickedSum = function(){
     var out = { parts: [], total: 0 };
     var add = function(label, amount){ if(label){ out.parts.push(label); } out.total += (amount||0); };
@@ -22228,13 +22238,7 @@ function rdWrWindow(r, now){
     return out;
   };
   window.rdApptPriceGuide = function(){
-    var g = 'Randevuda boş kalır — fiyat çıkışta yazılır (lira ya da kod: 1-10, D1-D6).';
-    try{
-      var k = rdApptPickedSum();
-      if(!k.total) return g;
-      return 'Seçilenler: ' + k.parts.join(' + ') + ' = \u20BA' + k.total.toLocaleString('tr-TR')
-           + ' — kutu boş kalır, çıkışta yazılır.';
-    }catch(e){ return g; }
+    return 'Fiyat listesinden gelir — farklıysa üzerine yazın (kod da yazabilirsiniz: 1-10, D1-D6).';
   };
 
   function wire(){

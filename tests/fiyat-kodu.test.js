@@ -158,17 +158,18 @@ console.log('11. a price typed by hand is never overwritten — and the system w
 {
   // This is the one that protects the takings. Reception discounts, rounds and
   // does favours; the moment the system argues with her the figure is wrong.
-  is(/if\(cur\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true,
-     'anything in the box is left alone — and still reads back');
+  is(/if\(cur && cur !== mine\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true,
+     'anything the SYSTEM did not write is left alone — and still reads back');
   // 9 Ekim 2026 — Bülent: "I don't want the price to come out at that stage
   // because the technician might be offering them designs." The list price no
   // longer drops into the box when a service is picked; the box is filled at
   // checkout. tests/randevu-fiyatsiz.test.js runs that behaviour for real.
-  is(/pr\.value = String\(v\); pr\.dataset\.rdAuto = String\(v\);/.test(html), false,
-     'the line that put the list price in the box is GONE');
-  is(/Fiyat listesinden geldi/.test(html), false, "…and so is the 'came from the price list' line");
-  is(/Randevuda boş kalır — fiyat çıkışta yazılır/.test(html), true,
-     'the box now says when the figure is wanted instead: at checkout');
+  // 9 Ekim, akşam: the figure is back IN the box, now covering BOTH treatments
+  // and the design, because a total shown anywhere else reads as a different
+  // number to the person typing. It still never overwrites a hand-typed one.
+  is(/pr\.value = String\(k\.total\); *\n? *pr\.dataset\.rdAuto = String\(k\.total\);/.test(html), true,
+     'the list price goes in the box, and the system marks it as its own');
+  is(/farklıysa üzerine yazın/.test(html), true, "…and says plainly that it can be written over");
 }
 
 console.log('11b. two treatments in one go');
@@ -235,7 +236,7 @@ console.log('14. the Fiyat box at checkout takes a code too');
   // This is where the money is actually entered: a technician finishes, you
   // open the booking and type the price. It was type="number", so "D3" could
   // not even be typed into it.
-  is(/id="a-price" placeholder="Çıkışta — kod veya ₺/.test(html), true, 'the box says a code is allowed — at checkout');
+  is(/id="a-price" placeholder="Kod veya ₺ — örn\. 2 5 D2"/.test(html), true, 'the box says a code is allowed, and shows two treatments plus a design');
   is(/<input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price"/.test(html), true,
      '…and it is a text box now, so the letter in D3 goes in');
   is(html.includes('type="number" id="a-price"'), false, '…the old number box is gone');
