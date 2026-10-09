@@ -103,14 +103,22 @@ console.log('4. the route is wired and keyed');
 
 console.log('5. the numbers that were throttling it');
 {
-  const ra = config.slice(config.indexOf('reviewAsk: {'), config.indexOf('reviewAsk: {') + 2200);
+  const ra = config.slice(config.indexOf('reviewAsk: {'), config.indexOf('reviewAsk: {') + 3200);
   is(/dailyCap: 40/.test(ra), true, 'dailyCap 15 → 40 — a Saturday of twenty happy customers fits');
-  is(/cooldownDays: 60/.test(ra), true, 'cooldownDays 180 → 60 — this was the main brake');
+  // 180 → 60 → 21, all on 9 Ekim. Bülent's own number and his own reason:
+  // "I want it to go out every time I trigger the Memnun button. That could
+  // be every 21 days." Nail to nail IS about three weeks, so 21 days means
+  // in practice every visit, once.
+  is(/cooldownDays: 21/.test(ra), true, 'cooldownDays 180 → 21 — this was the main brake, and it is now barely a brake at all');
   is(/lookbackDays: 7/.test(ra), true, 'lookbackDays 3 → 7 — the evening net catches a missed day');
   is(/enabled: true/.test(ra), true, 'still switched on');
   is(/dryRun: false/.test(ra), true, '…and still live, not a rehearsal');
   // The reason the figures are what they are, kept next to them.
   is(ra.indexOf('219') > 0, true, 'the measurement that justified the change is written down beside it');
+  // The cost is written down too, because somebody will one day ask why a
+  // salon's WhatsApp number stopped sending reminders.
+  is(/MARKETING template/.test(ra) && /blocks and\s+reports/.test(ra), true, 'and so is what it risks: a review request is MARKETING, and blocks are what cost a salon its number');
+  is(/stop after three asks/.test(ra), true, '…with the thing to do next if a regular is asked six visits running and never reviews');
 }
 
 console.log('');

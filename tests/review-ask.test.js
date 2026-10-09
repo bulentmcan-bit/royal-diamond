@@ -145,9 +145,9 @@ const planOf = (crown, over) => makeWorker({}, { crown }).api.raPlan(Object.assi
 
 console.log('1. the settings');
 {
-  is(cfgOf(C), { enabled: true, dryRun: false, dailyCap: 40, sendHourLocal: 19, lookbackDays: 7, cooldownDays: 60 }, 'crown-config.js today: LIVE (dry run off since 15 Eylül 2026), enabled, cap 40, 19:00, 7 days back, 60-day cooldown — the numbers of 9 Ekim 2026, when the ask moved to checkout and the evening run became the safety net');
+  is(cfgOf(C), { enabled: true, dryRun: false, dailyCap: 40, sendHourLocal: 19, lookbackDays: 7, cooldownDays: 21 }, 'crown-config.js today: LIVE, cap 40, 19:00, 7 days back, 21-day cooldown — Bülent\'s own number: nail to nail is about three weeks, so 21 days means every visit, once');
   is(cfgOf(Object.assign({}, C, { reviewAsk: undefined })), { enabled: true, dryRun: true, dailyCap: 15, sendHourLocal: 19, lookbackDays: 3, cooldownDays: 180 }, 'no reviewAsk block at all → the defaults, with dry run ON');
-  is(cfgOf(withRa(C, { dryRun: 'no', dailyCap: 'lots', sendHourLocal: 'evening', lookbackDays: 0 })), { enabled: true, dryRun: true, dailyCap: 0, sendHourLocal: 0, lookbackDays: 1, cooldownDays: 60 }, 'nonsense: dry run ON, cap 0 (nothing sent), hour 0 (no cron fires then), at least one day back — and the cooldown it DOES have is kept');
+  is(cfgOf(withRa(C, { dryRun: 'no', dailyCap: 'lots', sendHourLocal: 'evening', lookbackDays: 0 })), { enabled: true, dryRun: true, dailyCap: 0, sendHourLocal: 0, lookbackDays: 1, cooldownDays: 21 }, 'nonsense: dry run ON, cap 0 (nothing sent), hour 0 (no cron fires then), at least one day back — and the cooldown it DOES have is kept');
   is(cfgOf(withRa(C, { cooldownDays: 0 })), { enabled: true, dryRun: false, dailyCap: 40, sendHourLocal: 19, lookbackDays: 7, cooldownDays: 0 }, 'cooldown 0 is honoured as written: a zero here would ask the same woman every visit, so it is a setting to make deliberately, not a typo the code quietly rounds up');
 }
 
@@ -188,11 +188,18 @@ console.log('3. who is not, and why');
   is(planOf(withRa(REH, { dailyCap: 0 })).asks, [], 'cap 0 → nobody');
   // the cooldown edge
   is(planOf(withRa(REH, { cooldownDays: 200 })).asks.map(a => a.name), ['Bella', 'Ayşe', 'Nur'], 'cooldown 200 → Melek (181 days) is inside it again');
-  // the live cooldown since 9 Ekim 2026. This is the whole point of the change:
+  // the cooldown as it stood for one afternoon on 9 Ekim, before Bülent cut
+  // it again to 21. Kept because it is the boundary the planner has to get
+  // right; the live number is pinned in section 1.
   // Kader and Lale were asked 100 days ago and at 180 days they were locked out
   // of the evening run for another two and a half months.
   is(planOf(withRa(REH, { cooldownDays: 60 })).asks.map(a => a.name), ['Bella', 'Ayşe', 'Kader', 'Lale', 'Melek', 'Nur'], 'cooldown 60 (what is live now) → Kader and Lale, asked 100 days ago, are free again');
   is(planOf(withRa(REH, { cooldownDays: 60 })).skipped.filter(x => /zaten istendi/.test(x.why)).map(x => [x.name, x.why]), [['Jale', 'son 60 günde zaten istendi']], '…and only Jale, asked by hand 10 days ago, is still inside it — the reason names the live number, not a hard-coded 180');
+  // 21 days — what is live now. Jale was asked by hand 10 days ago, so even
+  // she is the only one still held, and at her next visit she will not be.
+  is(planOf(withRa(REH, { cooldownDays: 21 })).asks.map(a => a.name), ['Bella', 'Ayşe', 'Kader', 'Lale', 'Melek', 'Nur'], 'cooldown 21 (live) → everyone happy this week except the one asked ten days ago');
+  is(planOf(withRa(REH, { cooldownDays: 21 })).skipped.filter(x => /zaten istendi/.test(x.why)).map(x => x.name), ['Jale'], '…Jale, at 10 days, is still inside three weeks');
+  is(planOf(withRa(REH, { cooldownDays: 9 })).skipped.filter(x => /zaten istendi/.test(x.why)).map(x => x.name), [], '…and at 9 days even she would be asked again — the wait is the ONLY thing holding a repeat back');
   // the window edge
   is(planOf(withRa(REH, { lookbackDays: 4 })).asks.map(a => a.name), ['Filiz', 'Bella', 'Ayşe', 'Melek', 'Nur'], 'lookback 4 → the 12th is in, and Filiz comes first');
   is(planOf(withRa(REH, { lookbackDays: 1 })).asks.map(a => a.name), ['Ayşe', 'Melek', 'Nur'], 'lookback 1 → today only');

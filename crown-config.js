@@ -462,15 +462,21 @@ var CROWN = {
        would have silenced the last five of them. It is a circuit breaker
        now, not a ration.
 
-       cooldownDays 180 → 60: the real brake. Of 219 happy customers in the
-       30 days to 9 Ekim, 113 had been asked inside 30 days, 21 inside 60
-       and 62 inside 90 — so at 180 days almost everyone was locked out and
-       the evening run was reaching three people a night out of twenty.
-       Sixty days still protects the number's standing with Meta (a review
-       request is a MARKETING template; blocks and reports are what cost
-       the salon its reminders) while letting a monthly regular be asked
-       every second or third visit. She can only leave one review — this
-       is about catching the ones who never did, not asking twice.
+       cooldownDays 180 → 60 → 21 (9 Ekim, the same day): the real brake.
+       Of 219 happy customers in the 30 days to 9 Ekim, 113 had been asked
+       inside 30 days, 21 inside 60 and 62 inside 90 — so at 180 days almost
+       everyone was locked out and the evening run was reaching three people
+       a night out of twenty. Sixty freed the 90-day group; 21 is Bülent's
+       own number and his own words: "I want it to go out every time I
+       trigger the Memnun button. That could be every 21 days." Nail to
+       nail IS about three weeks, so 21 days means in practice: every
+       visit, once.
+       The cost, stated plainly because it is real: a review request is a
+       MARKETING template, and what costs a salon its number is blocks and
+       reports, not sends. Twenty-one days is the shortest wait that is
+       still a wait. If the same regular is asked at six visits running and
+       has never reviewed, she is not going to — the thing to add then is a
+       stop after three asks, not a longer wait for everybody.
 
        lookbackDays 3 → 7: only the evening run uses this. A customer the
        instant send missed — no key on that device, Piyzi down, a bad
@@ -479,7 +485,7 @@ var CROWN = {
     dailyCap: 40,
     sendHourLocal: 19,
     lookbackDays: 7,
-    cooldownDays: 60
+    cooldownDays: 21
   },
 
   /* Which GROUP a service name belongs to — the headings of the service list:
