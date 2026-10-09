@@ -570,12 +570,19 @@ function waSpec(raw) {
 // The moment it is listed, both reminders use it — no edit, no redeploy.
 // "namePrefix" lets a resubmission under a new name (randevu_onay3, …) count
 // too, since Meta never lets a refused or deleted name be reused.
+// "fallbackName" is the OTHER half of the same idea, for a template that is
+// being REPLACED rather than resubmitted: the review request moved from
+// pyz_google_yorum_istegi (no button at all — it asked for a review and gave
+// the customer nothing to tap) to google_yorum_istegi, whose button opens the
+// star box itself. Both are named, the new one wins the moment Meta approves
+// it, and until then the old one keeps going out. No redeploy, and no day
+// where the asks simply fail because a name was changed too early.
 // Returns the approved name to send under, or '' while none is approved.
 // The answer is kept in KV for an hour so a busy day asks Piyzi ~once an hour.
 async function waConfirmLive(env, spec) {
   if (!spec) return '';
   const lang = spec.languageCode || 'tr';
-  const key = 'tpl:live2:' + spec.templateName + '|' + (spec.namePrefix || '') + '/' + lang;
+  const key = 'tpl:live3:' + spec.templateName + '|' + (spec.namePrefix || '') + '|' + (spec.fallbackName || '') + '/' + lang;
   if (env.RD_WA) {
     try { const c = await env.RD_WA.get(key); if (c !== null && c !== undefined) return c === '-' ? '' : c; } catch { /* ask Piyzi */ }
   }
@@ -588,11 +595,25 @@ async function waConfirmLive(env, spec) {
       && (!t.status || String(t.status).toUpperCase() === 'APPROVED'));
     const exact = ok.find(t => t.name === spec.templateName);
     const pre = spec.namePrefix ? ok.filter(t => t.name.startsWith(spec.namePrefix)).map(t => t.name).sort() : [];
-    live = exact ? exact.name : (pre.length ? pre[pre.length - 1] : '');
+    const fb = spec.fallbackName ? ok.find(t => t.name === spec.fallbackName) : null;
+    live = exact ? exact.name : (pre.length ? pre[pre.length - 1] : (fb ? fb.name : ''));
   } catch { return ''; }
   if (env.RD_WA) { try { await env.RD_WA.put(key, live || '-', { expirationTtl: 3600 }); } catch { /* cache only */ } }
   console.log('[wa] confirm template', live || ('none approved yet (' + spec.templateName + ')'));
   return live;
+}
+
+/* Which review template actually goes out. The order is deliberate:
+     the new one if Meta has approved it, else the named old one, else the
+   name as written. The LAST step matters — if Piyzi cannot be reached the
+   check returns nothing, and sending under an unapproved name would fail
+   every ask that evening. Falling back to the one known to work is the
+   safe direction to be wrong in. */
+async function waReviewName(env, spec) {
+  if (!spec) return '';
+  let live = '';
+  try { live = await waConfirmLive(env, spec); } catch { /* fall through */ }
+  return live || spec.fallbackName || spec.templateName;
 }
 
 // The spec's placeholders → this appointment's values, shaped exactly like
@@ -1720,10 +1741,15 @@ async function runReviewAsk(env, now, opts) {
 
   if (mode === 'dry') run.result = 'dry-run — nothing sent';
   else {
-    const spec = waSpec(env.WA_REVIEW);
-    if (!spec) { run.result = 'TEMPLATES_NOT_CONFIGURED — fill WA_REVIEW in wrangler.toml; nothing sent'; log(run.result); }
+    const spec0 = waSpec(env.WA_REVIEW);
+    if (!spec0) { run.result = 'TEMPLATES_NOT_CONFIGURED — fill WA_REVIEW in wrangler.toml; nothing sent'; log(run.result); }
     else if (!env.PIYZI_API_KEY) { run.result = 'PIYZI_KEY_NOT_SET — nothing sent'; log(run.result); }
     else {
+      // Asked ONCE for the whole run, not once per customer.
+      const liveName = await waReviewName(env, spec0);
+      const spec = Object.assign({}, spec0, { templateName: liveName });
+      run.template = liveName;
+      log('template:', liveName);
       let i = 0;
       for (const o of plan.asks) {
         const id = (now.getTime() + '-' + o.cid).replace(/[.#$\/\[\]:]/g, '');
@@ -1832,9 +1858,10 @@ async function reviewNow(env, ctx, body, now) {
   if (sentToday >= cfg.dailyCap) return { ok: true, sent: false, skipped: 'günlük sınır doldu (' + cfg.dailyCap + ')' };
 
   if (cfg.dryRun) { log('WOULD SEND', c.name, phone); return { ok: true, sent: false, skipped: 'deneme modu (dryRun)' }; }
-  const spec = waSpec(env.WA_REVIEW);
-  if (!spec) return { ok: false, error: 'TEMPLATES_NOT_CONFIGURED' };
+  const spec0 = waSpec(env.WA_REVIEW);
+  if (!spec0) return { ok: false, error: 'TEMPLATES_NOT_CONFIGURED' };
   if (!env.PIYZI_API_KEY) return { ok: false, error: 'PIYZI_KEY_NOT_SET' };
+  const spec = Object.assign({}, spec0, { templateName: await waReviewName(env, spec0) });
 
   const id = (nowMs + '-' + cid).replace(/[.#$\/\[\]:]/g, '');
   const rec = { cid, name: String(c.name || ''), phone, service: String(body.service || ''),
@@ -2370,7 +2397,7 @@ async function handleCall(req, env, url) {
 export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningReminders,
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
-         raConfig, raPlan, runReviewAsk, waConfirmLive,
+         raConfig, raPlan, runReviewAsk, waConfirmLive, waReviewName,
          ydTtlDays, ydDrop, runBackup, ydList, ydGet,
          hookSign, hookVerify, hookParse, hookMatchOffer, handleHook,
          CALL_SAY, callAsk, callAnswer, handleCall };

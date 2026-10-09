@@ -131,7 +131,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const s = setup({ approved: false });
     await s.send(); await s.send(); await s.send();
     is(s.listCalls.length, 1, 'Piyzi asked once for three bookings');
-    is(s.env.RD_WA.m.get('tpl:live2:randevu_onay4|randevu_onay/tr'), '-', 'cached as not yet approved');
+    is(s.env.RD_WA.m.get('tpl:live3:randevu_onay4|randevu_onay|/tr'), '-', 'cached as not yet approved');
   }
 
   console.log('5. wrangler.toml');

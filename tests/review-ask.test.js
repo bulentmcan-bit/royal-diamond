@@ -58,7 +58,13 @@ function makeWorker(store, opts) {
     const body = init.body ? JSON.parse(init.body) : null;
     calls.push({ url: String(url), method, body });
     if (String(url).startsWith('https://api.piyzi.com')) {
-      const failIt = opts.piyziFail && opts.piyziFail(body);
+      // Piyzi's approved-template list. By default only the OLD review
+      // template is approved, which is the world as it stood on 9 Ekim.
+      if (String(url).includes('/whatsapp/templates')) {
+        const templates = opts.templates || [{ name: 'pyz_google_yorum_istegi', language: 'tr', status: 'APPROVED' }];
+        return { ok: true, status: 200, json: async () => ({ success: true, data: { templates } }) };
+      }
+      const failIt = body && opts.piyziFail && opts.piyziFail(body);
       return { ok: !failIt, status: failIt ? 400 : 200, json: async () => failIt ? { success: false, error: { code: 'TEMPLATE_PAUSED', message: 'x' } } : { success: true, data: { messageUid: 'uid-' + calls.length } } };
     }
     const m = String(url).match(/firebaseio\.com\/(.+?)\.json/);
@@ -81,7 +87,7 @@ function makeWorker(store, opts) {
   };
   vm.createContext(ctx);
   vm.runInContext(src.slice(0, cut).replace(/^import .*$/gm, '') +
-    '\n;__api = { raConfig, raPlan, runReviewAsk, waPhone };', ctx, { filename: 'worker-slice.js' });
+    '\n;__api = { raConfig, raPlan, runReviewAsk, waPhone, waReviewName };', ctx, { filename: 'worker-slice.js' });
   return { api: ctx.__api, calls, logs };
 }
 
@@ -225,7 +231,7 @@ console.log('5. the runner');
       const w = makeWorker(store());
       const r = await w.api.runReviewAsk(env, new Date(NOW), { gapMs: 0 });
       is([r.ok, r.mode], [true, 'dry'], 'a dry run completes');
-      is(w.calls.some(c => c.url.includes('api.piyzi.com')), false, 'NOTHING is sent to Piyzi');
+      is(w.calls.some(c => c.url.includes('/whatsapp/messages')), false, 'NOTHING is sent to Piyzi');
       is(w.calls.filter(c => c.url.includes('/sent/') && c.method !== 'GET').length, 0, 'no sent record is written');
       const rec = w.calls.find(c => c.method === 'PUT' && c.url.includes('/rdns_review_v1/runs/'));
       is(!!rec, true, 'the run is recorded');
@@ -262,7 +268,7 @@ console.log('5. the runner');
     {
       const w = makeWorker(store(), { crown: LIVE });
       const r = await w.api.runReviewAsk(env, new Date(NOW), { gapMs: 0 });
-      is([r.ok, r.mode, w.calls.some(c => c.url.includes('api.piyzi.com'))], [true, 'live', false], 'live with WA_REVIEW empty: nothing sent');
+      is([r.ok, r.mode, w.calls.some(c => c.url.includes('/whatsapp/messages'))], [true, 'live', false], 'live with WA_REVIEW empty: nothing sent');
       is(/TEMPLATES_NOT_CONFIGURED/.test(r.run.result), true, 'and the run record says why');
       is(w.calls.filter(c => c.url.includes('/sent/') && c.method !== 'GET').length, 0, 'no sent record written');
     }
@@ -272,7 +278,11 @@ console.log('5. the runner');
       const s = store();
       const w = makeWorker(s, { crown: LIVE, piyziFail: b => b.phone === '905331414141' });
       const r = await w.api.runReviewAsk(Object.assign({}, env, { WA_REVIEW: spec }), new Date(NOW), { gapMs: 0 });
-      const piyzi = w.calls.filter(c => c.url.includes('api.piyzi.com'));
+      // A SEND is a POST to /whatsapp/messages. The run also asks Piyzi which
+      // review template is approved — once, not per customer — and that GET
+      // must never be counted as a message to a customer.
+      const piyzi = w.calls.filter(c => c.url.includes('/whatsapp/messages'));
+      is(w.calls.filter(c => c.url.includes('/whatsapp/templates')).length, 1, 'the approved-template list is asked for ONCE in the whole run');
       is(piyzi.length, 4, 'four sends');
       is(piyzi[0].body, { phone: '905332222222', templateName: 'pyz_google_yorum_istegi', languageCode: 'tr', parameters: {} }, 'the fixed template, no parameters, to the normalised number — Bella first');
       is([r.run.sent, r.run.failed, r.run.result], [3, 1, '3 sent, 1 failed'], "Melek's refused send is counted as failed");
@@ -290,10 +300,44 @@ console.log('5. the runner');
       // the re-run: the store now holds the claims
       const w2 = makeWorker(s, { crown: LIVE });
       const r2 = await w2.api.runReviewAsk(Object.assign({}, env, { WA_REVIEW: spec }), new Date(NOW + 3600e3), { gapMs: 0 });
-      is(w2.calls.filter(c => c.url.includes('api.piyzi.com')).map(c => c.body.phone), ['905331414141'], 'an hour later: only Melek, whose send FAILED, is tried again — nobody is asked twice');
+      is(w2.calls.filter(c => c.url.includes('/whatsapp/messages')).map(c => c.body.phone), ['905331414141'], 'an hour later: only Melek, whose send FAILED, is tried again — nobody is asked twice');
       is([r2.run.sentToday, r2.run.room], [3, 12], 'the three that went count against the cap');
       is(r2.run.skipped.filter(x => x.why === 'son 180 günde zaten istendi').map(x => x.name).sort(), ['Ayşe', 'Bella', 'Jale', 'Kader', 'Lale', 'Nur'], '…and the three say "already asked", beside the earlier ones');
     }
+    // ── the template switches itself over ────────────────────────────────
+    // pyz_google_yorum_istegi asks for a review and gives the customer
+    // NOTHING to tap. google_yorum_istegi's button opens Google's star box.
+    // Both are named in WA_REVIEW so the new one takes over the hour Meta
+    // approves it — with no redeploy, and no evening of failed asks if a
+    // name were changed a day early.
+    {
+      const SPEC = '{"templateName":"google_yorum_istegi","fallbackName":"pyz_google_yorum_istegi","languageCode":"tr","body":[]}';
+      const nameOf = async (templates) => {
+        const w = makeWorker(store(), { crown: LIVE, templates });
+        const r = await w.api.runReviewAsk(Object.assign({}, env, { WA_REVIEW: SPEC }), new Date(NOW), { gapMs: 0 });
+        return [r.run.template, w.calls.filter(c => c.url.includes('/whatsapp/messages'))[0].body.templateName];
+      };
+      const APPROVED = n => ({ name: n, language: 'tr', status: 'APPROVED' });
+      is(await nameOf([APPROVED('pyz_google_yorum_istegi')]), ['pyz_google_yorum_istegi', 'pyz_google_yorum_istegi'],
+         'only the old one approved → the old one goes out, exactly as yesterday');
+      is(await nameOf([APPROVED('pyz_google_yorum_istegi'), APPROVED('google_yorum_istegi')]), ['google_yorum_istegi', 'google_yorum_istegi'],
+         'Meta approves the new one → the very next run uses it, with no redeploy');
+      is(await nameOf([APPROVED('google_yorum_istegi')]), ['google_yorum_istegi', 'google_yorum_istegi'],
+         '…and it does not need the old one still to exist');
+      is(await nameOf([{ name: 'google_yorum_istegi', language: 'tr', status: 'PENDING' },
+                       APPROVED('pyz_google_yorum_istegi')]), ['pyz_google_yorum_istegi', 'pyz_google_yorum_istegi'],
+         'PENDING is not approved — sending under it would fail every ask, so the old one keeps going');
+      is(await nameOf([]), ['pyz_google_yorum_istegi', 'pyz_google_yorum_istegi'],
+         'Piyzi lists nothing at all → fall back to the name known to work, never to the unapproved one');
+      // the direction to be wrong in, when the check itself cannot be made
+      const w = makeWorker({});
+      is(await w.api.waReviewName({}, { templateName: 'yeni', fallbackName: 'eski' }), 'eski',
+         'the template check unreachable → the OLD name, because a failed send helps nobody');
+      is(await w.api.waReviewName({}, { templateName: 'yeni' }), 'yeni',
+         '…and with no fallback named, the one that was asked for');
+      is(await w.api.waReviewName({}, null), '', 'no spec at all → nothing, and the caller refuses to send');
+    }
+
     // pruning
     {
       const s = store();
@@ -310,7 +354,12 @@ console.log('5. the runner');
       const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
       const src = fs.readFileSync(path.join(__dirname, '..', 'worker', 'src', 'index.js'), 'utf8');
       is(/crons = \["0 3 \* \* \*", "0 4 \* \* \*", "0 6-17 \* \* 1-6"\]/.test(toml), true, 'the Mon–Sat line runs to 17Z: 19:00 at the salon is 16Z in summer and 17Z in winter');
-      is(/^WA_REVIEW = '\{"templateName":"pyz_google_yorum_istegi","languageCode":"tr","body":\[\]\}'$/m.test(toml), true, 'WA_REVIEW names the approved template pyz_google_yorum_istegi, tr, no variables');
+      // 9 Ekim 2026 — the review request moved to google_yorum_istegi, whose
+      // button opens Google's star box itself. pyz_google_yorum_istegi asked
+      // for a review and gave the customer nothing at all to tap. Both are
+      // named: the new one the moment Meta approves it, the old one until
+      // then, and no evening where the asks fail because a name changed early.
+      is(/^WA_REVIEW = '\{"templateName":"google_yorum_istegi","fallbackName":"pyz_google_yorum_istegi","languageCode":"tr","body":\[\]\}'$/m.test(toml), true, 'WA_REVIEW names the new template and the old one to fall back to');
       is(/if \(h >= 9 && h <= 18\) await runGapFiller\(env, when\);\s*const ra = raConfig\(\);\s*if \(ra && h === ra\.sendHourLocal\) await runReviewAsk\(env, when\);/.test(src), true, 'the scheduled handler: after the gap-filler, the review ask at reviewAsk.sendHourLocal on the salon clock');
       is(/route === '\/wa\/review-preview'/.test(src) && /route === '\/wa\/review-run'/.test(src), true, 'the preview and run routes exist');
       is(/optout = \(await fbRead\(env, GF \+ '\/optout'\)\) \|\| \{\};\s*\/\/ the gap-filler's list/.test(src), true, "runReviewAsk reads the gap-filler's opt-out map, not one of its own");

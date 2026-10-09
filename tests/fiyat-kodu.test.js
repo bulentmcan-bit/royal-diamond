@@ -171,6 +171,26 @@ console.log('11. a price typed by hand is never overwritten — and the system w
      'the box now says when the figure is wanted instead: at checkout');
 }
 
+console.log('11b. two treatments in one go');
+{
+  // "If we have two treatments done, for example #2 and #5, how can we add
+  //  them both up together?" — 9 Ekim 2026. You already can: write both.
+  is(P('2 5').amount, 3400, '2 5 → Dolgu ₺1.700 + Pedikür ₺1.700 = ₺3.400');
+  is(P('2 5').name, 'Dolgu + Pedikür', '…and the read-back names BOTH, so a wrong code is visible before it is saved');
+  is(P('2+5').amount, 3400, 'a plus between them works too');
+  is(P('2,5').amount, 3400, '…and a comma, because that is what a hurried hand types');
+  is(P('2 5 D3').name, 'Dolgu + Pedikür + D3', 'two treatments and a design: all three read back');
+  is(P('2 5 D3').amount, 4150, '…₺1.700 + ₺1.700 + ₺750');
+  is(P('1 7 D1').amount, 3200, 'a full set, colour on the feet and a small design = ₺3.200');
+  is(P('2 5 1').amount, 5300, 'three treatments add up as readily as two');
+  // The trap this read-back exists to catch: a bare number over 100 is LIRA,
+  // and lira are ADDED, not substituted. "5 1500" is not "pedicure for 1500".
+  is(P('5 1500').amount, 3200, '5 1500 → ₺1.700 + ₺1.500 = ₺3.200, because a figure is money and money is added');
+  is(P('5 1500').name, 'Pedikür + ₺1.500', '…and it SAYS so, so the girl sees it rather than taking ₺3.200 off a customer who owed ₺1.500');
+  is(P('Kirpik 1800').name, 'Kirpik', 'one priced thing on its own does not repeat its own figure');
+  is(P('Kirpik 1800').amount, 1800, '…and the old free-typed way is untouched');
+}
+
 console.log('12. the design box is D1–D6, and still sets the time');
 {
   is(/<option value="D3" data-min="30" data-p="750">/.test(html), true, 'D3 — ₺750, +30 dk');

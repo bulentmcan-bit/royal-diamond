@@ -147,7 +147,7 @@ WA_GAPFILL = '{"templateName":"bosluk_teklifi","languageCode":"tr","body":[]}'
 # customers marked 😊 Memnun at checkout. Same contract as WA_GAPFILL:
 # emptied, a LIVE run (crown-config reviewAsk.dryRun=false) sends nothing
 # and records TEMPLATES_NOT_CONFIGURED — a dry run needs no template.
-WA_REVIEW = '{"templateName":"pyz_google_yorum_istegi","languageCode":"tr","body":[]}'
+WA_REVIEW = '{"templateName":"google_yorum_istegi","fallbackName":"pyz_google_yorum_istegi","languageCode":"tr","body":[]}'
 
 # EVERY REPLY ONTO RECEPTION'S OWN TELEPHONE.
 # The salon has two numbers: reception works from 0548 893 33 33 (ordinary

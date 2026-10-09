@@ -17246,7 +17246,15 @@ function rdParseCode(text, amtTyped){
     });
   }
   out.amount = out.parts.reduce(function(a,x){ return a + x.amount; }, 0);
-  var names = out.parts.filter(function(x){ return x.label; }).map(function(x){ return x.label; });
+  /* Her parçayı ADIYLA oku. İki kod toplandığında ("2 5" = Dolgu + Pedikür)
+     ikisi de görünür. Araya elle yazılan lira girdiyse ("5 1500") o da
+     ayrıca yazılır — çünkü sistem onu EKLER, ve "Pedikür = ₺3.200" diye
+     okunan bir satır kızın gözünden kaçar, "Pedikür + ₺1.500 = ₺3.200"
+     kaçmaz. Tek parça varsa ("Kirpik 1800") rakamı tekrar etmeye gerek yok. */
+  var _multi = out.parts.length > 1;
+  var names = out.parts.map(function(x){
+    return x.label ? x.label : (_multi ? ('\u20BA' + x.amount.toLocaleString('tr-TR')) : null);
+  }).filter(function(x){ return !!x; });
   if(out.free.length) names.unshift(out.free.join(' '));
   out.name = names.join(' + ');
   if(out.used && !out.free.length) out.code = raw.toUpperCase();
