@@ -22278,6 +22278,14 @@ function rdWrWindow(r, now){
     // da kutu boşsa) yeni seçime göre yenilenir.
     if(cur && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
     var cd = document.getElementById('a-code');
+    /* KOD elle yazılmışsa SÖZ ONUNDUR. Aksi hâlde kutuda "9" yazarken
+       yanındaki lira seçim kutularından hesaplanır ve ekrandaki iki rakam
+       birbirini tutmaz — tezgâhta bunu kimse fark etmez, kasaya yanlış
+       tutar girer. */
+    if(cd && cd.value.trim() && cd.value !== cd.dataset.rdAuto){
+      try{ rdApptCodeTyped(); }catch(e){}
+      return;
+    }
     var k = rdApptPickedSum();
     if(!k.total){
       pr.value = ''; delete pr.dataset.rdAuto;
@@ -22332,7 +22340,14 @@ function rdWrWindow(r, now){
     var cd = document.getElementById('a-code'), pr = document.getElementById('a-price'),
         hint = document.getElementById('a-price-hint');
     if(!cd || !pr) return;
-    delete cd.dataset.rdAuto;                       // elle yazıldı: artık sistemin değil
+    /* ⚠ 9 Ekim 2026 — burada koşulsuz bir `delete` vardı ve kutuya DOKUNMAK
+       bile yeter oluyordu: bu fonksiyon blur/keyup'ta da çalışıyor, sistemin
+       kendi yazdığı "2 5" bir anda "elle yazılmış" sayılıyor, sonra hizmet
+       D3'e çevrilse bile kod kutusu "2 5" diye donup kalıyordu — ekranda
+       seçili olan iş ile kod kutusu birbirini tutmuyordu.
+       Elle yazılmış saymanın tek doğru ölçüsü: yazan, sistemin bıraktığından
+       FARKLI olsun. */
+    if(cd.value !== cd.dataset.rdAuto) delete cd.dataset.rdAuto;
     var raw = String(cd.value||'').trim();
     if(!raw){
       if(pr.dataset.rdAuto != null && pr.value === pr.dataset.rdAuto){ pr.value=''; delete pr.dataset.rdAuto; }
