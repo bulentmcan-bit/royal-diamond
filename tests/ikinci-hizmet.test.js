@@ -96,6 +96,22 @@ console.log('3b. the three choices are added up IN THE PRICE BOX');
   is(/Randevuda boş kalır — fiyat çıkışta yazılır/.test(html), false, "and the morning's \"the box stays empty\" line is no longer shown to anyone");
 }
 
+
+console.log('3c. Tasarım: altı kutucuk, tek dokunuş');
+{
+  // "Instead of having a dropdown on Tasarım, why don't we just have D1, D2,
+  //  up to D6 in boxes so that we can tick any one of those?"
+  // The <select> is still there, hidden, because the duration maths, the
+  // price total and the saved record all read it — none of that changed.
+  // The boxes only write to it and fire 'change'.
+  is(/id="a-addon-chips"/.test(html), true, 'the six designs are boxes on the form');
+  is(/<select class="fctrl" id="a-addon" style="display:none;">/.test(html), true, '…and the old dropdown is hidden, not deleted: other code still reads it');
+  is(/function rdAddonChips\(\)/.test(html) && /sel\.dispatchEvent\(new Event\('change'\)\)/.test(html), true, 'a tap sets the hidden value and fires the same change everything already listens for');
+  is(/sel\.value = \(sel\.value === b\.dataset\.v && b\.dataset\.v !== '0'\) \? '0' : b\.dataset\.v;/.test(html), true, 'tapping the chosen one again clears it — a wrong tap costs one tap to undo');
+  is(/b\.innerHTML = '<b>' \+ code \+ '<\/b><span>'/.test(html), true, '…and each box shows its price and the minutes it adds');
+  is(/box\.innerHTML = '';[\s\S]{0,200}sel\.options/.test(html), true, 'the boxes are built FROM the dropdown, so the two can never disagree');
+}
+
 console.log('4. the price read-back is bound for real');
 {
   // It carried oninput="rdApptPriceEcho()" as an attribute and on the live

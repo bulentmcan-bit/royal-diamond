@@ -2918,6 +2918,19 @@
   },4500));
   </script>
 <style>
+/* Tasarım kutucukları — tek dokunuş, altısı birden görünür */
+.rd-chips{display:flex;flex-wrap:wrap;gap:7px}
+.rd-chip{appearance:none;cursor:pointer;border:1.5px solid var(--line,#ddd);background:#fff;
+  border-radius:11px;padding:7px 11px;min-width:62px;text-align:center;font:inherit;line-height:1.15;
+  color:inherit;transition:border-color .12s,background .12s,box-shadow .12s}
+.rd-chip b{display:block;font-size:.95rem;font-weight:800}
+.rd-chip span{display:block;font-size:.68rem;color:var(--muted,#8e8782);margin-top:1px}
+.rd-chip:hover{border-color:var(--gold,#c99a4e)}
+.rd-chip[aria-pressed="true"]{border-color:var(--gold,#c99a4e);background:rgba(212,169,106,.16);
+  box-shadow:0 0 0 2px rgba(212,169,106,.22)}
+.rd-chip[aria-pressed="true"] span{color:var(--gold,#c99a4e)}
+@media (max-width:420px){.rd-chip{min-width:56px;padding:6px 8px}}
+
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
   --coral: #FF6B6B;
@@ -5513,7 +5526,16 @@ p, span, div, label, h1, h2, h3, h4 {
     </div>
     <div class="form-row fr2">
       <div class="fg"><label class="flabel">✨ Tasarım (ek hizmet)</label>
-        <select class="fctrl" id="a-addon">
+        <!-- 9 Ekim 2026 — "instead of having a dropdown on Tasarım, why don't
+             we just have D1, D2, up to D6 in boxes so that we can tick any
+             one of those?" Doğrusu bu: bir tasarım seçmek iki dokunuş değil
+             bir dokunuş olmalı, ve altı seçeneğin altısı da aynı anda
+             görünmeli — kız listeyi açıp aramasın.
+             Aşağıdaki <select> DURUYOR ama gizli: sayfanın başka yerlerinde
+             (süre hesabı, fiyat toplamı, kayıt) onu okuyan kod var ve hiçbiri
+             değişmedi. Kutular yalnızca onun değerini yazıp 'change' atar. -->
+        <div id="a-addon-chips" class="rd-chips" role="group" aria-label="Tasarım"></div>
+        <select class="fctrl" id="a-addon" style="display:none;">
           <option value="0" data-min="0">Yok</option>
           <option value="D1" data-min="15" data-p="300">D1 · Tasarım — ₺300  (+15 dk)</option>
           <option value="D2" data-min="30" data-p="600">D2 · Tasarım — ₺600  (+30 dk)</option>
@@ -5534,10 +5556,10 @@ p, span, div, label, h1, h2, h3, h4 {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div><label class="flabel" id="flabel-a-code">Kod</label>
             <input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-code"
-                   placeholder="örn. 2 5 D2" oninput="rdApptCodeTyped()"></div>
+                   placeholder="" oninput="rdApptCodeTyped()"></div>
           <div><label class="flabel" id="flabel-a-price">Fiyat (₺)</label>
             <input class="fctrl" type="text" inputmode="decimal" autocomplete="off" id="a-price"
-                   placeholder="₺" oninput="rdApptPriceEcho()"></div>
+                   placeholder="" oninput="rdApptPriceEcho()"></div>
         </div>
         <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
@@ -6459,6 +6481,7 @@ function openModal(id){
     // pointing at the old appointment the next time this modal opens.)
     try{ apptSvcSet(''); }catch(e){ const svc=document.getElementById('a-service'); if(svc) svc.value=''; }
     try{ const s2=document.getElementById('a-service2'); if(s2) s2.value=''; rdSvc2Sync(); }catch(e){}
+    try{ const ad0=document.getElementById('a-addon'); if(ad0) ad0.value='0'; rdAddonChips(); }catch(e){}
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
     const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
@@ -6947,6 +6970,44 @@ try{
   if(_all) _all.addEventListener('change', function(){ setTimeout(function(){ try{ rdSvc2Sync(); }catch(e){} }, 30); });
 }catch(e){ console.warn('[2.hizmet]', e); }
 
+/* ✨ Tasarım kutucukları. Gizli <select id="a-addon"> hâlâ tek doğru kaynak:
+   kutucuklar onu okur, ona yazar ve 'change' atar. Böylece süre hesabı,
+   fiyat toplamı ve kayıt yolu hiç değişmeden çalışmaya devam eder.        */
+function rdAddonChips(){
+  var sel = document.getElementById('a-addon'), box = document.getElementById('a-addon-chips');
+  if(!sel || !box) return;
+  if(!box.dataset.built){
+    box.innerHTML = '';
+    Array.prototype.slice.call(sel.options).forEach(function(o){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'rd-chip'; b.dataset.v = o.value;
+      var code = (o.value && o.value !== '0') ? o.value : 'Yok';
+      var p = parseInt(o.getAttribute('data-p')||'0', 10);
+      var m = parseInt(o.getAttribute('data-min')||'0', 10);
+      b.innerHTML = '<b>' + code + '</b><span>' + (p ? ('₺' + p.toLocaleString('tr-TR') + ' · +' + m + 'dk') : '—') + '</span>';
+      b.addEventListener('click', function(){
+        // Seçiliye tekrar basmak seçimi kaldırır — yanlış dokunuş bir
+        // dokunuşla geri alınır, listeyi açmaya gerek kalmaz.
+        sel.value = (sel.value === b.dataset.v && b.dataset.v !== '0') ? '0' : b.dataset.v;
+        sel.dispatchEvent(new Event('change'));
+        rdAddonChipsPaint();
+      });
+      box.appendChild(b);
+    });
+    box.dataset.built = '1';
+  }
+  rdAddonChipsPaint();
+}
+function rdAddonChipsPaint(){
+  var sel = document.getElementById('a-addon'), box = document.getElementById('a-addon-chips');
+  if(!sel || !box) return;
+  var cur = String(sel.value || '0');
+  Array.prototype.slice.call(box.querySelectorAll('.rd-chip')).forEach(function(b){
+    b.setAttribute('aria-pressed', String(b.dataset.v === cur));
+  });
+}
+try{ document.addEventListener('DOMContentLoaded', rdAddonChips); }catch(e){}
+
 // Every place the money for an appointment can still be found, best first.
 // An appointment written before the price stuck properly often has price 0 on
 // the record while the amount is sitting in Daily Takings — so the Fiyat box
@@ -6998,6 +7059,7 @@ function dashEditAppt(id){
     // Carry the appointment's own name in as an option so it shows, and so it
     // survives the round trip untouched.
     rdApptServiceSet(a.service);      // "Dolgu + Pedikür" → iki kutuya ayrılır
+    try{ rdAddonChips(); }catch(e){}
     const dt = document.getElementById('a-dt');
     if(dt) dt.value = dtLocal(new Date(a.datetime));
     const dur = document.getElementById('a-dur');
@@ -22285,7 +22347,7 @@ function rdWrWindow(r, now){
                               + ' — farklıysa Fiyat kutusuna yazın.';
   };
   window.rdApptPriceGuide = function(){
-    return 'Kod kutusuna duvardaki numaraları yazın (1-10, D1-D6) — lira yanına düşer.';
+    return 'Kod kutusuna duvardaki numaraları yazın — örnek: 2 5 D2 · lira yanına düşer.';
   };
 
   function wire(){
@@ -22323,7 +22385,7 @@ function rdWrWindow(r, now){
   const _origOpen = window.openModal;
   window.openModal = function(id){
     const r = _origOpen.apply(this, arguments);
-    if(id === 'mAppt') setTimeout(function(){ wire(); rdAutoDur(); }, 60);
+    if(id === 'mAppt') setTimeout(function(){ wire(); rdAutoDur(); try{ rdAddonChips(); }catch(e){} }, 60);
     return r;
   };
 

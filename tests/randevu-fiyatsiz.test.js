@@ -106,7 +106,7 @@ console.log('2. seçim geri alınınca rakam da geri gider');
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(box(dom), '', 'hizmet geri alındı → kutu boşalır');
-  is(/Kod kutusuna duvardaki numaraları yazın/.test(line(dom)), true, '…ve satır kod kutusunu işaret eder');
+  is(/Kod kutusuna duvardaki numaraları yazın — örnek: 2 5 D2/.test(line(dom)), true, '…ve satır kod kutusunu, örneğiyle birlikte gösterir');
 }
 
 console.log('3. elle yazılan rakam kutsaldır');
@@ -138,7 +138,12 @@ console.log('4. kaydedilen rakam');
 
 console.log('5. sayfanın kendisi');
 {
-  is(/id="a-code"[\s\S]{0,120}placeholder="örn\. 2 5 D2"/.test(html), true, 'KOD kutusunun soluk yazısı iki iş ve bir tasarım örneği veriyor');
+  // Kutunun İÇİNDEKİ soluk örnek, hatırlanmış bir kayıt sanıldı — "it
+  // remembers the old work we've done previously. That should not happen."
+  // Sanılmaz hâle getirmenin en kestirme yolu: kutunun içini boş bırakmak,
+  // örneği ALTTAKİ satırda vermek.
+  is(/id="a-code"[\s\S]{0,120}placeholder=""/.test(html), true, 'KOD kutusunun içi boş — dolu sanılacak soluk yazı yok');
+  is(/Kod kutusuna duvardaki numaraları yazın — örnek: 2 5 D2/.test(html), true, '…örnek kutunun ALTINDA veriliyor');
   is(/fiyat kutusuna ikisinin toplamı düşer/.test(html), true, '2. hizmet kutusunun altındaki yazı da aynı şeyi söylüyor');
   is(/pr\.value = String\(k\.total\);/.test(html), true, 'toplam KUTUYA yazılıyor');
   is(/if\(cur && cur !== mine\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true, '…ve elle yazılmışsa hiç dokunulmuyor');
