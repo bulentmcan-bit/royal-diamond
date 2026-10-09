@@ -236,9 +236,13 @@ console.log('14. the Fiyat box at checkout takes a code too');
   // This is where the money is actually entered: a technician finishes, you
   // open the booking and type the price. It was type="number", so "D3" could
   // not even be typed into it.
-  is(/id="a-price" placeholder="Kod veya ₺ — örn\. 2 5 D2"/.test(html), true, 'the box says a code is allowed, and shows two treatments plus a design');
-  is(/<input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price"/.test(html), true,
-     '…and it is a text box now, so the letter in D3 goes in');
+  // 9 Ekim, akşam: the two jobs were split. A KOD box for the wall-list
+  // numbers, a FİYAT box for lira. One box doing both is what nobody could
+  // read at a glance.
+  is(/id="a-code"[\s\S]{0,120}placeholder="örn\. 2 5 D2"/.test(html), true, 'there is a KOD box, and it shows two treatments plus a design as its example');
+  is(/id="a-price"[\s\S]{0,80}placeholder="₺"/.test(html), true, '…and the FİYAT box beside it is for lira');
+  is(/<input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-code"/.test(html), true,
+     '…and the KOD box is a text box, so the letter in D3 goes in');
   is(html.includes('type="number" id="a-price"'), false, '…the old number box is gone');
 
   // Every place that READS it must go through the parser. A half-typed "2 D3"

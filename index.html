@@ -5525,7 +5525,20 @@ p, span, div, label, h1, h2, h3, h4 {
       <div class="fg"></div>
     </div>
     <div class="form-row fr2">
-      <div class="fg"><label class="flabel" id="flabel-a-price">Fiyat (₺)</label><input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-price" placeholder="Kod veya ₺ — örn. 2 5 D2" oninput="rdApptPriceEcho()">
+      <!-- 9 Ekim 2026 — KOD ve FİYAT ayrı kutular.
+           Tek kutu iki iş yapıyordu: hem duvardaki listenin numarası, hem
+           para. Kız hangisini yazdığını kutudan anlayamıyordu. Artık KOD'a
+           "2 5 D2" yazılır, lira kendiliğinden yandaki kutuya düşer; FİYAT'a
+           elle rakam yazıldığı anda da kod kutusu susar ve ona karışmaz. -->
+      <div class="fg">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label class="flabel" id="flabel-a-code">Kod</label>
+            <input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-code"
+                   placeholder="örn. 2 5 D2" oninput="rdApptCodeTyped()"></div>
+          <div><label class="flabel" id="flabel-a-price">Fiyat (₺)</label>
+            <input class="fctrl" type="text" inputmode="decimal" autocomplete="off" id="a-price"
+                   placeholder="₺" oninput="rdApptPriceEcho()"></div>
+        </div>
         <div id="a-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div></div>
       <div class="fg"><label class="flabel" id="flabel-a-staff">Personel</label>
         <select class="fctrl" id="a-staff"><!-- populated from Daily Takings operators --></select></div>
@@ -6449,6 +6462,7 @@ function openModal(id){
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
     const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
+    const cd0=document.getElementById('a-code'); if(cd0){ cd0.value=''; delete cd0.dataset.rdAuto; }
     // Fiyat randevuda yazılmaz — kutunun altındaki satır bunu söyler.
     const prh=document.getElementById('a-price-hint');
     if(prh) prh.textContent = (typeof rdApptPriceGuide==='function' ? rdApptPriceGuide() : '');
@@ -22201,14 +22215,22 @@ function rdWrWindow(r, now){
     // ELLE yazılmışsa karışma. Kutudaki rakam sistemin kendi yazdığıysa (ya
     // da kutu boşsa) yeni seçime göre yenilenir.
     if(cur && cur !== mine){ try{ rdApptPriceEcho(); }catch(e){} return; }
+    var cd = document.getElementById('a-code');
     var k = rdApptPickedSum();
     if(!k.total){
       pr.value = ''; delete pr.dataset.rdAuto;
+      if(cd && cd.dataset.rdAuto != null && cd.value === cd.dataset.rdAuto){ cd.value=''; delete cd.dataset.rdAuto; }
       if(hint) hint.textContent = rdApptPriceGuide();
       return;
     }
     pr.value = String(k.total);
     pr.dataset.rdAuto = String(k.total);
+    // Kod kutusu da dolar — kız ne yazması gerektiğini görsün, ve isterse
+    // üzerine yazsın. Elle yazdıysa dokunulmaz.
+    if(cd && (!cd.value.trim() || cd.value === cd.dataset.rdAuto)){
+      cd.value = k.codes.join(' ');
+      cd.dataset.rdAuto = cd.value;
+    }
     if(hint) hint.textContent = k.parts.join(' + ') + ' = \u20BA' + k.total.toLocaleString('tr-TR')
                               + ' — farklıysa üzerine yazın.';
   };
@@ -22217,28 +22239,53 @@ function rdWrWindow(r, now){
      all three?" Üçünü toplayan tek yer burası; hem kutuya yazılan rakam hem
      altındaki okuma satırı bunu kullanır, ki ikisi asla ayrı şey söylemesin. */
   window.rdApptPickedSum = function(){
-    var out = { parts: [], total: 0 };
-    var add = function(label, amount){ if(label){ out.parts.push(label); } out.total += (amount||0); };
+    var out = { parts: [], codes: [], total: 0 };
+    var add = function(label, amount, code){
+      if(label){ out.parts.push(label); }
+      if(code != null && code !== '') out.codes.push(String(code));
+      out.total += (amount||0);
+    };
     var svcAmount = function(v){
-      for(var k in RD_SVC_CODES){ if(RD_SVC_CODES[k].v === v) return RD_SVC_CODES[k]; }
+      for(var k in RD_SVC_CODES){
+        if(RD_SVC_CODES[k].v === v) return { n:RD_SVC_CODES[k].n, p:RD_SVC_CODES[k].p, k:k };
+      }
       return null;
     };
     ['a-service','a-service2'].forEach(function(id){
       var el = document.getElementById(id);
       if(!el || !el.value) return;
       var hit = svcAmount(el.value);
-      if(hit) add(hit.n, hit.p); else add(el.value, 0);   // listede olmayan eski ad: adı yazılır, parası bilinmez
+      if(hit) add(hit.n, hit.p, hit.k); else add(el.value, 0);   // listede olmayan eski ad: adı yazılır, parası bilinmez
     });
     var ad = document.getElementById('a-addon');
     if(ad && ad.value){
       var o = ad.options[ad.selectedIndex];
       var dp = o ? parseInt(o.getAttribute('data-p')||'0', 10) : 0;
-      if(dp) add(ad.value, dp);
+      if(dp) add(ad.value, dp, ad.value);
     }
     return out;
   };
+  /* KOD kutusuna yazıldı: lira yandaki kutuya düşsün. */
+  window.rdApptCodeTyped = function(){
+    var cd = document.getElementById('a-code'), pr = document.getElementById('a-price'),
+        hint = document.getElementById('a-price-hint');
+    if(!cd || !pr) return;
+    delete cd.dataset.rdAuto;                       // elle yazıldı: artık sistemin değil
+    var raw = String(cd.value||'').trim();
+    if(!raw){
+      if(pr.dataset.rdAuto != null && pr.value === pr.dataset.rdAuto){ pr.value=''; delete pr.dataset.rdAuto; }
+      if(hint) hint.textContent = rdApptPriceGuide();
+      return;
+    }
+    var pp = rdParseCode(raw, '');
+    if(!pp.amount){ if(hint) hint.textContent = '\u26A0 Tanınmayan kod'; return; }
+    pr.value = String(pp.amount);
+    pr.dataset.rdAuto = String(pp.amount);
+    if(hint) hint.textContent = (pp.name ? pp.name + ' = ' : '') + '\u20BA' + pp.amount.toLocaleString('tr-TR')
+                              + ' — farklıysa Fiyat kutusuna yazın.';
+  };
   window.rdApptPriceGuide = function(){
-    return 'Fiyat listesinden gelir — farklıysa üzerine yazın (kod da yazabilirsiniz: 1-10, D1-D6).';
+    return 'Kod kutusuna duvardaki numaraları yazın (1-10, D1-D6) — lira yanına düşer.';
   };
 
   function wire(){
@@ -22257,6 +22304,13 @@ function rdWrWindow(r, now){
        anything that fills the box without keystrokes. */
     const sv2 = document.getElementById('a-service2');
     if(sv2 && !sv2._rdWired){ sv2._rdWired = true; sv2.addEventListener('change', rdApptAutoPrice); }
+    const cd = document.getElementById('a-code');
+    if(cd && !cd._rdEchoWired){
+      cd._rdEchoWired = true;
+      ['input','change','blur','keyup','paste'].forEach(function(ev){
+        cd.addEventListener(ev, function(){ setTimeout(function(){ try{ rdApptCodeTyped(); }catch(e){} }, 0); });
+      });
+    }
     const pr = document.getElementById('a-price');
     if(pr && !pr._rdEchoWired){
       pr._rdEchoWired = true;

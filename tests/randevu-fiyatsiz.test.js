@@ -54,6 +54,7 @@ function makeDom(o) {
     'a-addon':    { value: o.d || '', selectedIndex: 0,
                     options: [{ getAttribute: k => (k === 'data-p' ? String(o.dp || 0) : null) }] },
     'a-price':    { value: o.price == null ? '' : String(o.price), dataset: o.dataset || {} },
+    'a-code':     { value: o.code || '', dataset: o.codeDataset || {} },
     'a-price-hint': { textContent: '' }
   };
   return { el, document: { getElementById: id => el[id] || null } };
@@ -105,7 +106,7 @@ console.log('2. seçim geri alınınca rakam da geri gider');
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(box(dom), '', 'hizmet geri alındı → kutu boşalır');
-  is(/Fiyat listesinden gelir/.test(line(dom)), true, '…ve satır rakamın nereden geleceğini söyler');
+  is(/Kod kutusuna duvardaki numaraları yazın/.test(line(dom)), true, '…ve satır kod kutusunu işaret eder');
 }
 
 console.log('3. elle yazılan rakam kutsaldır');
@@ -132,15 +133,55 @@ console.log('4. kaydedilen rakam');
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(ctx.rdApptPriceValue(), 3400, 'kutudaki ₺3.400 kayda da ₺3.400 olarak gider');
-  is(ctx.rdApptPickedSum(), { parts: ['Dolgu', 'Pedikür'], total: 3400 }, 'toplam tek yerden hesaplanıyor — kutu ve satır aynı sayıyı söyler');
+  is(ctx.rdApptPickedSum(), { parts: ['Dolgu', 'Pedikür'], codes: ['2','5'], total: 3400 }, 'toplam tek yerden hesaplanıyor — kutu, kod ve satır aynı şeyi söyler');
 }
 
 console.log('5. sayfanın kendisi');
 {
-  is(/placeholder="Kod veya ₺ — örn\. 2 5 D2"/.test(html), true, 'kutunun soluk yazısı iki iş ve bir tasarım örneği veriyor');
+  is(/id="a-code"[\s\S]{0,120}placeholder="örn\. 2 5 D2"/.test(html), true, 'KOD kutusunun soluk yazısı iki iş ve bir tasarım örneği veriyor');
   is(/fiyat kutusuna ikisinin toplamı düşer/.test(html), true, '2. hizmet kutusunun altındaki yazı da aynı şeyi söylüyor');
   is(/pr\.value = String\(k\.total\);/.test(html), true, 'toplam KUTUYA yazılıyor');
   is(/if\(cur && cur !== mine\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true, '…ve elle yazılmışsa hiç dokunulmuyor');
+}
+
+
+console.log('6. KOD kutusu — "put the code in, and it does the price automatically"');
+{
+  const dom = makeDom({ s1: 'Dolgu (Infill)', s2: 'Pedikür', d: 'D2', dp: 600 });
+  const ctx = load(dom);
+  ctx.rdApptAutoPrice();
+  is(dom.el['a-code'].value, '2 5 D2', 'seçimler KOD kutusunu da doldurur — kız ne yazacağını görür, ezberlemez');
+  is(box(dom), '4000', '…ve lira yanındaki kutuya düşer');
+}
+{
+  // Duvardaki listeden okuyup elle yazmak: asıl istenen bu.
+  const dom = makeDom({ code: '3 7' });
+  const ctx = load(dom);
+  ctx.rdApptCodeTyped();
+  is(box(dom), '2200', "KOD'a 3 7 yazıldı → ₺1.200 + ₺1.000 = ₺2.200 kendiliğinden");
+  is(/Klasik Manikür \+ Renkli Jel — Ayak = ₺2\.200/.test(line(dom)), true, '…ve ikisini adıyla okur');
+}
+{
+  const dom = makeDom({ code: '99' });
+  const ctx = load(dom);
+  ctx.rdApptCodeTyped();
+  is(line(dom), '\u26A0 Tanınmayan kod', 'olmayan bir kod sessizce ₺0 yazmaz, UYARIR');
+  is(box(dom), '', '…ve fiyat kutusuna hiçbir şey koymaz');
+}
+{
+  // Elle girilen lira her zaman kazanır — kasaya yanlış rakam girmesin.
+  const dom = makeDom({ code: '2', price: '1500' });
+  const ctx = load(dom);
+  ctx.rdApptPriceEcho();
+  is(box(dom), '1500', 'FİYAT elle yazıldıysa kod onu ezmez');
+  is(ctx.rdApptPriceValue(), 1500, '…ve kaydedilen de ₺1.500');
+}
+{
+  const dom = makeDom({ code: '2 5', price: '3400', dataset: { rdAuto: '3400' } });
+  const ctx = load(dom);
+  dom.el['a-code'].value = '';
+  ctx.rdApptCodeTyped();
+  is(box(dom), '', 'kod silinince sistemin yazdığı lira da gider');
 }
 
 console.log('');
