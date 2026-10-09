@@ -58,7 +58,9 @@ console.log('2. it says what being off COSTS, not just that it is off');
 
 console.log('3. it is painted when it needs to be');
 {
-  is(/if\(page==="settings"\)\{ try\{ rdShowWhoAmI\(\); \}catch\(e\)\{\} try\{ rdWaKeyCard\(\); \}catch\(e\)\{\} \}/.test(html), true,
+  // Each card on the Ayarlar page adds its own try/catch here, so this pins
+  // the WhatsApp key card's own line rather than the whole list.
+  is(/if\(page==="settings"\)\{[\s\S]{0,200}?try\{ rdWaKeyCard\(\); \}catch\(e\)\{\}/.test(html), true,
      'opening Ayarlar draws it');
   // And again after the key is entered, or the card would still say KAPALI
   // on the very screen that just turned it on.

@@ -4437,6 +4437,24 @@ p, span, div, label, h1, h2, h3, h4 {
         <button class="btn" onclick="rdWaSetup()" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.45);color:var(--gold);font-weight:800;">🔑 Anahtarı gir / değiştir (PIN)</button>
       </div>
 
+      <!-- ☁️ THE NIGHTLY BACKUP, 9 Ekim 2026.
+           The 22:00 download below it never ran: it needed the app open on a
+           device at 22:00, and a browser will not save a file nobody clicked
+           for. It last fired by itself on 16 Temmuz, which is why 8 Ekim's
+           deletions had to be rebuilt from a 24 Ağustos file by hand.
+           The Worker takes it now, before the salon opens, awake or not, and
+           keeps it at Cloudflare — not in the database it is protecting.
+           This card exists so the answer to "is my data safe tonight?" is on
+           a screen, not an assumption. -->
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">☁️ Gece Yedeği</div>
+        <div id="yd-state" style="font-size:0.9rem;font-weight:800;margin:10px 0 6px;">…</div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:0 0 12px;" id="yd-help">
+          Her sabah salon açılmadan önce, bilgisayar kapalı olsa bile alınır.</p>
+        <div id="yd-list" style="margin-bottom:12px;"></div>
+        <button class="btn" onclick="ydNow()" id="yd-now-btn" style="background:rgba(212,169,106,0.16);border:1px solid rgba(212,169,106,0.45);color:var(--gold);font-weight:800;">💾 Şimdi yedekle</button>
+      </div>
+
       <div class="card" style="max-width:560px;">
         <div class="card-title">📂 Yedekten Geri Yükle</div>
         <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 14px;">
@@ -6374,7 +6392,7 @@ function _gotoActual(page,el){
   if(page==="calendar")renderCalendar();
   if(page==="monthly"){mInitCosts();mEnsureSeed();renderMonthly();fetchFX();try{mRenderTechSlots();}catch(e){}try{mRenderStaleAppts();}catch(e){}}
   if(page==="salary"){ fetchFX(); renderSalaryPage(); }
-  if(page==="settings"){ try{ rdShowWhoAmI(); }catch(e){} try{ rdWaKeyCard(); }catch(e){} }
+  if(page==="settings"){ try{ rdShowWhoAmI(); }catch(e){} try{ rdWaKeyCard(); }catch(e){} try{ ydRefresh(); }catch(e){} }
   if(page==="deductions"){ renderDeductionsPage(); }
   if(page==="advance"){ renderAdvancePage(); }
   if(page==="gapreport"){ renderGapReport(); }
@@ -17740,6 +17758,144 @@ function autoBackupCheck(){
 }
 setInterval(autoBackupCheck, 60*1000);      // check every minute (fires at 22:00 if app is open)
 setTimeout(autoBackupCheck, 15000);         // catch-up check shortly after opening the app
+
+// ══════════════════════════════════════════════
+//  ☁️ GECE YEDEĞİ — the Worker's nightly snapshot
+//
+//  The page does not take this backup; the Worker does, every morning before
+//  the salon opens, whether or not a single device is switched on. This end
+//  only SHOWS it, and that is the point: a backup nobody can see the state of
+//  is a backup nobody notices has stopped. The one above stopped on 16 Temmuz
+//  and was missed for three months.
+//
+//  Downloading a day gives the ordinary .json the "📂 Yedekten Geri Yükle"
+//  button below already takes — so recovery is the path Bülent knows, not a
+//  new one written on the worst day.
+// ══════════════════════════════════════════════
+var _ydList = null, _ydBusy = false;
+
+function ydDayLabel(d){
+  try{
+    var p = String(d).split('-');
+    var MM = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+    return String(+p[2]) + ' ' + (MM[+p[1]-1]||'') + ' ' + p[0];
+  }catch(e){ return String(d); }
+}
+function ydAgeDays(day){
+  try{
+    var t = Date.UTC(+day.slice(0,4), +day.slice(5,7)-1, +day.slice(8,10));
+    var n = new Date();
+    var today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.round((today - t) / 86400000);
+  }catch(e){ return 999; }
+}
+
+function ydRender(){
+  var st = document.getElementById('yd-state');
+  var help = document.getElementById('yd-help');
+  var box = document.getElementById('yd-list');
+  if(!st || !box) return;
+
+  if(!rdWaOn()){
+    st.innerHTML = '<span style="color:var(--muted);">Bu cihazda WhatsApp anahtarı yok</span>';
+    if(help) help.textContent = 'Yedek her sabah yine alınıyor — durumunu görmek için bu cihaza anahtar girilmeli (yukarıdaki 🔑 düğmesi).';
+    box.innerHTML = '';
+    return;
+  }
+  if(_ydList === null){ st.textContent = 'Bakılıyor…'; box.innerHTML=''; return; }
+  if(_ydList.error){
+    st.innerHTML = '<span style="color:#e87a7a;">Yedek listesi okunamadı</span>';
+    if(help) help.textContent = String(_ydList.error);
+    box.innerHTML = '';
+    return;
+  }
+  var list = _ydList.list || [];
+  var son = null;
+  for(var i=0;i<list.length;i++){ if(list[i].ok){ son = list[i]; break; } }
+
+  if(!son){
+    st.innerHTML = '<span style="color:#e87a7a;">⚠ Hiç yedek alınmamış</span>';
+    if(help) help.textContent = 'Worker yayınlandıktan sonraki ilk sabah alınır. Beklemek istemiyorsanız aşağıdaki düğmeye basın.';
+  } else {
+    var age = ydAgeDays(son.day);
+    var col = age <= 1 ? '#7ec97e' : (age <= 3 ? 'var(--gold)' : '#e87a7a');
+    var when = age === 0 ? 'bugün' : (age === 1 ? 'dün' : age + ' gün önce');
+    st.innerHTML = '<span style="color:' + col + ';">' + (age <= 1 ? '✅' : '⚠') + ' Son yedek: ' +
+      ydDayLabel(son.day) + ' (' + when + ')</span>';
+    var bits = son.clients + ' müşteri · ' + son.appts + ' randevu · ' + Math.round((son.bytes||0)/1024) + ' KB';
+    if(help) help.innerHTML = bits + '<br>Her sabah salon açılmadan önce, bilgisayar kapalı olsa bile alınır.';
+    // ⚠ THE TRIPWIRE. The Worker compares each night's customer count with the
+    // night before. 702 → 655 is what happened on 8 Ekim and nobody saw it.
+    if(son.uyari){
+      st.innerHTML += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(232,122,122,0.12);' +
+        'border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;font-size:0.82rem;">⚠ ' + son.uyari + '</div>';
+    }
+  }
+
+  var h = '';
+  for(var j=0;j<list.length && j<20;j++){
+    var r = list[j];
+    if(!r.ok){
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);">' +
+           '<span style="font-size:0.82rem;color:#e87a7a;">' + ydDayLabel(r.day) + ' — ' + (r.hata||'alınamadı') + '</span></div>';
+      continue;
+    }
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);">' +
+         '<span style="font-size:0.84rem;"><b>' + ydDayLabel(r.day) + '</b>' +
+         '<span style="color:var(--muted);"> · ' + r.clients + ' müşteri</span></span>' +
+         '<button class="btn" style="padding:4px 10px;font-size:0.76rem;" onclick="ydDownload(\'' + r.day + '\')">⬇ İndir</button></div>';
+  }
+  box.innerHTML = h;
+}
+
+function ydRefresh(){
+  if(!rdWaOn()){ ydRender(); return; }
+  rdWaFetch('/wa/yedek-liste', {})
+    .then(function(j){ _ydList = j && j.ok ? j : { error: (j && j.error) || 'cevap yok' }; ydRender(); })
+    .catch(function(e){ _ydList = { error: String(e) }; ydRender(); });
+}
+
+// Download one day as the ordinary backup file the restore button takes.
+function ydDownload(day){
+  if(_ydBusy) return;
+  _ydBusy = true;
+  toast('⬇','Yedek getiriliyor', ydDayLabel(day) + ' indiriliyor…','g');
+  rdWaFetch('/wa/yedek-indir', { day: day })
+    .then(function(j){
+      _ydBusy = false;
+      if(!j || !j.ok){ toast('⚠️','Bulunamadı', (j && j.error) || 'Bu günün dosyası yok.','r'); return; }
+      var blob = new Blob([j.json], { type:'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'RoyalDiamond_Yedek_' + j.day + '.json';
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+      toast('✅','İndirildi', ydDayLabel(j.day) + ' — geri yüklemek için aşağıdaki 📂 düğmesini kullanın.','g');
+    })
+    .catch(function(e){ _ydBusy = false; toast('⚠️','Hata', String(e),'r'); });
+}
+
+function ydNow(){
+  if(_ydBusy) return;
+  if(!rdWaOn()){ toast('⚠️','Anahtar yok','Bu cihazda WhatsApp anahtarı yok.','r'); return; }
+  _ydBusy = true;
+  var btn = document.getElementById('yd-now-btn');
+  if(btn){ btn.disabled = true; btn.textContent = '💾 Alınıyor…'; }
+  rdWaFetch('/wa/yedek-simdi', {})
+    .then(function(j){
+      _ydBusy = false;
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Şimdi yedekle'; }
+      if(j && j.ok && !j.skipped) toast('✅','Yedek alındı', j.clients + ' müşteri, ' + j.appts + ' randevu kaydedildi.','g');
+      else if(j && j.ok) toast('✅','Zaten alınmış', 'Bugünün yedeği zaten duruyor.','g');
+      else toast('⚠️','Alınamadı', (j && j.error) || 'bilinmeyen hata','r');
+      ydRefresh();
+    })
+    .catch(function(e){
+      _ydBusy = false;
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Şimdi yedekle'; }
+      toast('⚠️','Hata', String(e),'r');
+    });
+}
 
 function rdnsImportData(input){
   input = (input && input.target) ? input.target : input;

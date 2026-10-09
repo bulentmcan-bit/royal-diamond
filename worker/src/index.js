@@ -979,6 +979,11 @@ async function handleWa(req, env, ctx, url) {
     return waJson(r);
   }
 
+  // ── the nightly backup: list, fetch one day, or take one now ─────────────
+  if (route === '/wa/yedek-liste') return waJson(await ydList(env));
+  if (route === '/wa/yedek-indir') return waJson(await ydGet(env, (b || {}).day));
+  if (route === '/wa/yedek-simdi') return waJson(await runBackup(env, new Date(), { force: true }));
+
   // ── POST /wa/gapfill-preview — what the gap-filler would do right now ─────
   // The plan only: reads the diary and the offers log, writes nothing, sends
   // nothing, whatever mode the config is in. The app panel's "Şimdi dene".
@@ -1084,6 +1089,16 @@ async function fbRead(env, path, params) {
   const r = await fetch(fbUrl(env, path, params));
   if (!r.ok) throw new Error('Firebase read ' + path + ' refused: ' + r.status);
   return r.json();
+}
+/* The same read, but the bytes as Firebase sent them. The customer book is
+   megabytes; a backup only has to COPY it, and JSON.parse + JSON.stringify
+   of the whole tree is work this Worker does not need to pay for (nor the
+   memory to hold the object graph). The counts come from a shallow read
+   instead, which is a few hundred bytes. */
+async function fbText(env, path) {
+  const r = await fetch(fbUrl(env, path));
+  if (!r.ok) throw new Error('Firebase read ' + path + ' refused: ' + r.status);
+  return r.text();
 }
 async function fbWrite(env, method, path, body) {
   const r = await fetch(fbUrl(env, path), {
@@ -1929,6 +1944,209 @@ function hookMatchOffer(offers, phone, atMs) {
   }
   return best;
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE NIGHTLY BACKUP.  9 Ekim 2026.
+
+   Why this exists. The salon HAD a nightly backup: at 22:00 the page built a
+   .json and downloaded it. It last ran by itself on 16 Temmuz. It cannot work
+   — it needs the app open on a device at 22:00 with somebody logged in, and
+   a browser will not download a file nobody clicked for. So on 8 Ekim, when
+   six deletions tombstoned 59 customers and 304 bookings, the newest file to
+   rebuild from was 24 Ağustos, by hand.
+
+   Firebase does not keep history. Once a device pushes a stripped tree the
+   old one is gone. A backup therefore has to be taken somewhere that is NOT
+   a laptop that might be shut, and kept somewhere that is NOT the database
+   it is protecting.
+
+   So: this Worker — which is awake whether or not anybody is — reads the
+   tree every morning before the salon opens and writes the snapshot into
+   Cloudflare KV, a different company's disk. Firebase keeps only a one-line
+   index per day, so every screen can show when the last backup was taken
+   without holding any key.
+
+   How long each one is kept, decided when it is written (KV expires it
+   itself — there is no pruning job to forget to run):
+       the 1st of a month → 400 days      a year of month-ends
+       a Sunday           →  60 days      two months of weeks
+       any other day      →  21 days      three weeks of days
+
+   THE TRIPWIRE. Each snapshot's customer count is compared with the one
+   before it. A drop of more than a tenth is written into the index as a
+   warning, and the dashboard turns that red. 702 → 655 would have shown up
+   the next morning instead of three weeks later.
+
+   The file it writes is EXACTLY the shape the existing "📂 Yedekten Geri
+   Yükle" expects, so recovery is the path Bülent already knows: download the
+   day, pick the file, PIN. No new restore code stands between him and his
+   customers at the moment he needs them most.                             */
+const YD     = 'rdns_yedek_v1';        // the index, in Firebase: one small line a day
+const YD_KV  = 'yedek:';               // the snapshots themselves, in Cloudflare KV
+const YD_MAX = 20 * 1024 * 1024;       // KV holds 25 MiB; refuse anything near it
+const YD_INDEX_KEPT = 180;             // index lines kept (the files expire on their own)
+/* How big a drop is worth shouting about. The customer book only ever grows
+   by itself — a name leaves it because somebody deleted it or because the
+   sync ate it. So the bar is LOW on purpose: more than three customers, or
+   more than a hundredth of the book if that is more. 8 Ekim was 702 → 655,
+   a drop of 6.7%, which a tenth would have let through in silence. A warning
+   after a deliberate tidy-up is not noise — it is the machine agreeing with
+   what he just did. */
+const YD_DROP_MIN = 3;
+const YD_DROP_PCT = 0.01;
+function ydDrop(onceki, simdi) {
+  if (!onceki) return 0;
+  const slack = Math.max(YD_DROP_MIN, onceki * YD_DROP_PCT);
+  const gone = onceki - simdi;
+  return gone > slack ? gone : 0;
+}
+
+/* The three the restore screen reads, under the names it expects. */
+const YD_KEYS = [
+  ['rdns_main_v1',          'rdns_main'],      // customers + the diary
+  ['rdns_takings_v3',       'rdns_takings'],   // the till and its history
+  ['rdns_monthly_costs_v3', 'rdns_costs']      // monthly costs
+];
+/* Everything else the salon would miss. The restore screen ignores what it
+   does not know, so these ride along harmlessly and are there if ever
+   needed. */
+const YD_EXTRA = ['rdns_cancel_log_v1', 'rdns_takings_editlog_v1', 'rdns_deductions_v1',
+                  'rdns_advances_v1', 'rdns_rebook_v1', 'rdns_r24_sent_log_v1',
+                  'rdns_fcl_log_v1', 'rdns_appt_droplog_v1'];
+
+function ydTtlDays(ymd) {
+  const d = Number(String(ymd).slice(8, 10));
+  if (d === 1) return 400;                                       // month-end picture
+  const dow = new Date(String(ymd) + 'T00:00:00Z').getUTCDay();
+  if (dow === 0) return 60;                                      // Sunday
+  return 21;
+}
+
+/* One snapshot. Returns what happened; never throws at the caller. */
+async function runBackup(env, now, opts) {
+  opts = opts || {};
+  const day = nicosiaYmd(now);
+  if (!env.FB_SECRET) return { ok: false, error: 'NO_FB_SECRET' };
+  if (!env.RD_WA) return { ok: false, error: 'NO_KV' };
+
+  // The early-morning cron fires twice across the seasons and both land
+  // before the salon opens. The second one must not write again.
+  if (!opts.force) {
+    let already = null;
+    try { already = await fbRead(env, YD + '/gunler/' + day); } catch { /* read again below */ }
+    if (already && already.ok) return { ok: true, skipped: 'bugün zaten alındı', day };
+  }
+
+  const file = {
+    version: 2,
+    exportedAt: new Date(now).toISOString(),
+    studioName: 'Royal Diamond Nail Studio',
+    kaynak: 'worker',            // so a glance at the file says where it came from
+    gun: day
+  };
+  let clients = 0, appts = 0;
+  const eksik = [];
+  for (const [path, field] of YD_KEYS) {
+    let txt = null;
+    try { txt = await fbText(env, path); } catch { eksik.push(path); continue; }
+    if (txt == null || txt === 'null' || txt === '') { eksik.push(path); continue; }
+    file[field] = txt;                        // the string the restore screen puts back
+  }
+  // How many customers and bookings — counted WITHOUT reading the tree again.
+  // ?shallow=true returns the keys and nothing under them: for an array that
+  // is {"0":true,"1":true,…}, so the key count IS the length.
+  try { const k = await fbRead(env, 'rdns_main_v1/clients', { shallow: 'true' }); clients = k ? Object.keys(k).length : 0; } catch { /* stays 0 → refused below */ }
+  try { const k = await fbRead(env, 'rdns_main_v1/appointments', { shallow: 'true' }); appts = k ? Object.keys(k).length : 0; } catch { /* count only */ }
+  const ekler = {};
+  for (const path of YD_EXTRA) {
+    try { const v = await fbRead(env, path); if (v != null) ekler[path] = v; } catch { /* optional, small */ }
+  }
+  file.ekler = ekler;
+  // file.rdns_* are already JSON STRINGS, so they stringify into the file as
+  // strings — exactly the shape rdnsImportData hands back to localStorage.
+
+  // ⛔ A snapshot with no customers in it is not a backup, it is the accident
+  // being written down. Record the failure so the dashboard goes red, and
+  // keep the good file from yesterday rather than adding a hollow one.
+  if (!clients) {
+    const bad = { ok: false, ts: Date.now(), day, clients: 0, appts, hata: 'müşteri listesi boş geldi — yedek alınmadı' };
+    try { await fbWrite(env, 'PUT', YD + '/gunler/' + day, bad); await fbWrite(env, 'PUT', YD + '/son', bad); } catch { /* nothing more to do */ }
+    console.log('[yedek] REFUSED ' + day + ': rdns_main_v1 carried no customers');
+    return { ok: false, error: 'EMPTY', day };
+  }
+
+  const json = JSON.stringify(file);
+  const bytes = new TextEncoder().encode(json).length;
+  if (bytes > YD_MAX) {
+    const bad = { ok: false, ts: Date.now(), day, clients, appts, bytes, hata: 'dosya çok büyük (' + bytes + ' bayt)' };
+    try { await fbWrite(env, 'PUT', YD + '/gunler/' + day, bad); await fbWrite(env, 'PUT', YD + '/son', bad); } catch { /* */ }
+    return { ok: false, error: 'TOO_BIG', bytes, day };
+  }
+
+  // The tripwire: yesterday's count against today's.
+  let uyari = null, oncekiClients = 0;
+  try {
+    const son = await fbRead(env, YD + '/son');
+    oncekiClients = (son && Number(son.clients)) || 0;
+    const gone = ydDrop(oncekiClients, clients);
+    if (gone) {
+      uyari = gone + ' müşteri bir gecede eksildi (' + oncekiClients + ' → ' + clients + ') — silinme olmuş olabilir';
+    }
+  } catch { /* no previous index: nothing to compare */ }
+
+  const ttlDays = ydTtlDays(day);
+  try {
+    await env.RD_WA.put(YD_KV + day, json, { expirationTtl: ttlDays * 86400 });
+  } catch (e) {
+    const bad = { ok: false, ts: Date.now(), day, clients, appts, bytes, hata: 'KV yazılamadı: ' + String(e && e.message || e) };
+    try { await fbWrite(env, 'PUT', YD + '/gunler/' + day, bad); await fbWrite(env, 'PUT', YD + '/son', bad); } catch { /* */ }
+    return { ok: false, error: 'KV_WRITE', day };
+  }
+
+  const rec = {
+    ok: true, ts: Date.now(), day, clients, appts, bytes, ttlDays,
+    eksik: eksik.length ? eksik.join(',') : null,
+    uyari: uyari,
+    onceki: oncekiClients || null
+  };
+  try {
+    await fbWrite(env, 'PUT', YD + '/gunler/' + day, rec);
+    await fbWrite(env, 'PUT', YD + '/son', rec);
+  } catch (e) { console.log('[yedek] index write failed: ' + String(e && e.message || e)); }
+
+  // The index is the only thing that grows for ever — trim it.
+  try {
+    const all = (await fbRead(env, YD + '/gunler')) || {};
+    const days = Object.keys(all).sort();
+    for (const d of days.slice(0, Math.max(0, days.length - YD_INDEX_KEPT))) {
+      await fbWrite(env, 'DELETE', YD + '/gunler/' + d);
+    }
+  } catch { /* trimming is housekeeping, never worth failing a backup over */ }
+
+  console.log('[yedek] ' + day + ': ' + clients + ' müşteri, ' + appts + ' randevu, ' +
+              Math.round(bytes / 1024) + ' KB, ' + ttlDays + ' gün saklanacak' + (uyari ? ' ⚠ ' + uyari : ''));
+  return { ok: true, day, clients, appts, bytes, ttlDays, uyari };
+}
+
+/* What the dashboard lists. The index only — small, and no key needed to
+   read it from the page's own Firebase connection either. */
+async function ydList(env) {
+  if (!env.FB_SECRET) return { ok: false, error: 'NO_FB_SECRET' };
+  let all = {};
+  try { all = (await fbRead(env, YD + '/gunler')) || {}; } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  const list = Object.keys(all).sort().reverse().map(d => Object.assign({ day: d }, all[d]));
+  return { ok: true, list, son: list.find(x => x.ok) || null };
+}
+
+/* One day's file, straight out of KV, for the browser to save. */
+async function ydGet(env, day) {
+  if (!env.RD_WA) return { ok: false, error: 'NO_KV' };
+  const d = String(day || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: 'BAD_DAY' };
+  const json = await env.RD_WA.get(YD_KV + d);
+  if (json == null) return { ok: false, error: 'NOT_FOUND', day: d };
+  return { ok: true, day: d, bytes: json.length, json };
+}
+
 const hookText = (body, status) =>
   new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
 
@@ -2153,6 +2371,7 @@ export { nicosiaHour, nicosiaYmd, smsPhone, smsText, pickReminders, sendMorningR
          waPhone, waBlockedName, nicosiaWallToUtc, waWhen, waReminders, waNeedsR1, waSpec, waFill,
          waAnswersFromIndex, gfConfig, gfPlan, gfDayWord, gfOptedOut, runGapFiller, nicosiaMinutes,
          raConfig, raPlan, runReviewAsk, waConfirmLive,
+         ydTtlDays, ydDrop, runBackup, ydList, ydGet,
          hookSign, hookVerify, hookParse, hookMatchOffer, handleHook,
          CALL_SAY, callAsk, callAnswer, handleCall };
 
@@ -2167,11 +2386,20 @@ export default {
     // that cron runs to 17; anything else leaves quietly.
     const when = new Date(event.scheduledTime);
     const h = nicosiaHour(when);
-    if (h === 6) {
-      await sendMorningReminders(env);
-      // The answers index self-heal — the one list() of the day. After the
-      // reminders, so a slow KV can never delay a text.
-      await waAnswersReindex(env);
+    // Before 08:00 the salon is shut and yesterday is finished: the nightly
+    // backup. No new cron was needed — the two daily lines (03:00Z and
+    // 04:00Z) already fire every day of the year, and across the seasons
+    // they land on 05:00, 06:00 and 07:00 at the salon. runBackup takes one
+    // snapshot a day and the second firing finds it already there. It runs
+    // AFTER the morning reminders so a big read can never hold up a text.
+    if (h <= 7) {
+      if (h === 6) {
+        await sendMorningReminders(env);
+        // The answers index self-heal — the one list() of the day. After the
+        // reminders, so a slow KV can never delay a text.
+        await waAnswersReindex(env);
+      }
+      try { await runBackup(env, when); } catch (e) { console.log('[yedek] ' + String(e && e.message || e)); }
       return;
     }
     if (h >= 9 && h <= 18) await runGapFiller(env, when);

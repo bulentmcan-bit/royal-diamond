@@ -28,6 +28,14 @@ workers_dev = true
 # 17:00Z in winter, so the line runs to 17 (it was 6-16 until 15 Eylül
 # 2026); the extra summer firing at 20:00 salon time leaves quietly, like
 # the others. Its switches live in crown-config.js `reviewAsk`.
+#
+# THE NIGHTLY BACKUP rides on the first two lines — the only two that fire
+# EVERY day, Sunday included. Whichever of them lands before 08:00 at the
+# salon (05:00, 06:00 or 07:00 there, depending on the season) takes one
+# snapshot of the whole tree into Cloudflare KV; the second finds it done
+# and leaves. No new cron was added on purpose: these two already run 365
+# days a year, and a backup must not be the thing that needs a new schedule
+# to keep working. See runBackup in src/index.js.
 [triggers]
 crons = ["0 3 * * *", "0 4 * * *", "0 6-17 * * 1-6"]
 
