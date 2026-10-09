@@ -22198,9 +22198,43 @@ function rdWrWindow(r, now){
     if(cur){ try{ rdApptPriceEcho(); }catch(e){} return; }                      // elle yazılmış: dokunma
     if(hint) hint.textContent = rdApptPriceGuide();
   };
-  /* Boş kutunun altındaki satır. Rakam DEĞİL — ne zaman yazılacağını söyler. */
+  /* Boş kutunun altındaki satır.
+     9 Ekim 2026, ikinci tur — Bülent: "I've picked 2 Dolgu, then 5 Pedikür,
+     then D2. Where does it combine all three?" Haklı: seçimler ekranda ayrı
+     ayrı duruyor, toplamı hiçbir yerde yazmıyordu.
+     Toplam artık BURADA yazıyor — ama kutuya DÜŞMÜYOR. Sabahki kural aynen
+     duruyor: randevu alınırken kutu boş kalır, çünkü iş daha belli değil ve
+     kutudaki rakam kasaya "bu işin fiyatı" diye geçer. Bu satır bir hesap,
+     bir söz değil: "seçtiklerin şu kadar tutuyor, çıkışta yazacaksın".      */
+  window.rdApptPickedSum = function(){
+    var out = { parts: [], total: 0 };
+    var add = function(label, amount){ if(label){ out.parts.push(label); } out.total += (amount||0); };
+    var svcAmount = function(v){
+      for(var k in RD_SVC_CODES){ if(RD_SVC_CODES[k].v === v) return RD_SVC_CODES[k]; }
+      return null;
+    };
+    ['a-service','a-service2'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(!el || !el.value) return;
+      var hit = svcAmount(el.value);
+      if(hit) add(hit.n, hit.p); else add(el.value, 0);   // listede olmayan eski ad: adı yazılır, parası bilinmez
+    });
+    var ad = document.getElementById('a-addon');
+    if(ad && ad.value){
+      var o = ad.options[ad.selectedIndex];
+      var dp = o ? parseInt(o.getAttribute('data-p')||'0', 10) : 0;
+      if(dp) add(ad.value, dp);
+    }
+    return out;
+  };
   window.rdApptPriceGuide = function(){
-    return 'Randevuda boş kalır — fiyat çıkışta yazılır (lira ya da kod: 1-10, D1-D6).';
+    var g = 'Randevuda boş kalır — fiyat çıkışta yazılır (lira ya da kod: 1-10, D1-D6).';
+    try{
+      var k = rdApptPickedSum();
+      if(!k.total) return g;
+      return 'Seçilenler: ' + k.parts.join(' + ') + ' = \u20BA' + k.total.toLocaleString('tr-TR')
+           + ' — kutu boş kalır, çıkışta yazılır.';
+    }catch(e){ return g; }
   };
 
   function wire(){
@@ -22217,6 +22251,8 @@ function rdWrWindow(r, now){
        A real listener, bound here, does not depend on that attribute at all.
        input covers typing and pasting, change and blur cover autofill and
        anything that fills the box without keystrokes. */
+    const sv2 = document.getElementById('a-service2');
+    if(sv2 && !sv2._rdWired){ sv2._rdWired = true; sv2.addEventListener('change', rdApptAutoPrice); }
     const pr = document.getElementById('a-price');
     if(pr && !pr._rdEchoWired){
       pr._rdEchoWired = true;

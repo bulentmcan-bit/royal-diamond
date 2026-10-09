@@ -80,6 +80,21 @@ console.log('3. the form');
   is(/value="90"|value="120"/.test(dur), false, '…and nothing longer was slipped into the Süre list');
 }
 
+console.log('3b. the three choices are added up on screen');
+{
+  // "I've picked 2 Dolgu, then 5 Pedikür, then D2. Where does it combine all
+  //  three?" — it didn't. The parts were on screen, the total was nowhere.
+  // It is shown UNDER the box, not written INTO it: the morning's rule holds,
+  // the booking is still saved with no price, because the work can still
+  // change between the chair and the till.
+  is(/window\.rdApptPickedSum = function\(\)/.test(html), true, 'the form adds up what has been picked');
+  is(/\['a-service','a-service2'\]\.forEach/.test(html), true, '…both treatments');
+  is(/parseInt\(o\.getAttribute\('data-p'\)\|\|'0', 10\)/.test(html), true, '…and the design on top');
+  is(/'Seçilenler: ' \+ k\.parts\.join\(' \+ '\)/.test(html), true, 'and it names them: "Dolgu + Pedikür + D2"');
+  is(/kutu boş kalır, çıkışta yazılır/.test(html), true, '…while saying plainly that the box stays empty');
+  is(/sv2\.addEventListener\('change', rdApptAutoPrice\)/.test(html), true, 'picking the second treatment refreshes the total');
+}
+
 console.log('4. the price read-back is bound for real');
 {
   // It carried oninput="rdApptPriceEcho()" as an attribute and on the live

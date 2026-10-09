@@ -65,7 +65,10 @@ console.log('1. seçim yapmak fiyat yazmaz');
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(dom.el['a-price'].value, '', 'Jel Başlangıç seçildi — kutu BOŞ (eskiden 1900 düşerdi)');
-  is(dom.el['a-price-hint'].textContent, GUIDE, '…ve altındaki satır ne zaman yazılacağını söylüyor');
+  // 9 Ekim, ikinci tur: satır artık seçilenlerin TOPLAMINI da söylüyor —
+  // ama kutuya hâlâ hiçbir şey yazmıyor, ki bu dosyanın derdi odur.
+  is(/^Seçilenler: Jel Başlangıç \(Full Set\) = ₺1\.900 — kutu boş kalır/.test(dom.el['a-price-hint'].textContent), true,
+     '…ve altındaki satır seçileni, tutarını ve kutunun boş kalacağını söylüyor');
   is(dom.el['a-price'].dataset.rdAuto, undefined, 'sistem hiçbir rakamı sahiplenmedi');
 }
 {
@@ -90,7 +93,7 @@ console.log('2. sistemin eski rakamı temizlenir');
   ctx.rdApptAutoPrice();
   is(dom.el['a-price'].value, '', 'hizmet Dolgu\'ya çevrildi: Jel\'in 1900\'ü kutuda UNUTULMADI, silindi');
   is(dom.el['a-price'].dataset.rdAuto, undefined, '…ve sistem artık hiçbir rakamı sahiplenmiyor');
-  is(dom.el['a-price-hint'].textContent, GUIDE, '…satır yine çıkışı söylüyor');
+  is(/kutu boş kalır, çıkışta yazılır/.test(dom.el['a-price-hint'].textContent), true, '…satır yine çıkışı söylüyor');
 }
 
 console.log('3. ELLE yazılana dokunulmaz — çıkış çalışmaya devam eder');
