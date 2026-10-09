@@ -758,6 +758,16 @@
     const s=String(id);
     return /^\d+\.\d+$/.test(s) ? s.slice(0, s.indexOf('.')) : s;
   }
+  /* ── MEZAR TAŞI ANAHTARI ─ 9 Ekim 2026 ────────────────────────────
+     Silinen bir müşterinin mezar taşı _rdIdKey ile, yani id'nin NOKTADAN
+     ÖNCEKİ kısmıyla yazılıyordu. Müşteri listesi tek seferde içeri
+     alındığı için yüzlerce müşteri aynı milisaniyeyi paylaşıyor ve sadece
+     ondalık kuyrukta ayrılıyor: 1779103044930.6755, 1779103044930.965 …
+     Bu yüzden TEK bir silme, o milisaniyedeki HERKESİ silinmiş saydırdı.
+     8 Ekim'de 6 müşteri silindi, 53 müşteri kayboldu, 304 randevu isimsiz
+     kaldı. Firebase anahtarında nokta yasak — o yüzden alt çizgi: her id
+     kendi anahtarını alır, kimse komşusunu sürüklemez.                 */
+  function _rdTombKey(id){ return String(id).replace(/\./g, '_'); }
   function _rdTsOf(v){
     if(typeof v==='number') return v;
     if(v&&typeof v==='object'&&isFinite(Number(v.ts))) return Number(v.ts);
@@ -1493,18 +1503,17 @@
       if(changed) apptTombPersist();
     }catch(e){}
   }
-  // Tombstones are stored under integer keys, but a legacy record minted with
-  // a decimal id may still be walking around — its deletion must match the
-  // truncated key, or the record resurrects on every device that holds it.
-  function _apptTombHas(k){ return apptTomb[k]||apptTomb[_rdIdKey(k)]||0; }
+  // One key per booking, for the same reason as the customers (_rdTombKey):
+  // a truncated key deletes every record that shares the millisecond.
+  function _apptTombHas(k){ return apptTomb[String(k)]||apptTomb[_rdTombKey(k)]||0; }
   // Called from every path that deletes an appointment for good. Without this a
   // deletion is only an ABSENCE, and an absence is exactly what a snapshot that
   // simply hasn't caught up looks like — the two have to stay distinguishable.
   function apptTombAdd(id, reason, appt){
     if(id==null) return;
-    // A legacy decimal id's tombstone is written under its integer part —
-    // Firebase never sees the dot, and the merge looks the truncated form up.
-    const kRaw=String(id), k=_rdIdKey(kRaw);
+    // Dot → underscore, so Firebase accepts the key and it still belongs to
+    // exactly one booking. See _rdTombKey.
+    const kRaw=String(id), k=_rdTombKey(kRaw);
     try{
       let a=appt;
       if(!a&&typeof appointments!=='undefined'&&Array.isArray(appointments))
@@ -1942,8 +1951,11 @@
       try{
         clientTomb={}; clientStamps={};
         clientTombAdd('888777666555.4321','selftest');
-        T('clientTombAdd: mezar taşı noktasız yazıldı', clientTomb['888777666555']!==undefined && clientTomb['888777666555.4321']===undefined);
-        T('_clientTombHas: ondalıklı kayıt silinmiş sayılır', !!_clientTombHas('888777666555.4321'));
+        T('clientTombAdd: anahtar alt çizgili, noktasız', clientTomb['888777666555_4321']!==undefined && clientTomb['888777666555.4321']===undefined);
+        T('_clientTombHas: silinen müşteri silinmiş sayılır', !!_clientTombHas('888777666555.4321'));
+        // The one that cost 53 customers: the NEIGHBOUR must survive.
+        T('_clientTombHas: aynı milisaniyedeki komşu SAĞLAM', !_clientTombHas('888777666555.9999'));
+        T('_clientTombHas: tam sayı komşu SAĞLAM', !_clientTombHas('888777666555'));
       }finally{ clientTomb=savedCT; clientStamps=savedCS; clientTombPersist(); }
     }catch(e){ T('HATA', false, String(e&&e.message||e)); }
     try{ console.table(rows); }catch(e){ console.log(rows); }
@@ -1978,7 +1990,11 @@
       if(changed) clientTombPersist();
     }catch(e){}
   }
-  function _clientTombHas(k){ return clientTomb[k]||clientTomb[_rdIdKey(k)]||0; }
+  /* Tam eşleşme, sadece. Eski kayıtlar tam sayı id taşıyor ve clientTomb[k]
+     ile zaten bulunur; ondalıklı bir id ART IK sadece kendi anahtarıyla
+     silinmiş sayılır — _rdIdKey'e geri düşülmez, çünkü o geri düşüş
+     komşuları da silmekti.                                               */
+  function _clientTombHas(k){ return clientTomb[String(k)]||clientTomb[_rdTombKey(k)]||0; }
   // One sweep at boot: the tombstone maps this device already holds are
   // repaired in place, so the reception laptop's poisoned clientTomb — the key
   // "1779103044957.9568" that made Firebase refuse every push — heals itself
@@ -1998,9 +2014,9 @@
   // looks like too.
   function clientTombAdd(id, reason, cl){
     if(id==null) return;
-    // Same rule as the appointments: a decimal id's tombstone is written
-    // under its integer part, so the key is always legal in Firebase.
-    const kRaw=String(id), k=_rdIdKey(kRaw);
+    // One key per customer. (It USED to be the integer part, which is what
+    // took 53 people out with 6 — see _rdTombKey.)
+    const kRaw=String(id), k=_rdTombKey(kRaw);
     try{
       let c=cl;
       if(!c&&typeof clients!=='undefined'&&Array.isArray(clients))
