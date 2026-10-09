@@ -6960,6 +6960,35 @@ function rdApptServiceSet(value){
   var b = document.getElementById('a-service2');
   var v = String(value||'');
   if(b) b.value = '';
+  /* 9 Ekim 2026 — "When I open the page I don't want it to be stuck on an
+     item. I want it to start from no hizmet, meaning zero."
+     Seçim kutuları artık tuş takımı; açılışta hiçbirinin basılı durmaması
+     gerekiyor. Kayıttaki iş KOD kutusunda gösterilir — hem görünür, hem
+     üstüne basarak eklemeye devam edilebilir.
+     YALNIZCA kodla tam ifade edilebiliyorsa böyle yapılır. "Volume / Rus
+     Kirpiği" gibi duvar listesinde numarası olmayan bir işi koda çevirmeye
+     kalkarsak, üstüne bir kod eklendiğinde o iş kayıttan düşer. Öylelerinde
+     eski yol: adı kutuda durur. */
+  try{
+    var codes = [], ok = v.trim().length > 0;
+    v.split(' + ').forEach(function(part){
+      part = part.trim(); if(!part){ return; }
+      var hit = null;
+      for(var k in RD_SVC_CODES){ if(RD_SVC_CODES[k].v === part){ hit = k; break; } }
+      if(hit) codes.push(hit); else ok = false;
+    });
+    if(ok && codes.length){
+      var a0 = document.getElementById('a-service');
+      if(a0) a0.value = '';
+      var cd = document.getElementById('a-code');
+      if(cd){ cd.value = codes.join(' '); cd.dataset.rdAuto = cd.value; }
+      var ad0 = document.getElementById('a-addon'); if(ad0) ad0.value = '0';
+      try{ rdAddonChipsPaint(); }catch(e){}
+      try{ rdApptCodeRecalc(); }catch(e){}
+      rdSvc2Sync();
+      return;
+    }
+  }catch(e){ console.warn('[2.hizmet] kod çevirimi:', e); }
   var i = v.indexOf(' + ');
   if(i > 0 && b){
     var p1 = v.slice(0, i).trim(), p2 = v.slice(i+3).trim();

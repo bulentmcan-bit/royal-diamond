@@ -100,6 +100,19 @@ console.log('3b. the pickers are a KEYPAD, not a record');
   is(/window\.rdApptClearWork = function\(\)/.test(html) && /'Temizle'/.test(html), true, 'and one box clears the lot when a wrong key is pressed');
 }
 
+
+console.log('3d. açılışta hiçbir şey basılı değil');
+{
+  // "When I open the page I don't want it to be stuck on an item. I want it
+  //  to start from no hizmet, meaning zero."
+  // Kayıttaki iş artık KOD kutusunda duruyor: hem görünür, hem üstüne
+  // basarak eklenebilir. Seçim kutuları boş açılır.
+  is(/a0\.value = '';[\s\S]{0,160}cd\.value = codes\.join\(' '\);/.test(html), true, 'opening a booking puts its codes in the KOD box and leaves the dropdown blank');
+  is(/if\(hit\) codes\.push\(hit\); else ok = false;/.test(html), true, '…but only if EVERY part of the job has a wall-list number');
+  is(/Volume \/ Rus Kirpiği/.test(html), true, '…a job with no number (a lash set) keeps the old way, or adding a code would drop it from the record');
+  is(/var ad0 = document\.getElementById\('a-addon'\); if\(ad0\) ad0\.value = '0';/.test(html), true, 'and no design box opens lit either');
+}
+
 console.log('4. the price read-back is bound for real');
 {
   // It carried oninput="rdApptPriceEcho()" as an attribute and on the live
