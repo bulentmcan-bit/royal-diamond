@@ -4839,7 +4839,7 @@ p, span, div, label, h1, h2, h3, h4 {
         <div class="card" style="margin-bottom:16px;">
           <div class="card-title" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;">
             ➕ Vadeli Ödeme Ekle
-            <span style="font-size:0.72rem;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">Müşteri sonra ödeyecek — vadesi gelince otomatik hatırlatılır</span>
+            <span style="font-size:0.72rem;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">Müşteri sonra ödeyecek — vadesi geçenler sekme sayısında görünür</span>
           </div>
           <div class="form-row fr2">
             <!-- The customer list, but still a plain box underneath: she picks an
@@ -16575,10 +16575,8 @@ function dpCheckReminders(){
     });
     list.innerHTML=html;
   }
-  if(isOpen) return;                       // already visible — just refreshed it
-  let snooze=0; try{ snooze=parseInt(localStorage.getItem(DP_SNOOZE_KEY)||'0')||0; }catch(e){}
-  if(Date.now()<snooze) return;            // within the 1-hour snooze window
-  openModal('mDeferredReminder');
+  // Owner asked (2026-10-12): no automatic pop-up. Overdue items stay visible
+  // through the badges / Vadeli Ödeme tab count; the modal is never auto-opened.
 }
 
 window.addEventListener('DOMContentLoaded',function(){
