@@ -66,8 +66,20 @@ console.log('3. the panel is today, the page is everything');
   // The exception that must never be dropped. An unread message is a customer
   // waiting, and losing one at midnight is the exact fault that cost two hours.
   is(/!r\.read \|\| isToday/.test(b), true, '…AND anything unread, whatever day it came from');
-  is(/var pageRows=srcUnread\.concat\(src\.filter\(function\(r\)\{ return r\.read; \}\)\.slice\(0,30\)\);/.test(b), true,
-     'the page keeps the tail, unread first');
+  /* 13 Ekim, Bulent: "dozens of old messages here - lose them and don't allow
+     them to build up." The page used to keep every unread row ever plus the
+     last thirty read ones, so yesterday's answered traffic sat on top of this
+     morning's. Now: unread from the last fortnight, read from today only. */
+  is(/var INBOX_UNREAD_DAYS=14;/.test(b), true,
+     'old unread rows age out rather than piling up for ever');
+  is(/rdInboxAgeDays\(r\)<=INBOX_UNREAD_DAYS/.test(b), true,
+     '...unread is kept only while it is still live');
+  is(/r\.read && isToday\(r\)/.test(b), true,
+     '...and a read row is only on the page the day it came in');
+  // Nothing is deleted. The toggle still brings the whole tail back, so the
+  // page can still be used to look something up.
+  is(/showAll\s*\?\s*srcUnread\.concat\(src\.filter\(function\(r\)\{ return r\.read; \}\)\.slice\(0,30\)\)/.test(b), true,
+     'the full tail is still one tap away, not thrown away');
   is(/draw\(dashEl, dashRows, emptyToday\);/.test(b), true, '…and each is drawn with its own rows');
   is(/draw\(pageEl, pageRows, empty\);/.test(b), true, '…from the one builder, so they cannot drift apart');
   is(/Bugün yanıt yok\. Öncekiler için 📥 Gelen Kutusu\./.test(b), true,

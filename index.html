@@ -21764,8 +21764,22 @@ function rdWrWindow(r, now){
     var quiet=all.filter(rdWrNoActionNeeded);
     var act=all.filter(function(r){ return !rdWrNoActionNeeded(r); });
     var src=showAll?all:act;
+    /* Bulent, 13 Ekim: "dozens of old messages here — lose them and don't
+       allow them to build up." The page was a scrollback: every unread row
+       ever, plus the last thirty read ones, so yesterday's answered traffic
+       sat on top of this morning's. It now shows only what is still live —
+       anything unread from the last fortnight, and the read rows from today
+       — and lets the rest fall away. Nothing is deleted: the toggle below
+       still brings the whole tail back when something must be looked up. */
+    var INBOX_UNREAD_DAYS=14;
+    var rdInboxAgeDays=function(r){
+      try{ var t=Number(r&&r.ts); return t ? (Date.now()-t)/86400000 : 0; }catch(e){ return 0; }
+    };
     var srcUnread=src.filter(function(r){ return !r.read; });
-    var pageRows=srcUnread.concat(src.filter(function(r){ return r.read; }).slice(0,30));
+    var pageRows=showAll
+      ? srcUnread.concat(src.filter(function(r){ return r.read; }).slice(0,30))
+      : srcUnread.filter(function(r){ return rdInboxAgeDays(r)<=INBOX_UNREAD_DAYS; })
+                 .concat(src.filter(function(r){ return r.read && isToday(r); }));
     var dashRows=src.filter(function(r){ return !r.read || isToday(r); });
     var toggle=quiet.length ? '<div style="padding:8px 14px;"><button onclick="rdWrInboxAll()" style="padding:3px 10px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;cursor:pointer;font-family:inherit;">'
       +(showAll?'▴ Sadece cevap bekleyenler':'▾ Otomatik işlenenleri de göster ('+quiet.length+')')+'</button></div>' : '';
