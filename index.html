@@ -13131,11 +13131,20 @@ function r24ItemHtml(group){
 
 // An appointment whose reminders are already standing at Piyzi (uids stored
 // on the record) must never be offered Generate — pressing it would text the
-// customer a SECOND time. A client-group is covered only when EVERY booking
-// in it is; the rare mixed group stays on the manual list, erring toward a
-// human look rather than a silent skip.
+// customer a SECOND time.
+//
+// 13 Ekim 2026. This used to require EVERY booking in the group to carry
+// uids, erring toward a human look. In a salon that errs the wrong way: a
+// client-group is ONE WOMAN ON ONE DAY, and the worker deliberately schedules
+// a single reminder for her — a second message an hour later is a nuisance,
+// not a service. So a 15:00 with uids beside a 16:00 without is not a gap,
+// it is the worker doing its job, and the group was being listed as unsent.
+// Reception then pressed Generate and sent the duplicate the rule existed to
+// prevent, while a customer with NO reminder at all sat in the same list
+// looking identical. Covered now means ANY booking in the group is covered.
+// What remains on the manual list is the real thing: nobody reached.
 function r24AutoCovered(g){
-  return (g||[]).length>0 && g.every(a => a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length>0);
+  return (g||[]).length>0 && g.some(a => a && a.wa && Array.isArray(a.wa.u) && a.wa.u.length>0);
 }
 // The covered row: state instead of a button. The 24-hour send fires at the
 // appointment's own clock time a day earlier; the 2-hour one two hours before.

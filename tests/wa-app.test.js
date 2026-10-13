@@ -343,8 +343,15 @@ function makeDevice() {
          'a booking with no reminder stays generatable — the exception report');
       is(vm.runInContext('__r24(' + JSON.stringify([emptyU]) + ')', d.ctx), false,
          'a same-day booking whose sends were both past stays generatable');
-      is(vm.runInContext('__r24(' + JSON.stringify([covered, bare]) + ')', d.ctx), false,
-         'a mixed client-group errs toward the manual list, never a silent skip');
+      /* 13 Ekim 2026. Was: a mixed group errs toward the manual list. In the
+         salon that erred the wrong way — the worker schedules ONE reminder
+         per woman per day, so 15:00-with-uids beside 16:00-without is the
+         worker working, not a gap. Listing it sent her a duplicate, and hid
+         the customer who had no reminder at all in the same list. */
+      is(vm.runInContext('__r24(' + JSON.stringify([covered, bare]) + ')', d.ctx), true,
+         'one reminder in the group is the whole group covered — no duplicate');
+      is(vm.runInContext('__r24(' + JSON.stringify([bare, bare]) + ')', d.ctx), false,
+         'nobody reached at all is the real gap, and it stays generatable');
       is(vm.runInContext('__r24([])', d.ctx), false, 'an empty group is not "covered"');
     }
   }
