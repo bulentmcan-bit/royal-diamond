@@ -146,5 +146,11 @@ Your appointment: {{1}} at {{2}}
 
 Example values: `{{1}}` = `7 Ekim Çarşamba`, `{{2}}` = `14:00`.
 
-`WA_CONFIRM` names `randevu_onay4` first, so the worker switches to it within
-an hour of approval with no redeploy; until then randevu_onay2 keeps sending.
+`WA_CONFIRM` named `randevu_onay4` first, so the worker would switch to it
+within an hour of approval with no redeploy; until then randevu_onay2 kept
+sending.
+
+**14 Ekim 2026: pinned.** `WA_CONFIRM` now names `randevu_onay2` alone, with
+no `namePrefix`, so nothing Meta approves later changes the live template by
+itself. Moving to randevu_onay4 (or any other name) is a deliberate edit of
+that line plus a deploy.

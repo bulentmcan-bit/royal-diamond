@@ -7,7 +7,9 @@
 //      button value; the day-before one stays the plain old reminder
 //   3. Piyzi refuses the new one → the old one is sent instead
 //   4. the approval answer is cached, so Piyzi is asked once, not per send
-//   5. wrangler.toml names randevu_onay2 with [dateLong, time]
+//   5. wrangler.toml PINS randevu_onay2 with [dateLong, time] (14 Ekim 2026:
+//      no namePrefix, so no later approval switches the live name by itself;
+//      the worker's namePrefix code is still covered here with its own spec)
 //
 // Run:  node tests/wa-confirm-switch.test.js
 // ═══════════════════════════════════════════════════════════════════════════
@@ -25,7 +27,9 @@ const is = (got, want, label) => {
 
 const R24 = '{"templateName":"pyz_randevu_hatirlatma_24saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}';
 const R1 = '{"templateName":"pyz_randevu_hatirlatma_2saat","languageCode":"tr","body":["{time}"],"buttons":{"0":"{apptId}"}}';
-const CONF = '{"templateName":"randevu_onay4","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}';
+const CONF = '{"templateName":"randevu_onay2","languageCode":"tr","body":["{dateLong}","{time}"]}';
+// The pre-14-Ekim spec: a preferred name plus any approved randevu_onay*.
+const PREFIX_CONF = '{"templateName":"randevu_onay4","namePrefix":"randevu_onay","languageCode":"tr","body":["{dateLong}","{time}"]}';
 
 function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.get(k) : null), put: async (k, v) => { m.set(k, v); } }; }
 
@@ -38,7 +42,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
   const d = new Date(Date.now() + 5 * 86400e3);
   const dateISO = d.toISOString().slice(0, 10);
 
-  function setup({ approved, refuseNew, open, approvedName }) {
+  function setup({ approved, refuseNew, open, approvedName, conf }) {
     const sent = [], listCalls = [];
     globalThis.fetch = async (u, o = {}) => {
       u = String(u);
@@ -59,7 +63,7 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
       }
       return new Response('{}', { status: 404 });
     };
-    const env = { WA_KEY: 'k', PIYZI_API_KEY: 'p', WA_R24: R24, WA_R1: R1, WA_CONFIRM: CONF, WA_CONFIRM_MIN: '90', WA_OPEN: open || '23:59', RD_WA: kv() };
+    const env = { WA_KEY: 'k', PIYZI_API_KEY: 'p', WA_R24: R24, WA_R1: R1, WA_CONFIRM: conf || CONF, WA_CONFIRM_MIN: '90', WA_OPEN: open || '23:59', RD_WA: kv() };
     const send = () => worker.fetch(new Request('https://w.dev/wa/schedule', {
       method: 'POST', headers: { 'x-rd-key': 'k', 'content-type': 'application/json' },
       body: JSON.stringify({ apptId: 'a1', phone: '05338669933', name: 'Ayşe', dateISO, timeHHMM: '14:00', service: 'Manikür' }),
@@ -104,18 +108,32 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat'], 'only the 24-hour reminder');
   }
 
-  console.log('2d. a resubmission under a new name counts too');
+  console.log('2d. a resubmission under a new name counts too (namePrefix spec)');
   {
-    const s = setup({ approved: true, approvedName: 'randevu_onay3' });
+    const s = setup({ approved: true, approvedName: 'randevu_onay3', conf: PREFIX_CONF });
     await s.send();
     is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay3'], 'randevu_onay3 is picked up with no config edit');
   }
 
-  console.log('2e. the ✅/❌ version (randevu_onay4) wins once approved');
+  console.log('2e. the ✅/❌ version (randevu_onay4) wins once approved (namePrefix spec)');
   {
-    const s = setup({ approved: true, approvedName: ['randevu_onay', 'randevu_onay2', 'randevu_onay4'] });
+    const s = setup({ approved: true, approvedName: ['randevu_onay', 'randevu_onay2', 'randevu_onay4'], conf: PREFIX_CONF });
     await s.send();
     is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay4'], 'randevu_onay4 preferred over randevu_onay2');
+  }
+
+  console.log('2f. the PINNED spec ignores randevu_onay4 even when approved');
+  {
+    const s = setup({ approved: true, approvedName: ['randevu_onay2', 'randevu_onay4'] });
+    await s.send();
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'randevu_onay2'], 'randevu_onay2 stays, no auto-switch');
+  }
+
+  console.log('2g. the PINNED spec: only randevu_onay4 approved → old reminder');
+  {
+    const s = setup({ approved: true, approvedName: 'randevu_onay4' });
+    await s.send();
+    is(s.sent.map(b => b.templateName), ['pyz_randevu_hatirlatma_24saat', 'pyz_randevu_hatirlatma_2saat'], 'a prefix match is not enough without namePrefix: both old reminders');
   }
 
   console.log('3. Piyzi refuses the new template');
@@ -131,14 +149,14 @@ function kv() { const m = new Map(); return { m, get: async k => (m.has(k) ? m.g
     const s = setup({ approved: false });
     await s.send(); await s.send(); await s.send();
     is(s.listCalls.length, 1, 'Piyzi asked once for three bookings');
-    is(s.env.RD_WA.m.get('tpl:live3:randevu_onay4|randevu_onay|/tr'), '-', 'cached as not yet approved');
+    is(s.env.RD_WA.m.get('tpl:live3:randevu_onay2||/tr'), '-', 'cached as not yet approved');
   }
 
   console.log('5. wrangler.toml');
   {
     const toml = fs.readFileSync(path.join(__dirname, '..', 'worker', 'wrangler.toml'), 'utf8');
     const m = toml.match(/^WA_CONFIRM = '(.*)'$/m);
-    is(m && JSON.parse(m[1]), JSON.parse(CONF), 'WA_CONFIRM: randevu_onay4, any randevu_onay* approved, [dateLong, time]');
+    is(m && JSON.parse(m[1]), JSON.parse(CONF), 'WA_CONFIRM: pinned to randevu_onay2, no namePrefix, [dateLong, time]');
     is(/^WA_CONFIRM_MIN = "90"$/m.test(toml), true, 'WA_CONFIRM_MIN is 90');
     is(/^WA_R24 = '.*pyz_randevu_hatirlatma_24saat/m.test(toml), true, 'old WA_R24 left in place as the fallback');
   }
