@@ -7214,7 +7214,21 @@ function dashEditAppt(id){
         {
           const _staffPick=document.getElementById('a-staff').value||live.staff;
           const _moneyAlready=(live._takingsAmount||0)>0 || (wasCompleted && priorKnown>0);
-          if(enteredPrice>0 && _staffPick && !_moneyAlready && !live.sat){
+          /* 15 Ekim 2026. A number nobody typed is not a checkout.
+             Opening Edit to move an hour auto-prices the Fiyat box from the
+             service — Dolgu fills in \u20BA1.700 on its own — and the test above
+             then read that as money being taken, threw the satisfaction gate
+             up over the form, and refused to close without an answer. Bulent
+             hit it trying to change DEGER BAYSEL's details. The price box
+             already records whose number it is: dataset.rdAuto holds the
+             system's own guess, and line ~7134 deletes it when the figure
+             came from the record instead. So: still the untouched guess =
+             nobody is checking anybody out. Type over it, or press a code
+             key, and this fires exactly as before. */
+          const _prEl=document.getElementById('a-price');
+          const _priceIsSystemGuess = !!(_prEl && _prEl.dataset.rdAuto!=null
+                                         && String(_prEl.value)===String(_prEl.dataset.rdAuto));
+          if(enteredPrice>0 && _staffPick && !_moneyAlready && !live.sat && !_priceIsSystemGuess){
             satAsk(live, function(){ saveBtn.onclick(); });
             return;
           }
