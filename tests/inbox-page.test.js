@@ -61,11 +61,19 @@ console.log('3. the panel is today, the page is everything');
   const from = html.indexOf('function paintInboxBadge');
   const r = /function render\(\)\{([\s\S]*?)\n  \}/.exec(html.slice(from));
   const b = r ? r[1] : '';
-  is(/var dashRows=src\.filter\(function\(r\)\{ return !r\.read \|\| isToday\(r\); \}\);/.test(b), true,
-     "the panel shows today's messages");
-  // The exception that must never be dropped. An unread message is a customer
-  // waiting, and losing one at midnight is the exact fault that cost two hours.
-  is(/!r\.read \|\| isToday/.test(b), true, '…AND anything unread, whatever day it came from');
+  is(/var dashRows=src\.filter\(isToday\);/.test(b), true,
+     "the panel shows today's messages and nothing else");
+  /* 22 Ekim, Bulent: "Don't show me old messages. Get rid of them at the turn
+     of the day." The panel used to keep every unread row for ever; a fortnight
+     of answered "Geleceğim / Yes" sat on top of this morning. Midnight now
+     empties it by itself. The safety net moved rather than vanished: the
+     sidebar badge still counts EVERY unread message of any age, so an
+     overnight question still shows a red number — one tap away, not in the
+     way — and Gelen Kutusu still holds the unread tail for a fortnight. */
+  is(/paintInboxBadge\(unread\.length\)/.test(b), true,
+     'the badge still counts every unread message, whatever day it came from');
+  is(/count\.textContent=String\(unread\.filter\(isToday\)\.length\)/.test(b), true,
+     "…and the panel's own number counts the same day the panel shows");
   /* 13 Ekim, Bulent: "dozens of old messages here - lose them and don't allow
      them to build up." The page used to keep every unread row ever plus the
      last thirty read ones, so yesterday's answered traffic sat on top of this

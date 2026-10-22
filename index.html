@@ -10573,6 +10573,67 @@ function isBirthdayAppt(clientId, datetime){
   }catch(e){ return false; }
 }
 
+/* ── 🔁 ERKEN GELEN RANDEVU — eskisini kendiliğinden iptal et ──────────────
+   Boşluk doldurucu müşteriye boş bir saat teklif eder; müşteri kabul edince
+   resepsiyon o saati yazar ve ELDEKİ eski randevu unutulur: iki koltuk
+   tutulur, iki hatırlatma gider, biri boşa gider. Artık yeni kayıt gerçekten
+   bir teklifin karşılığıysa eski randevu otomatik iptal edilir.
+
+   Tahmin YOK — üç şart birden tutmazsa hiçbir şeye dokunulmaz:
+     1. Bu numaraya, tam bu gün ve saat için, son 7 gün içinde teklif
+        gönderilmiş olmalı (rdns_gapfill_v1/offers).
+     2. Müşterinin yeni randevudan SONRAYA kayıtlı, iptal/tamamlanmamış
+        randevusu olmalı — öncesindekilere dokunulmaz.
+     3. Böyle randevu tam olarak BİR tane olmalı. Birden fazlaysa hangisinin
+        iptal edileceği tahmin edilmez: ekrana uyarı düşer, seçim insana
+        bırakılır.
+   İptal elle iptalin aynısıdır: durum, damga, iptal kaydı ve Piyzi'deki
+   bekleyen hatırlatmaların iptali. Sessizce silinmez — her iptal kaydedilir. */
+function rdEarlyMoveAutoCancel(a){
+  if(!a || !a.datetime || !a.clientId) return;
+  var c=null; try{ c=(typeof cObj==='function')?cObj(a.clientId):null; }catch(e){}
+  var ph=String((c&&c.phone)||'').replace(/\D/g,'');
+  if(ph.length<9) return;
+  var offers=null; try{ offers=window._rdGapOffers||null; }catch(e){}
+  if(!offers) return;                       // teklif listesi yüklenmediyse karışma
+  var day=String(a.datetime).slice(0,10), hm=String(a.datetime).slice(11,16);
+  var now=Date.now(), WINDOW=7*86400000, hit=null;
+  for(var k in offers){
+    var o=offers[k]; if(!o) continue;
+    if(String(o.d||'')!==day) continue;
+    if(String(o.t||'').slice(0,5)!==hm) continue;
+    if(String(o.phone||'').replace(/\D/g,'').slice(-9)!==ph.slice(-9)) continue;
+    if(o.ts && (now-Number(o.ts))>WINDOW) continue;
+    hit=o; break;
+  }
+  if(!hit) return;
+  var later=appointments.filter(function(x){
+    return x && String(x.clientId)===String(a.clientId) && String(x.id)!==String(a.id)
+        && x.status!=='cancelled' && x.status!=='completed'
+        && String(x.datetime||'')>String(a.datetime);
+  });
+  if(!later.length) return;
+  var who=''; try{ who=cName(a.clientId)||''; }catch(e){}
+  if(later.length>1){
+    try{ toast('⚠️','Eski randevu seçilemedi', who+' adına ileri tarihli '+later.length+' randevu var — hangisinin iptal edileceğini elle seçin.',''); }catch(e){}
+    return;
+  }
+  var old=later[0];
+  old.status='cancelled';
+  old.rdAutoCancel={ reason:'erken-randevu', newId:a.id, offerId:String(hit.id||''), at:now };
+  try{ apptTouch(old); }catch(e){}
+  try{ priceOvrSealCancel(old); }catch(e){}
+  try{ cancelLogAdd(old,'otomatik · erken randevu'); }catch(e){}
+  try{ rdWaCancel(old); }catch(e){}
+  saveAll();
+  try{ renderAppts(); renderDash(); updateApptBadge(); }catch(e){}
+  try{
+    toast('🔁','Eski randevu iptal edildi',
+      who+' — '+String(old.datetime).slice(8,10)+'.'+String(old.datetime).slice(5,7)+' '+String(old.datetime).slice(11,16)
+      +' iptal edildi, yerine '+hm+' alındı.','g');
+  }catch(e){}
+}
+
 function saveAppt(){
   const cid = document.getElementById("a-client").value;
   if(!cid){ toast("⚠","No Client","Please select a client.","r"); return; }
@@ -10591,6 +10652,11 @@ function saveAppt(){
   appointments.push(a);
   try{ _rdLogApptCreate(a,'saveAppt'); }catch(e){}
   saveAll();
+  // 🔁 Erken alınan randevu: boşluk teklifini kabul edip öne geçen müşterinin
+  //    ESKİ randevusu kendiliğinden iptal edilir (Bülent, 22 Ekim). Koşullar
+  //    dar tutuldu: yalnızca bu saat için bu numaraya gerçekten teklif
+  //    gönderilmişse ve müşterinin ileri tarihte TEK bir randevusu varsa.
+  try{ rdEarlyMoveAutoCancel(a); }catch(e){ console.warn('[erken]', e); }
   // 🤖 The booking books its own WhatsApp reminders at Piyzi (24h + 2h);
   // fire-and-forget, dormant on a device without the key.
   try{ rdWaSchedule(a); }catch(e){}
@@ -21046,7 +21112,7 @@ window.addEventListener('load',function(){
       if(_started) return;
       if(typeof _fbDb==='undefined'||!_fbDb||!_syncEnabled) return;
       _started=true; clearInterval(_timer);
-      _fbDb.ref('rdns_gapfill_v1/offers').limitToLast(50).on('value',function(s){ _offers=s.val()||{}; render(); },function(e){ console.warn('[gf] offers read denied:',e); });
+      _fbDb.ref('rdns_gapfill_v1/offers').limitToLast(50).on('value',function(s){ _offers=s.val()||{}; try{ window._rdGapOffers=_offers; }catch(e){} render(); },function(e){ console.warn('[gf] offers read denied:',e); });
       _fbDb.ref('rdns_gapfill_v1/runs').limitToLast(1).on('value',function(s){ var v=s.val()||{}; var k=Object.keys(v).sort(); _run=k.length?v[k[k.length-1]]:null; render(); },function(e){ console.warn('[gf] runs read denied:',e); });
       _fbDb.ref('rdns_gapfill_v1/control').on('value',function(s){ _control=s.val()||null; render(); },function(e){ console.warn('[gf] control read denied:',e); });
     }catch(e){ console.warn('[gf] start:',e); }
@@ -21751,7 +21817,6 @@ function rdWrWindow(r, now){
   function render(){
     var count=document.getElementById('dash-wa-replies-count');
     var all=rdWrList(_wr), unread=all.filter(function(r){ return !r.read && !rdWrNoActionNeeded(r); });
-    if(count) count.textContent=String(unread.length);
     var ic=document.getElementById('inbox-count'); if(ic) ic.textContent=String(unread.length);
     paintInboxBadge(unread.length);
     /* TWO LISTS NOW, and on purpose.
@@ -21803,7 +21868,16 @@ function rdWrWindow(r, now){
       ? srcUnread.concat(src.filter(function(r){ return r.read; }).slice(0,30))
       : srcUnread.filter(function(r){ return rdInboxAgeDays(r)<=INBOX_UNREAD_DAYS; })
                  .concat(src.filter(function(r){ return r.read && isToday(r); }));
-    var dashRows=src.filter(function(r){ return !r.read || isToday(r); });
+    /* Bulent, 22 Ekim: "Don't show me old messages. Get rid of them at the
+       turn of the day." The panel used to keep every unread row for ever, so
+       a fortnight of "Geleceğim / Yes" sat on top of this morning. It is now
+       strictly TODAY — read or unread — and midnight empties it by itself.
+       Nothing is deleted: Gelen Kutusu still holds the unread tail for a
+       fortnight, and the sidebar badge still counts every unread message of
+       any age, so a question that arrives at 23:50 still shows a red number
+       in the morning; it is one tap away instead of in the way. */
+    var dashRows=src.filter(isToday);
+    if(count) count.textContent=String(unread.filter(isToday).length);
     var toggle=quiet.length ? '<div style="padding:8px 14px;"><button onclick="rdWrInboxAll()" style="padding:3px 10px;border-radius:7px;background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.76rem;cursor:pointer;font-family:inherit;">'
       +(showAll?'▴ Sadece cevap bekleyenler':'▾ Otomatik işlenenleri de göster ('+quiet.length+')')+'</button></div>' : '';
     var empty='<div class="r24-empty">Henüz yanıt yok — müşteri WhatsApp\'tan yazınca burada görünür.</div>';
