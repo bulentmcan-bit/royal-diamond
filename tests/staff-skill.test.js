@@ -185,7 +185,15 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   // (hiddenOnBoard, and only that — they keep their keys, skills, diary
   // columns and salary screens); neither has a photo, on purpose.
   is(C.operators.map(o => o.key), ['helen', 'lissa', 'zara', 'beyhan', 'hannah'], 'operators: helen, lissa, zara, beyhan, hannah — Beyhan after Zara, before Hannah');
-  is(C.operators.filter(o => !o.hiddenOnBoard).map(o => o.key), ['helen', 'lissa', 'hannah'], 'on the wall today: Helen, Lissa, Hannah — Zara and Beyhan hidden');
+  /* Hannah left on 22 Ekim 2026. Her line stays — her salary, her tills and
+     her commission history are all read from it — but she is off the wall and
+     off the roster from 23 Ekim. Her old days keep her exactly as they were,
+     which is the whole point of leftOn being a date rather than a delete. */
+  is(C.operators.filter(o => !o.hiddenOnBoard).map(o => o.key), ['helen', 'lissa'], 'on the wall today: Helen and Lissa — Zara, Beyhan and Hannah hidden');
+  is(C.operators.find(o => o.key === 'hannah').leftOn, '2026-10-23', 'Hannah is marked as having left, the day after her last one');
+  is(C.rosterOn('2026-10-22').map(o => o.key).indexOf('hannah') !== -1, true, 'her last working day still lists her — history is untouched');
+  is(C.rosterOn('2026-10-23').map(o => o.key).indexOf('hannah'), -1, 'from the next day she is not offered to anyone, anywhere');
+  is(C.rosterOn('2026-11-07').map(o => o.key).indexOf('hannah'), -1, '…and no future date brings her back');
   is(C.find('zara').leftOn, undefined, 'Zara has no leftOn — hidden from the wall is not gone');
   is(C.find('beyhan').leftOn, undefined, 'Beyhan has no leftOn');
   is(C.find('zara').hiddenOnBoard, true, 'Zara keeps hiddenOnBoard');

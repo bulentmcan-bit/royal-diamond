@@ -150,7 +150,17 @@ var CROWN = {
        that month from the date onward earn again; if the paused stretch must
        stay unpaid, flip the flag at the start of a month or record those jobs
        as ✂️ kesinti.) */
+    /* Hannah LEFT on 22 Ekim 2026 — her last working day. `leftOn` is the day
+       AFTER it, because rosterOn() counts her out from that date onward and
+       every earlier date must keep her exactly as it was: her columns in the
+       diary, her tills, her salary and her commission history are all still
+       there to be read. From 23 Ekim she is simply not someone who works
+       here — the diary's staff columns, the online booking page, Uygun Saat
+       Bul, the fill-call list and the worker's gap-filler all ask rosterOn
+       and none of them will offer her again. Her line STAYS in this file:
+       taking it out would take her final pay and her history with it. */
     { key:'hannah', name:'Hannah', photo:'op-hannah.png',
+      leftOn: '2026-10-23', hiddenOnBoard: true,
       commissionPaused: true, commissionPausedSince: '2026-08-01' }
   ],
 
