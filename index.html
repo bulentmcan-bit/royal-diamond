@@ -9916,6 +9916,7 @@ function rdClientMatcher(q){
 }
 function rdFindEmpty(q){ return !rdNorm(q)&&!String(q||'').replace(/\D/g,''); }
 function renderClients(){
+  if(!rdPageShown('page-clients')) return;   // see rdPageShown — 859 rows, rebuilt on every save
   const q=(document.getElementById("client-search")?.value||"");
   const list=clients.filter(rdClientMatcher(q)).sort((a,b)=>a.name.localeCompare(b.name,'tr',{sensitivity:'base'}));
   const _pill=document.getElementById("client-count-pill");
@@ -10520,7 +10521,35 @@ function rdOnlineTally(){
   return out;
 }
 
+/* ── A page nobody is looking at is not built ─────────────────────────────
+   31 call sites reach renderAppts() and 14 reach renderClients(): every save,
+   every ✓ Done, every cloud sync. Measured on 31 Ekim 2026 with 3,433
+   appointments and 859 clients in the book, those two tables held 98,885 of
+   the page's 104,389 elements, and renderAppts() alone cost 1.2 SECONDS —
+   paid on every save, while both tables sat behind other pages where nobody
+   could see them. That is the lag reception felt on every booking.
+   _gotoActual() already renders a page when it is opened, so skipping a
+   hidden one loses nothing: the work moves to the moment it is wanted. */
+function rdPageShown(id){
+  try{ var el=document.getElementById(id); return !!el && el.classList.contains('active'); }
+  catch(e){ return true; }        // unsure → build it; never hide a page by accident
+}
+
+/* How much of the list the table draws. Sorted newest first, so the cap keeps
+   the rows anybody actually scrolls to and drops the three-year tail. Nothing
+   is filtered away — the footer says how many are held back and brings them
+   all on one tap. */
+var RD_APPT_CAP = 250;
+var _apptsAll = false;
+function rdApptWindow(list, showAll, cap){
+  list = list || [];
+  if(showAll || list.length <= cap) return { rows:list, hidden:0 };
+  return { rows:list.slice(0, cap), hidden:list.length - cap };
+}
+window.rdApptsShowAll = function(){ _apptsAll = true; renderAppts(); };
+
 function renderAppts(){
+  if(!rdPageShown('page-appointments')) return;
   try{ applyPriceOverrides(appointments); }catch(e){}
   let list=[...appointments];
   if(apptFilter==="confirmed")list=list.filter(a=>a.status==="confirmed");
@@ -10528,6 +10557,9 @@ function renderAppts(){
   else if(apptFilter==="cancelled")list=list.filter(a=>a.status==="cancelled");
   else if(apptFilter==="auto")list=list.filter(a=>a.autoRebooked);
   list.sort((a,b)=>new Date(b.datetime)-new Date(a.datetime));
+  const _win=rdApptWindow(list,_apptsAll,RD_APPT_CAP);
+  const _hidden=_win.hidden;
+  list=_win.rows;
   document.getElementById("appts-body").innerHTML=list.map(a=>{
     const c=cObj(a.clientId);
     return `<tr>
@@ -10550,7 +10582,9 @@ function renderAppts(){
         ${(a.status==="cancelled"||a.status==="completed")?`<button class="btn btn-red btn-sm" style="opacity:0.7" onclick="deleteAppt(${a.id})">🗑 Delete</button>`:""}
       </div></td>
     </tr>`;
-  }).join("");
+  }).join("") + (_hidden>0 ? `<tr><td colspan="10" style="text-align:center;padding:14px;">
+      <button class="btn btn-sm" style="background:transparent;border:1px solid var(--border);color:var(--muted);"
+        onclick="rdApptsShowAll()">▾ ${_hidden} eski randevu daha var — hepsini göster</button></td></tr>` : "");
 }
 
 
@@ -16887,7 +16921,10 @@ function dtDefaultState(){
   return {
     operators:[
       {id:0,name:'Helen',entries:[],active:true},
-      {id:1,name:'Hannah',entries:[],active:true},
+      // Hannah left on 22 Ekim 2026 — no card is drawn for her any more.
+      // Her line is not deleted from a device that already holds one; it is
+      // switched off on load below, so her archived days keep her name.
+      {id:1,name:'Hannah',entries:[],active:false},
       {id:2,name:'Lissa',entries:[],active:true},
       {id:3,name:'Zara',entries:[],active:true},
       {id:5,name:'Saeideh',entries:[],active:true},
@@ -16939,6 +16976,13 @@ function dtLoadState(){
     }
     dtMergeSeed(d);
     ['Zara','Saeideh','Beyhan'].forEach(function(n){ var o=d.operators.find(function(x){return x.name===n;}); if(o) o.active=true; });
+    /* Hannah left on 22 Ekim 2026 (crown-config: leftOn). Every device that
+       already stored her keeps the record — switching her off here is what
+       takes her card off Daily Takings and her row out of Kasa Kontrol, on
+       that device and every other one the state syncs to. Nothing is deleted:
+       the archived days she worked still carry her name and her totals, and
+       the salary, avans and commission screens read the roster, not this. */
+    (function(){ var h=d.operators.find(function(x){ return x && /^hann?ah?$/i.test(String(x.name||'').trim()); }); if(h) h.active=false; })();
     if(!d.operators.find(function(x){return x.name==='Saeideh';})) d.operators.push({id:5,name:'Saeideh',entries:[],active:true});
     if(!d.operators.find(function(x){return x.name==='Beyhan';})) d.operators.push({id:6,name:'Beyhan',entries:[],active:true});
     // Deduplicate history - if same date appears twice, keep only the first (newest save)
