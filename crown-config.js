@@ -32,6 +32,11 @@
    (timers.html) skip her tile; the main app, the booking page and every
    salary screen still see her exactly as before.
 
+   A technician who STARTS on a known day gets `joinedOn: 'YYYY-MM-DD'`. She is
+   in the roster from that day and out of every earlier one, so the diary, the
+   booking page and the gap-filler only offer her from the day she actually
+   began, and last month's screens stay exactly as they were.
+
    A technician who has left on a KNOWN DAY also gets `leftOn: 'YYYY-MM-DD'`.
    From that day on she is no longer somebody who is working: the diary's
    staff columns, the online booking availability and the free-time finder
@@ -98,6 +103,15 @@ var CROWN = {
        availability and every salary screen still see her. workdays: she is
        here Pazartesi and Perşembe only, so on the other days the diary
        shows no column for her and nothing automatic offers her. */
+    /* Emma — nails, every open day, from 3 Kasım 2026. She is on COMMISSION
+       ONLY: 40% of her own client income, no salary (index.html carries the
+       rate, as it does for everyone). The owner's other instruction about her
+       is in index.html too: Helen's 25% is not worked out from anything Emma
+       generates — RD_NO_BONUS_FROM there is the one place that decides it.
+       `joinedOn` keeps her off every date before she started. No photo yet, so
+       hiddenOnBoard keeps her tile off the television; take that flag off once
+       there is a photograph and she appears on the wall with the others. */
+    { key:'emma',   name:'Emma',   hiddenOnBoard: true, joinedOn: '2026-11-03' },
     { key:'zara',   name:'Zara',   hiddenOnBoard: true, hiddenOnDash: true, workdays: [1, 4] },
     /* Beyhan — brows and lashes, NOT nails: kas and kirpik in serviceSkill
        below, never manikur, pedikur or agda, so the diary warns, and the
@@ -314,8 +328,8 @@ var CROWN = {
      when the date is past (a past date blocks nothing). */
   staffPrefs: {
     serviceSkill: {
-      manikur: ['helen', 'lissa', 'zara', 'hannah'],
-      pedikur: ['helen', 'lissa', 'zara', 'hannah'],
+      manikur: ['helen', 'lissa', 'zara', 'hannah', 'emma'],
+      pedikur: ['helen', 'lissa', 'zara', 'hannah', 'emma'],
       // Beyhan is in neither list: she carries her own `services` map above,
       // which answers for her instead. She does brow work and the lash LIFT,
       // not lash extensions, and these groups are too coarse to say that.
@@ -323,7 +337,12 @@ var CROWN = {
       kas:     ['helen'],                       // Altın Oran, Kaş Boyama, Laminasyon, Microblading
       agda:    ['helen']                        // Helen only — every wax, the lip/chin wax included
     },
-    fillOrder: ['hannah', 'lissa', 'helen'],
+    /* Emma first, for the reason the order has always followed: whoever has
+       the most to fill. She started on 3 Kasım with an empty book, so her
+       hours are the ones worth offering before anybody else's. Move her down
+       this list the day that stops being true. (rosterOn still gates it — she
+       is not offered on any date before she joined.) */
+    fillOrder: ['emma', 'hannah', 'lissa', 'helen'],
     notBefore: { hannah: '2026-09-14' }
   },
 
@@ -936,6 +955,13 @@ var CROWN = {
     return this.operators.filter(function(o){
       var left = String(o.leftOn || '').slice(0, 10);
       if (left && d >= left) return false;
+      // A technician who STARTED on a known day: she is nobody's option before
+      // it. Without this a new line appears on every date in the book, so last
+      // month's diary and Kasa Kontrol grow a column for somebody who was not
+      // yet here. `joinedOn` is the mirror of `leftOn` and is read the same
+      // way — in on the day itself, out on every day before it.
+      var joined = String(o.joinedOn || '').slice(0, 10);
+      if (joined && d < joined) return false;
       var days = self.workdaysOf(o);
       return !days || days.indexOf(wd) !== -1;
     });

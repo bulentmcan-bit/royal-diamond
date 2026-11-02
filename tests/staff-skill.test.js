@@ -184,7 +184,10 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   // Hannah left to right. Zara and Beyhan are hidden from the wall
   // (hiddenOnBoard, and only that — they keep their keys, skills, diary
   // columns and salary screens); neither has a photo, on purpose.
-  is(C.operators.map(o => o.key), ['helen', 'lissa', 'zara', 'beyhan', 'hannah'], 'operators: helen, lissa, zara, beyhan, hannah — Beyhan after Zara, before Hannah');
+  /* Emma joined 3 Kasım 2026 and sits with the other nail technicians, after
+     Lissa — the array IS the column order, so this is where her column
+     appears on the diary and on reception's grid. */
+  is(C.operators.map(o => o.key), ['helen', 'lissa', 'emma', 'zara', 'beyhan', 'hannah'], 'operators: helen, lissa, emma, zara, beyhan, hannah — Emma with the nail technicians');
   /* Hannah left on 22 Ekim 2026. Her line stays — her salary, her tills and
      her commission history are all read from it — but she is off the wall and
      off the roster from 23 Ekim. Her old days keep her exactly as they were,

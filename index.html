@@ -7404,7 +7404,7 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       // operators array only represents today, so update the historical
       // rollup for that date directly.
       if(!dtState.history) dtState.history=[];
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day){
@@ -7472,7 +7472,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       if(typeof dtRender==='function') dtRender();
     } else {
       if(!dtState.history) return;
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day) return;
@@ -7678,7 +7678,12 @@ const DED_TYPES = {
 // to know about all of them. "Commission" means what the salon OWES her on
 // her own client income — Beyhan is on 80% (no salary, paid monthly; the
 // salon keeps the other 20%), so her rate is 0.80, not 0.20.
-const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80};
+/* Emma joined 3 Kasım 2026 on 40% of her own client income and NO salary.
+   Helen is 0 here because her share is not a cut of jobs at all — it is the
+   25% of net profit worked out on the Aylık P&L. See RD_NO_BONUS_FROM below
+   for the owner's other instruction about Emma: that share is not taken from
+   anything Emma generates. */
+const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
 // A rate in the table is not the whole answer any more: a technician can have
 // her commission STOPPED from a date (crown-config.js — commissionPaused on
 // her operator line; Hannah, from 1 Aug 2026). This asks that flag for one
@@ -9047,8 +9052,12 @@ function renderSalaryPage(){
       var breakeven = toTRY(rdStarSal(monthKey),'USD') + toTRY(550,'GBP') + toTRY(1300,'USD') + toTRY(1300,'USD') +
                       60000 + toTRY(150,'GBP') + 15000 + 10000 +
                       toTRY(750,'GBP') + 25000 + toTRY(1000,'USD') + toTRY(1460,'USD') + allTechComms;
-      var above = Math.max(0, monthRevenue - breakeven);
-      var net   = Math.max(0, above - kdv - vergi);
+      var _ex   = (typeof rdBonusExcluded==='function') ? rdBonusExcluded(monthKey) : {rev:0,comm:0};
+      var _rev  = Math.max(0, monthRevenue - _ex.rev);
+      var _kdv  = _rev > 0 ? Math.round(_rev * 5 / 105) : 0;
+      var _verg = _rev > 0 ? Math.round(_rev * 0.10) : 0;
+      var above = _rev - (breakeven - _ex.comm);
+      var net   = Math.max(0, above - _kdv - _verg);
       helenBonus = Math.round(net * 0.25);
     }
 
@@ -9060,6 +9069,7 @@ function renderSalaryPage(){
       {name:'Zara',    role:'Nail Technician',    color:'#b8a0d8', salary:0,    cur:'TL',  commLabel:'25% of own client income',   comm:commTotals['Zara']||0},
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
       {name:'Beyhan',  role:'Kaş & Kirpik Uzmanı', color:'#7aaae8', salary:0,   cur:'TL',  commLabel:'80% of own client income (salon keeps 20%) — no salary, paid monthly', comm:commTotals['Beyhan']||0},
+      {name:'Emma',    role:'Nail Technician',    color:'#8fd3a8', salary:0,    cur:'TL',  commLabel:'40% of own client income — no salary, paid monthly', comm:commTotals['Emma']||0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:60000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
@@ -16768,7 +16778,7 @@ function rdKasaRepairScan(d){
   return out;
 }
 function rdKasaRepairApply(d, now){
-  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80};
+  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80,Emma:0.40};
   const changes=rdKasaRepairScan(d);
   changes.forEach(c=>{
     const h=(d.history||[]).find(x=>x&&x.date===c.date);
@@ -16927,6 +16937,7 @@ function dtDefaultState(){
       {id:1,name:'Hannah',entries:[],active:false},
       {id:2,name:'Lissa',entries:[],active:true},
       {id:3,name:'Zara',entries:[],active:true},
+      {id:7,name:'Emma',entries:[],active:true},
       {id:5,name:'Saeideh',entries:[],active:true},
       {id:6,name:'Beyhan',entries:[],active:true},
     ],
@@ -16985,6 +16996,10 @@ function dtLoadState(){
     (function(){ var h=d.operators.find(function(x){ return x && /^hann?ah?$/i.test(String(x.name||'').trim()); }); if(h) h.active=false; })();
     if(!d.operators.find(function(x){return x.name==='Saeideh';})) d.operators.push({id:5,name:'Saeideh',entries:[],active:true});
     if(!d.operators.find(function(x){return x.name==='Beyhan';})) d.operators.push({id:6,name:'Beyhan',entries:[],active:true});
+    // Emma, from 3 Kasım 2026 — a device that already holds a takings record
+    // has no card for her until this puts one there.
+    if(!d.operators.find(function(x){return x.name==='Emma';})) d.operators.push({id:7,name:'Emma',entries:[],active:true});
+    (function(){ var e=d.operators.find(function(x){return x && x.name==='Emma';}); if(e) e.active=true; })();
     // Deduplicate history - if same date appears twice, keep only the first (newest save)
     var seen={};
     d.history = (d.history||[]).filter(function(h){ if(seen[h.date]) return false; seen[h.date]=true; return true; });
@@ -18595,6 +18610,40 @@ function mGetMonthData(ym){
 }
 
 // ── cost calculation — all amounts converted to TRY ────────────
+/* ── Whose takings Helen's 25% is NOT worked out from ─────────────────────
+   Bülent, 2 Kasım 2026, on taking Emma on: "she will be on 40% but whatever
+   she generates Helen 25% is not to get anything from what she generates."
+
+   Emma's money is still the salon's. It is banked, it counts as revenue, it
+   helps meet the break-even and it shows in the turnover — nothing here hides
+   it. What changes is the ONE figure Helen's 25% is taken from: that is
+   worked out again from the month's revenue with Emma's takings removed, and
+   with Emma's own 40% removed from the costs as well, because a commission
+   on income that is no longer in the base would otherwise be charged against
+   Helen twice over.
+
+   Add a name to this list and the same thing happens for her. Remove Emma
+   and Helen's share goes back to being the whole salon's. */
+const RD_NO_BONUS_FROM = ['Emma'];
+function rdBonusExcluded(monthKey){
+  let rev = 0, comm = 0;
+  try{
+    const days = (typeof dtState!=='undefined' && dtState && dtState.history)
+      ? dtState.history.filter(function(h){ return h && h.date && h.date.slice(0,7)===monthKey; }) : [];
+    days.forEach(function(d){
+      (d.ops||[]).forEach(function(op){
+        if(!op || !op.name || RD_NO_BONUS_FROM.indexOf(op.name)===-1) return;
+        const t = (typeof dtOpTotal==='function' && Array.isArray(op.entries)) ? dtOpTotal(op) : (op.total||0);
+        rev += t;
+        comm += (op.commission && op.commission>0)
+          ? op.commission
+          : t * ((typeof TECH_COMM_RATES!=='undefined' && TECH_COMM_RATES[op.name]) || 0);
+      });
+    });
+  }catch(e){}
+  return { rev: Math.round(rev), comm: Math.round(comm) };
+}
+
 function mGetCalc(rev, viewMonth){
   // All costs confirmed and locked — June 2026
   const usd = (typeof mRates!=='undefined' && mRates.USD) ? mRates.USD : 46.51;
@@ -18643,11 +18692,22 @@ function mGetCalc(rev, viewMonth){
 
   // Net after all taxes
   const netAfterAll  = Math.max(0, afterBreakeven - vatDue - taxDue);
-  const comm         = Math.round(netAfterAll * 0.25);
+  /* Helen's 25%, on the same arithmetic but with the excluded technicians
+     taken out of both sides — see RD_NO_BONUS_FROM. With nobody excluded the
+     two figures are identical, so this changes nothing for any month before
+     Emma. */
+  const ex           = rdBonusExcluded(ym);
+  const bonusRev     = Math.max(0, rev - ex.rev);
+  const bonusAfter   = bonusRev - (breakeven - ex.comm);
+  const bonusVat     = bonusRev > 0 ? Math.round(bonusRev * 5 / 105) : 0;
+  const bonusTax     = bonusRev > 0 ? Math.round(bonusRev * 0.10) : 0;
+  const bonusNet     = Math.max(0, bonusAfter - bonusVat - bonusTax);
+  const comm         = Math.round(bonusNet * 0.25);
   const finalProfit  = netAfterAll - comm;
 
   return {breakeven, above, comm, profit: afterBreakeven, vatDue, taxDue,
     finalProfit, netAfterAll,
+    bonusRev, bonusNet, excludedRev: ex.rev, excludedComm: ex.comm,
     starBase: starSalTRY + starFlatTRY,
     starTotal: starSalTRY + glynSal + comm,
     starSalTRY, starFlatTRY, glynSal,
