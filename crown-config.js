@@ -245,16 +245,20 @@ var CROWN = {
      Every job is 60 minutes (slotDefault above), so a start on the half hour
      strands the hour after it: a 10:30 start blocks 11:00 and leaves
      11:30–12:00 too short for anybody. So a NEW start is offered on the whole
-     hour only, from `first` to `last` — with one exception: from
-     `lateHalfFrom` on, a :30 start is offered as well, because at the end of
-     the day it strands nothing.
+     hour only, from `first` to `last`.
+
+     `lateHalfFrom` used to make one exception — from that time on a :30 start
+     was offered too, on the grounds that at the end of the day it strands
+     nothing. It is OFF from 2 Kasım 2026 at the owner's word ("can we lose
+     the 17.30 not to show"): set it to a time to bring the late half hours
+     back, leave it null and the ladder is whole hours end to end.
      This is what may be OFFERED, never what exists: the diary's columns, the
      free-time finder, the customer's booking page, the availability the
      salon publishes and the Gap Report all read it, and a booking already
      sitting on a :30 stays exactly where it is and shows exactly as before.
      If the job length ever stops being 60 minutes, change `step` here and
      nothing else. */
-  starts: { first:'08:00', last:'18:00', step:60, lateHalfFrom:'17:30' },
+  starts: { first:'08:00', last:'18:00', step:60, lateHalfFrom:null },
   hmToMin: function(hm){ var p = String(hm || '').split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); },
   minToHm: function(m){ var p = function(n){ return (n < 10 ? '0' : '') + n; }; return p(Math.floor(m / 60)) + ':' + p(m % 60); },
   // May a NEW booking be offered starting at this minute of the day?
@@ -263,7 +267,12 @@ var CROWN = {
     var first = this.hmToMin(s.first), last = this.hmToMin(s.last);
     if (isNaN(m) || m < first || m > last) return false;
     if ((m - first) % s.step === 0) return true;
-    return m % 30 === 0 && m >= this.hmToMin(s.lateHalfFrom);
+    // No lateHalfFrom (null, '', missing) means no half-hour starts at all —
+    // the ladder is whole hours. Guarded here rather than at the caller so
+    // every screen that asks this question gets the same answer.
+    var half = String(s.lateHalfFrom || '');
+    if (!/^\d{1,2}:\d{2}$/.test(half)) return false;
+    return m % 30 === 0 && m >= this.hmToMin(half);
   },
   // Every start that may be offered, as minutes of the day, first to last.
   startLadder: function(){

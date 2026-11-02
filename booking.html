@@ -106,7 +106,11 @@ const SALON='905488933333';
 // half hour the salon would only have to refuse.
 const SLOTS=(function(){
   try{ if(window.CROWN&&CROWN.startLadderHM) return CROWN.startLadderHM(); }catch(e){}
-  const a=[];for(let m=8*60;m<=18*60;m+=30){ if(m%60===0||m>=17*60+30) a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2)); }return a;
+  // Whole hours only, matching crown-config's ladder since 2 Kasım 2026 —
+  // the late :30 start was taken off at the owner's word. This copy runs only
+  // when crown-config failed to load, and it must never offer a time the
+  // salon no longer offers.
+  const a=[];for(let m=8*60;m<=18*60;m+=60){ a.push(('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2)); }return a;
 })();
 const CAP=3;
 // ── URL parametreleri: ?src=instagram  ?svc=Jel Başlangıç ──
