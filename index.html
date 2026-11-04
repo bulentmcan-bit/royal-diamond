@@ -27,7 +27,6 @@
   <link rel="icon" type="image/png" href="/crown-gold.png">
   <link rel="apple-touch-icon" href="/crown-gold.png">
 
-  <link href="./💎 Royal Diamond Nail Studio — Gönyeli K.K.T.C._files/css2" rel="stylesheet">
 
   <!-- ROYAL DIAMOND REAL-TIME SYNC -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -4052,7 +4051,14 @@ p, span, div, label, h1, h2, h3, h4 {
 #page-monthly .fx-table td:last-child{text-align:right;font-family:'Playfair Display',serif;font-weight:700;color:var(--goldLight);}
 #page-monthly .fx-table td:first-child{color:var(--muted);}
 </style>
-<script src="./💎 Royal Diamond Nail Studio — Gönyeli K.K.T.C._files/xlsx.full.min.js.download"></script><script src="./💎 Royal Diamond Nail Studio — Gönyeli K.K.T.C._files/xlsx.full.min(1).js.download"></script></head>
+<!-- 4 Kasım 2026 — two script tags and a stylesheet used to sit here,
+     pointing at a "… _files" folder that does not exist: the leftovers of
+     somebody once saving this page to disk. Every load on every machine
+     fetched all three and got a 404 for each, and because the two scripts sat
+     in the head the browser WAITED for them before drawing anything. SheetJS
+     is already loaded on demand from cdnjs where it is actually used (line
+     ~12257), so nothing here was ever needed. -->
+</head>
 <body data-new-gr-c-s-check-loaded="14.1305.0" data-gr-ext-installed="">
 
 <!-- ══ TITLE BAR ══ -->
@@ -15424,11 +15430,13 @@ setTimeout(function(){
   renderDash();
 }, 0);
 
-// Auto-fetch FX rates on startup and every 30 minutes
+// FX rates: refreshed every 30 minutes, NOT on the way in. fetchFX paints the
+// Aylık P&L panel and is already called when that page (and Salary) is opened
+// — see showPage. Calling it at start-up only put another request in front of
+// the salon's own data. The second setInterval here was the same refresh
+// registered twice.
 setTimeout(function(){
-  fetchFX();
   setInterval(function(){ try{fetchFX();}catch(e){} }, 30*60*1000);
-  setInterval(fetchFX, 30 * 60 * 1000); // refresh every 30 mins
 }, 2000);
 
 // Auto-generate WA messages on load (only if clients exist)
@@ -19324,14 +19332,33 @@ function sunFill(g,u,e,label,warn){
   sunSetSrc(label,warn);
   sunConvCalc(true); if(typeof sunRevCalc==='function')sunRevCalc();
 }
-async function sunAutoRates(){
+async function sunAutoRates(force){
   var today=new Date().toISOString().slice(0,10);
   if(localStorage.getItem('rdns_sun_manual')===today) return; // owner typed today's rates by hand — don't overwrite
+  /* 4 Kasım 2026 — THE SLOW START-UP, MEASURED.
+     This ran 3 seconds after every page load, on every machine. The direct
+     KKTC Merkez Bankası read is blocked by CORS from a browser, so it fell
+     through to three public relay services, one after another, each with a
+     six-second timeout — and then did the whole thing again for TCMB. On
+     Bülent's own laptop today that was two relays at 6.0 s apiece: twelve
+     seconds of the connection spent on a number that changes ONCE A DAY,
+     while the salon's own data was still coming down beside it.
+     A rate we already hold for the working day is the answer, not a request.
+     sunConvLoad has filled the boxes from this same store 2.5 s earlier, so
+     the screen is already right; this just stops the asking. */
+  try{
+    var _want=(typeof rdFxExpectedDate==='function')?rdFxExpectedDate():today;
+    var _c=JSON.parse(localStorage.getItem('rdns_sun_rates')||'null');
+    if(!force && _c && String(_c.d||'')>=String(_want) && parseFloat(_c.g)>0){
+      sunFill(parseFloat(_c.g),parseFloat(_c.u),parseFloat(_c.e),'\u2713 '+(_c.d||today)+' kuru \u00b7 kay\u0131tl\u0131',false);
+      return;
+    }
+  }catch(e){}
   window._mbTrace=[];
   sunSetSrc('kurlar al\u0131n\u0131yor\u2026','');
   async function tfetch(name,url){
     var ctl=new AbortController();
-    var tid=setTimeout(function(){ctl.abort();},6000);
+    var tid=setTimeout(function(){ctl.abort();},2500);   // was 6000 — four routes x 6 s was half a minute of waiting
     try{
       var r=await fetch(url,{cache:'no-store',signal:ctl.signal});
       clearTimeout(tid);
@@ -19341,7 +19368,7 @@ async function sunAutoRates(){
       return t;
     }catch(e){
       clearTimeout(tid);
-      window._mbTrace.push(name+': '+(e.name==='AbortError'?'zaman a\u015f\u0131m\u0131 (6sn)':(e.message||'engellendi')));
+      window._mbTrace.push(name+': '+(e.name==='AbortError'?'zaman a\u015f\u0131m\u0131 (2.5sn)':(e.message||'engellendi')));
       return '';
     }
   }

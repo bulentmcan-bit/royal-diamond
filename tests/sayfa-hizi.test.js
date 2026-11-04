@@ -79,5 +79,40 @@ console.log('2. the open page draws a window, not three years');
   is(/window\.rdApptsShowAll = function\(\)/.test(html), true, '…and the button that undoes it exists');
 }
 
+// ── 4 Kasım 2026 · THE SLOW START-UP ──────────────────────────────────────
+// Measured on Bülent's own laptop: the page itself was interactive in 882 ms,
+// but two public relay services were being asked for the exchange rate, one
+// after the other, 6.0 s each — while the salon's own 1.3 MB of data was
+// still coming down. Plus three dead files left behind by a "save page as",
+// two of them scripts in the head, which the browser waits for.
+console.log('\n4. start-up');
+{
+  is(/(?:src|href)="\.\/[^"]*_files\//.test(html), false,
+     'nothing is loaded from a saved copy of the page — those 404 on every load');
+  is(/xlsx\.full\.min\(1\)\.js\.download/.test(html), false,
+     'and no duplicate SheetJS in the head');
+  is(/cdnjs\.cloudflare\.com\/ajax\/libs\/xlsx\//.test(html), true,
+     'SheetJS still loads on demand, from cdnjs, where it is used');
+
+  is(/async function sunAutoRates\(force\)\{/.test(html), true,
+     'the rate fetch can be forced when somebody really wants it refreshed');
+  is(/if\(!force && _c && String\(_c\.d\|\|''\)>=String\(_want\) && parseFloat\(_c\.g\)>0\)\{/.test(html), true,
+     '…but a rate already held for the working day is used instead of asking');
+  is(/ctl\.abort\(\);\},2500\)/.test(html), true,
+     'and a relay that has not answered in 2.5 s is given up on (was 6 s)');
+  is(/ctl\.abort\(\);\},6000\)/.test(html), false, 'the six-second wait is gone');
+
+  const fxBlock = html.slice(html.indexOf('// FX rates: refreshed every 30 minutes'),
+                             html.indexOf('// FX rates: refreshed every 30 minutes') + 700);
+  is(fxBlock.length > 100, true, 'the start-up FX block is where it says it is');
+  is((fxBlock.match(/setInterval\(/g) || []).length, 1,
+     'the 30-minute refresh is registered ONCE, not twice');
+  is(/\n  fetchFX\(\);\n  setInterval/.test(html), false,
+     'and nothing fetches rates on the way in any more');
+  is(/if\(page==="monthly"\)\{mInitCosts\(\);mEnsureSeed\(\);renderMonthly\(\);fetchFX\(\)/.test(html), true,
+     'the P&L page still fetches them when it is actually opened');
+  is(/if\(page==="salary"\)\{ fetchFX\(\);/.test(html), true, '…and so does Salary');
+}
+
 console.log(fail ? `\n✗ ${fail} FAILED, ${pass} passed` : `\n✓ all ${pass} passed`);
 process.exit(fail ? 1 : 0);
