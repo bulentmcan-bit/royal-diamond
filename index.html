@@ -7211,27 +7211,36 @@ function dashEditAppt(id){
         // does not finish until the satisfaction question is answered. Park
         // this very click and re-run it whole once a button is pressed; a
         // price CORRECTION (money already recorded) asks nothing again.
-        {
-          const _staffPick=document.getElementById('a-staff').value||live.staff;
-          const _moneyAlready=(live._takingsAmount||0)>0 || (wasCompleted && priorKnown>0);
-          /* 15 Ekim 2026. A number nobody typed is not a checkout.
-             Opening Edit to move an hour auto-prices the Fiyat box from the
-             service — Dolgu fills in \u20BA1.700 on its own — and the test above
-             then read that as money being taken, threw the satisfaction gate
-             up over the form, and refused to close without an answer. Bulent
-             hit it trying to change DEGER BAYSEL's details. The price box
-             already records whose number it is: dataset.rdAuto holds the
-             system's own guess, and line ~7134 deletes it when the figure
-             came from the record instead. So: still the untouched guess =
-             nobody is checking anybody out. Type over it, or press a code
-             key, and this fires exactly as before. */
-          const _prEl=document.getElementById('a-price');
-          const _priceIsSystemGuess = !!(_prEl && _prEl.dataset.rdAuto!=null
-                                         && String(_prEl.value)===String(_prEl.dataset.rdAuto));
-          if(enteredPrice>0 && _staffPick && !_moneyAlready && !live.sat && !_priceIsSystemGuess){
-            satAsk(live, function(){ saveBtn.onclick(); });
-            return;
-          }
+        const _staffPick=document.getElementById('a-staff').value||live.staff;
+        const _moneyAlready=(live._takingsAmount||0)>0 || (wasCompleted && priorKnown>0);
+        /* 15 Ekim 2026. A number nobody typed is not a checkout.
+           Opening Edit to move an hour auto-prices the Fiyat box from the
+           service — Dolgu fills in \u20BA1.700 on its own — and the test above
+           then read that as money being taken, threw the satisfaction gate
+           up over the form, and refused to close without an answer. Bulent
+           hit it trying to change DEGER BAYSEL's details. The price box
+           already records whose number it is: dataset.rdAuto holds the
+           system's own guess, and line ~7134 deletes it when the figure
+           came from the record instead. So: still the untouched guess =
+           nobody is checking anybody out. Type over it, or press a code
+           key, and this fires exactly as before. */
+        const _prEl=document.getElementById('a-price');
+        const _priceIsSystemGuess = !!(_prEl && _prEl.dataset.rdAuto!=null
+                                       && String(_prEl.value)===String(_prEl.dataset.rdAuto));
+        /* 4 Kasim 2026 — THE HOLE THAT COST LISSA 2.124 TL IN OCTOBER.
+           The 15 Ekim rule above stopped the QUESTION on an untouched system
+           guess, but the completion below went on completing the appointment
+           and sending its money to the till regardless. So an Edit opened to
+           move an hour quietly checked the customer out, nobody was ever
+           asked "Musteri memnun kaldi mi?", the record saved with no a.sat —
+           and commVerdict cancelled her 12% as "memnuniyet sorulmadi" for a
+           job she had done on time and crowned. ONE rule now governs both:
+           a checkout is a price somebody actually typed, and a checkout
+           always asks. A number nobody typed completes nothing. */
+        const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceIsSystemGuess;
+        if(_isCheckout && !_moneyAlready && !live.sat){
+          satAsk(live, function(){ saveBtn.onclick(); });
+          return;
         }
         // KAPALI holds an hour, it is not a customer: a price typed against it
         // must never reach the till or complete it. Time/staff edits still save.
@@ -7277,7 +7286,10 @@ function dashEditAppt(id){
         let alreadyRecorded = live._takingsAmount || 0;
         if(!alreadyRecorded && wasCompleted && priorKnown>0) alreadyRecorded = priorKnown;
 
-        if(enteredPrice > 0 && live.staff){
+        // Only a real checkout (or a correction to money already taken) may
+        // complete this appointment or move money — the same _isCheckout test
+        // the satisfaction gate above uses, so the two can never disagree.
+        if(enteredPrice > 0 && live.staff && (_isCheckout || _moneyAlready)){
           if(live.status !== 'completed'){
             live.status = 'completed';
             try{ live._ckBy=localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){}
@@ -11302,9 +11314,14 @@ function rdCheckoutDone(){
     closeModal('mRebook'); rebookPending=null; _ckState=null; return;
   }
   const price=parseInt(document.getElementById('rb-price')?.value)||0;
-  // 😊 MANDATORY — the same parked-continuation gate as before: no till entry
-  // before the satisfaction answer; the button press re-runs this whole click.
-  if(price>0 && appt.staff && !appt._takingsAmount && !appt.sat){
+  // 😊 MANDATORY — EVERY checkout, no exceptions. It used to ask only when a
+  // price was being written for the FIRST time, so a free job, a zero-price
+  // job, or one whose money had already reached the till finished in silence
+  // with no a.sat on the record — and the technician then lost her 12% as
+  // "memnuniyet sorulmadi" for work she had done properly. The question IS
+  // the checkout now: no answer, no completion. satAsk returns straight
+  // through when the answer is already on the record, so this cannot loop.
+  if(!appt.sat){
     satAsk(appt, function(){ rdCheckoutDone(); });
     return;
   }
