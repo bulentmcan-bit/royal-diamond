@@ -6494,7 +6494,7 @@ function openModal(id){
     try{ const ad0=document.getElementById('a-addon'); if(ad0) ad0.value='0'; rdAddonChips(); }catch(e){}
     const dt=document.getElementById('a-dt'); if(dt) dt.value='';
     const dur=document.getElementById('a-dur'); if(dur) dur.value='60';
-    const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; }
+    const pr=document.getElementById('a-price'); if(pr){ pr.value=''; delete pr.dataset.rdAuto; delete pr.dataset.rdSeed; }
     const cd0=document.getElementById('a-code'); if(cd0){ cd0.value=''; delete cd0.dataset.rdAuto; }
     // Fiyat randevuda yazılmaz — kutunun altındaki satır bunu söyler.
     const prh=document.getElementById('a-price-hint');
@@ -7133,6 +7133,9 @@ function dashEditAppt(id){
       pr.value = shownPrice || '';
       delete pr.dataset.rdAuto;                    // bu rakam KAYITTAN geldi, sistemin tahmini değil
       try{ rdApptPriceEcho(); }catch(e){}          // altındaki satırı da ona göre yaz
+      // 4 Kasım 2026 — ve bu da KAYITTAN geldi: kimse yazmadı. Kaydederken
+      // kutudaki rakam hâlâ bu ise bu bir çıkış değil, sadece bir düzeltme.
+      pr.dataset.rdSeed = String(pr.value||'');
     }
     // 💚 Family discount reminder — show it right on the popup
     try{
@@ -7237,7 +7240,18 @@ function dashEditAppt(id){
            job she had done on time and crowned. ONE rule now governs both:
            a checkout is a price somebody actually typed, and a checkout
            always asks. A number nobody typed completes nothing. */
-        const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceIsSystemGuess;
+        /* …and the same is true of a figure that came off the RECORD. Line
+           ~7134 loads it and deletes rdAuto, which made "read from the book"
+           look exactly like "typed by the girl" — so opening Edit on a booked
+           job just to move its hour completed it, sent its money to the till
+           and threw the rebook panel up. Bülent: "when I want to edit
+           something it on lots of occasions takes me to check out." It was
+           this. The seed stamped above is the answer: unchanged = untouched. */
+        const _prSeed = _prEl ? _prEl.dataset.rdSeed : undefined;
+        const _priceFromRecord = !!(_prEl && _prSeed!=null && _prSeed!==''
+                                    && String(_prEl.value)===String(_prSeed));
+        const _priceUntouched = _priceIsSystemGuess || _priceFromRecord;
+        const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;
         if(_isCheckout && !_moneyAlready && !live.sat){
           satAsk(live, function(){ saveBtn.onclick(); });
           return;

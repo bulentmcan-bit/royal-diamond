@@ -147,7 +147,7 @@ ok(ck.indexOf('if(!appt.sat)') < ck.indexOf('rdFinalizeCompletion'),
    'the question comes BEFORE the completion, not after');
 
 console.log('4. the Edit / ✏ Fiyat path');
-ok(/const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceIsSystemGuess;/.test(html),
+ok(/const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;/.test(html),
    'one definition of what a checkout is');
 ok(/if\(_isCheckout && !_moneyAlready && !live\.sat\)\{\s*\n\s*satAsk\(live/.test(html),
    'the satisfaction gate is driven by it');
@@ -158,7 +158,28 @@ ok(!/if\(enteredPrice > 0 && live\.staff\)\{\s*\n\s*if\(live\.status !== 'comple
 ok(html.indexOf('const _isCheckout =') < html.indexOf('if(enteredPrice > 0 && live.staff && (_isCheckout'),
    '_isCheckout is in scope at the completion');
 
-console.log('5. the rule that punished her is unchanged');
+console.log('5. editing must not check anybody out');
+// "when I want to edit something it on lots of occasions takes me to check
+// out" — same root. A price read off the RECORD looked identical to one the
+// girl had typed, so saving a time change completed the job, moved its money
+// and threw up the rebook panel.
+ok(/pr\.dataset\.rdSeed = String\(pr\.value\|\|''\);/.test(html),
+   'the figure loaded from the record is stamped as a seed');
+ok(/const _priceFromRecord = !!\(_prEl && _prSeed!=null && _prSeed!==''/.test(html),
+   'and recognised at save time as "nobody typed this"');
+ok(/const _priceUntouched = _priceIsSystemGuess \|\| _priceFromRecord;/.test(html),
+   'the service guess and the record figure are judged the same way');
+ok(/const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;/.test(html),
+   'so neither one counts as a checkout');
+ok(/pr\.value=''; delete pr\.dataset\.rdAuto; delete pr\.dataset\.rdSeed;/.test(html),
+   'a fresh modal carries no stale seed from the last appointment');
+{
+  const open = html.indexOf("pr.dataset.rdSeed = String(pr.value||'');");
+  const read = html.indexOf('const _prSeed = _prEl ? _prEl.dataset.rdSeed : undefined;');
+  ok(open > 0 && read > open, 'the seed is stamped when Edit opens, read when Save runs');
+}
+
+console.log('6. the rule that punished her is unchanged');
 ok(/if\(COMM_STRICT && \(a\.sat==='not_asked' \|\| !a\.sat\) && day >= COMM_NOEVIDENCE_FROM\) return 'notasked';/.test(html),
    "commVerdict still cancels commission when there is no answer …");
 const cv = html.slice(html.indexOf('function commVerdict(a)'), html.indexOf("return 'notasked';"));
