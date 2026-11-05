@@ -29,6 +29,21 @@
 
 
   <!-- ROYAL DIAMOND REAL-TIME SYNC -->
+  <!-- ⏱ TIMER COUNTER — 5 Kasım 2026. First thing on the page, because it can
+       only count what is created after it. Pure pass-through: setInterval and
+       clearInterval behave exactly as they always did, this only keeps a
+       tally, so rdPerfReport() can say whether repeating timers are piling up
+       through the day. If anything here throws, the originals stay. -->
+  <script>
+  (function(){
+    try{
+      var _si=window.setInterval, _ci=window.clearInterval, n=0, peak=0;
+      window.setInterval=function(){ n++; if(n>peak) peak=n; return _si.apply(window, arguments); };
+      window.clearInterval=function(id){ if(id!=null && n>0) n--; return _ci.apply(window, arguments); };
+      window.__rdTimerCount=function(){ return {live:n, peak:peak}; };
+    }catch(e){ /* leave the browser's own alone */ }
+  })();
+  </script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -27110,6 +27125,137 @@ document.addEventListener('keydown', function(e){
   if(e.key==='Escape'&&rdFindIsOpen()){ e.preventDefault(); rdFindClose(); return; }
   if(e.key==='/'&&!typing&&!e.ctrlKey&&!e.metaKey&&!e.altKey){ e.preventDefault(); rdFindOpen(); }
 });
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   🩺 GÜN BOYU SAĞLIK — the watchdog, and the night's own refresh.
+   5 Kasım 2026.
+
+   A freshly loaded page is fast: measured on Bülent's laptop the same evening
+   he said it was crawling — interactive in 1.5 s, nothing on the wire over a
+   second, 4,481 elements, 90 MB. The tab he was actually working in had been
+   open since the morning. That is the whole shape of the complaint, and it is
+   not something that can be reproduced in a minute: it needs a day.
+
+   So this does two things, and neither of them touches the salon's data.
+
+   1. It takes the page's pulse every three minutes and keeps twelve hours of
+      it in memory — how many elements the tab is holding, how much memory,
+      how many repeating timers are alive, and how much time the browser spent
+      in tasks long enough to be FELT (over 50 ms, which is where a click
+      starts to lag). rdPerfReport() in the console prints it. Next time the
+      desk says it has gone slow, the answer is in there instead of in a guess.
+
+   2. A tab nobody has touched for a quarter of an hour, that has been open
+      eight hours or since yesterday, reloads itself. That is the safety net:
+      nobody should start the day on a twelve-hour-old page. It will not fire
+      while a window is open, while anybody is typing, or if it cannot tell —
+      a checkout half-finished is worth far more than a tidy tab.
+   ══════════════════════════════════════════════════════════════════════════ */
+(function(){
+  var SAMPLE_MS  = 3*60e3;    // the pulse
+  var KEEP       = 240;       // twelve hours of it
+  var OPEN_HOURS = 8;         // old enough to be worth replacing
+  var IDLE_MIN   = 15;        // and nobody is using it
+  var CHECK_MS   = 60e3;
+
+  var openedAt = Date.now();
+  var openedDay = new Date().toDateString();
+  var lastTouch = Date.now();
+  var log = [];
+  window.__rdPerf = log;
+
+  // Long tasks — the browser's own word for "this froze". Counted since the
+  // previous sample, so a row says what that three minutes actually felt like.
+  var ltN = 0, ltMs = 0;
+  try{
+    new PerformanceObserver(function(list){
+      list.getEntries().forEach(function(e){ ltN++; ltMs += e.duration; });
+    }).observe({ entryTypes: ['longtask'] });
+  }catch(e){}
+
+  ['mousedown','keydown','touchstart','wheel'].forEach(function(ev){
+    try{ window.addEventListener(ev, function(){ lastTouch = Date.now(); }, {passive:true, capture:true}); }catch(e){}
+  });
+
+  function heapMB(){
+    try{ return performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576) : null; }catch(e){ return null; }
+  }
+  function sample(){
+    try{
+      var t = window.__rdTimerCount ? window.__rdTimerCount() : {live:null, peak:null};
+      log.push({
+        at:   Date.now(),
+        open: Math.round((Date.now()-openedAt)/60e3),   // minutes this tab has been up
+        dom:  document.querySelectorAll('*').length,
+        mb:   heapMB(),
+        tmr:  t.live,
+        lt:   ltN,                                      // long tasks since the last pulse
+        ltms: Math.round(ltMs)
+      });
+      ltN = 0; ltMs = 0;
+      while(log.length > KEEP) log.shift();
+    }catch(e){}
+  }
+
+  /* What the console prints. Deliberately a table: the question is always
+     "what is bigger now than it was this morning", and a table answers it
+     at a glance. */
+  window.rdPerfReport = function(){
+    if(!log.length){ console.log('Henüz ölçüm yok — ilk nabız 3 dakika sonra.'); return []; }
+    var rows = log.map(function(r){
+      return { 'açık (dk)': r.open, 'element': r.dom, 'bellek MB': r.mb,
+               'canlı zamanlayıcı': r.tmr, 'donma': r.lt, 'donma ms': r.ltms,
+               'saat': new Date(r.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}) };
+    });
+    try{ console.table(rows); }catch(e){ console.log(rows); }
+    var a = log[0], z = log[log.length-1];
+    console.log('İlk → son:  element ' + a.dom + ' → ' + z.dom
+              + '  ·  bellek ' + a.mb + ' → ' + z.mb + ' MB'
+              + '  ·  zamanlayıcı ' + a.tmr + ' → ' + z.tmr
+              + '  ·  açık ' + z.open + ' dakika');
+    return rows;
+  };
+
+  /* Is somebody in the middle of something? Anything at all that says yes
+     means no reload. An error also means yes — not knowing is not a reason
+     to throw away a half-finished checkout. */
+  function busy(){
+    try{
+      if(document.querySelector('.overlay.open')) return true;
+      var ids = ['satModal','pmModal','rbkCalOv'];
+      for(var i=0;i<ids.length;i++){
+        var el = document.getElementById(ids[i]);
+        if(el && el.style && el.style.display && el.style.display !== 'none') return true;
+      }
+      var t = document.activeElement, tag = (t && t.tagName || '').toLowerCase();
+      if(tag==='input' || tag==='textarea' || tag==='select' || (t && t.isContentEditable)) return true;
+      return false;
+    }catch(e){ return true; }
+  }
+
+  // Pulled out so it can be tested on its own, with no page around it.
+  function rdReloadDue(now, openedAt, openedDay, lastTouch, isBusy, todayStr){
+    if(isBusy) return false;
+    if((now - lastTouch) / 60e3 < IDLE_MIN) return false;
+    var oldEnough = (now - openedAt) / 3600e3 >= OPEN_HOURS;
+    var yesterday = String(openedDay) !== String(todayStr);
+    return oldEnough || yesterday;
+  }
+  window.rdReloadDue = rdReloadDue;
+
+  setInterval(sample, SAMPLE_MS);
+  setTimeout(sample, 20e3);
+
+  setInterval(function(){
+    try{
+      if(!rdReloadDue(Date.now(), openedAt, openedDay, lastTouch, busy(), new Date().toDateString())) return;
+      console.log('[sağlık] Sayfa ' + Math.round((Date.now()-openedAt)/3600e3) + ' saattir açık ve ' + IDLE_MIN + ' dakikadır dokunulmadı — yenileniyor.');
+      location.reload();
+    }catch(e){}
+  }, CHECK_MS);
+})();
 </script>
 
 </html>
