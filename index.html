@@ -15916,6 +15916,74 @@ function ccUndo(id){
   renderCashCheck();
   if(typeof renderDashTakings==="function")renderDashTakings();
 }
+
+/* ── 💰 KASAYA YAZ — the repair this screen has needed since August ────────
+   6 Kasım 2026.
+
+   A completed appointment whose money never reached the till. It has happened
+   at least three times we can name — 28 Ağustos ₺1.700, 2 Kasım ZEHRA
+   UZMANER, 3 Kasım ABEER NASSOUR ₺2.500 — and each one leaves a negative Fark
+   that nothing on this screen could close. The badge's own tooltip said the
+   till "must be completed by hand", and there was no by-hand: Geçmiş Gün
+   Girişi overwrites the whole day with flat totals and takes every itemised
+   line and appointment link with it.
+
+   Worse, the appointment usually still carries _takingsAmount — the stamp
+   that says "money sent" — so re-typing the price through ✏ Fiyat sees
+   nothing changed and writes nothing. The stamp is the lie; the till is the
+   truth. So this clears the stamp, lets diAutoAdd write the line properly
+   (into the live day or that day's archive, whichever the date calls for,
+   carrying the appointment id so the two can never drift apart again), and
+   then asks how it was paid.
+
+   It writes once and only once: a line already carrying this appointment's
+   id stops it dead. */
+function ccTillLineFor(apptId, day){
+  try{
+    var today=(typeof dtDateKey==='function')?dtDateKey():null;
+    var pools=[];
+    if(day===today) pools=[(dtState&&dtState.operators)||[]];
+    else {
+      var hd=((dtState&&dtState.history)||[]).find(function(h){ return h&&h.date===day; });
+      pools=[(hd&&hd.ops)||[]];
+    }
+    for(var p=0;p<pools.length;p++){
+      var ops=pools[p];
+      for(var i=0;i<ops.length;i++){
+        var es=(ops[i]&&ops[i].entries)||[];
+        for(var j=0;j<es.length;j++){ if(es[j]&&String(es[j].apptId)===String(apptId)) return es[j]; }
+      }
+    }
+    return null;
+  }catch(e){ return null; }
+}
+function ccWriteMissingTill(apptId){
+  var a=(typeof appointments!=='undefined'?appointments:[]).find(function(x){ return x&&String(x.id)===String(apptId); });
+  if(!a){ toast('⚠️','Randevu bulunamadı','',''); return; }
+  if(a.status!=='completed'){ toast('⚠️','Çıkışı yapılmamış','Önce randevunun çıkışını tamamlayın.',''); return; }
+  if(typeof rdIsBlocker==='function' && rdIsBlocker(a.clientId)){ toast('⛔','KAPALI','Saat tutucu kayda para yazılamaz.','r'); return; }
+  var amt=parseInt(a.price)||0;
+  if(amt<=0){ toast('⚠️','Tutar yok','Bu randevuda yazılacak bir tutar yok.',''); return; }
+  if(!a.staff){ toast('⚠️','Personel yok','Bu randevuda personel seçili değil.',''); return; }
+  var day=String(a.datetime||'').slice(0,10);
+  if(ccTillLineFor(apptId, day)){ toast('ℹ','Zaten kasada','Bu randevunun kasa kaydı zaten var.',''); renderCashCheck(); return; }
+  var who=(typeof cName==='function')?cName(a.clientId):'';
+  if(!confirm('Kasaya yazılacak:\n\n'+(who?who+' — ':'')+(a.service||'')+'\n'+a.staff+' · '+day+'\n₺'+amt.toLocaleString('tr-TR')
+            +'\n\nPara gerçekten alındıysa Tamam\'a basın. Alınmadıysa İptal — o zaman randevuyu ⛔ Ödenmedi işaretleyin.')) return;
+  a._takingsAmount=0;                                   // the stamp was false
+  try{ diAutoAdd(a.staff, amt, a.datetime, a.id); }
+  catch(e){ console.warn('[kasaya-yaz]', e); toast('⚠️','Yazılamadı',String(e&&e.message||e),'r'); return; }
+  var line=ccTillLineFor(apptId, day);
+  if(!line){ toast('⚠️','Yazılamadı','Kasa satırı oluşmadı — değişiklik yapılmadı.','r'); return; }
+  a._takingsAmount=amt;
+  a._pts=Math.max(Date.now(), (a._pts||0)+1);
+  try{ apptTouch(a); }catch(e){}
+  try{ saveAll(); }catch(e){}
+  renderCashCheck();
+  if(typeof renderDashTakings==='function') renderDashTakings();
+  toast('💰','Kasaya yazıldı',(who?who+' — ':'')+'₺'+amt.toLocaleString('tr-TR')+' · '+a.staff,'g');
+  try{ pmAsk(line); }catch(e){}                         // and how was it paid?
+}
 // ── Manual cash-up override: overwrite the day's Nakit/Kart/IBAN + Alacak (owed) ──
 let _ccCtx=null;
 function ccEditOpen(){
@@ -16239,6 +16307,12 @@ function renderCashCheck(){
             :(r.apptId&&r.amount>0&&!r.pay&&!r.splits?'<span class="badge badge-rose" style="font-weight:800;" title="Para kaydedilmiş ama nasıl ödendiği girilmemiş — personele sorun">⛔ Yöntem girilmemiş</span>'
             :ccPayBadge(r.pay,r.splits,r.payNote))))+'</td>'
           +'<td style="white-space:nowrap;">'
+          // 💰 Kasaya yaz is the one action that belongs on an ARCHIVED row too:
+          // unlike the others it does not touch today's live entries, it writes
+          // into the dated store diAutoAdd picks from the appointment's own date.
+          +((r.noTill&&r.apptId!=null)
+            ?'<button class="btn btn-sm" style="background:rgba(95,203,140,0.16);border:1px solid rgba(95,203,140,0.5);color:#2f8d5a;font-weight:800;" title="Bu randevunun eksik kasa kaydını yaz — Fark kapanır" onclick="ccWriteMissingTill('+r.apptId+')">💰 Kasaya yaz</button> '
+            :'')
           // An archived row is a read-only copy of a day that has already closed.
           // The delete buttons all act on TODAY's live entries, so offering them
           // here would remove the wrong transaction.
