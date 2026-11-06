@@ -7558,7 +7558,7 @@ function diAutoAdd(staffName, amount, datetime, apptId){
       // operators array only represents today, so update the historical
       // rollup for that date directly.
       if(!dtState.history) dtState.history=[];
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40, Haley:0};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day){
@@ -7626,7 +7626,7 @@ function diAutoRemove(staffName, amount, datetime, apptId){
       if(typeof dtRender==='function') dtRender();
     } else {
       if(!dtState.history) return;
-      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
+      const DI_COMM = {Helen:0, Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40, Haley:0};
       const DI_EXTRA = {Zara:400};
       let day = dtState.history.find(function(h){return h.date===dateKey;});
       if(!day) return;
@@ -7837,7 +7837,7 @@ const DED_TYPES = {
    25% of net profit worked out on the Aylık P&L. See RD_NO_BONUS_FROM below
    for the owner's other instruction about Emma: that share is not taken from
    anything Emma generates. */
-const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40};
+const TECH_COMM_RATES = {Hannah:0.12, Lissa:0.12, Zara:0.25, Saeideh:0.50, Beyhan:0.80, Emma:0.40, Haley:0};
 // A rate in the table is not the whole answer any more: a technician can have
 // her commission STOPPED from a date (crown-config.js — commissionPaused on
 // her operator line; Hannah, from 1 Aug 2026). This asks that flag for one
@@ -9313,6 +9313,7 @@ function renderSalaryPage(){
       {name:'Saeideh', role:'Nail Technician',    color:'#f5c27a', salary:0,    cur:'TL',  commLabel:'50% of own client income',   comm:commTotals['Saeideh']||0},
       {name:'Beyhan',  role:'Kaş & Kirpik Uzmanı', color:'#7aaae8', salary:0,   cur:'TL',  commLabel:'80% of own client income (salon keeps 20%) — no salary, paid monthly', comm:commTotals['Beyhan']||0},
       {name:'Emma',    role:'Nail Technician',    color:'#8fd3a8', salary:0,    cur:'TL',  commLabel:'40% of own client income — no salary, paid monthly', comm:commTotals['Emma']||0},
+      {name:'Haley',   role:'Nail Technician',    color:'#e8b4c8', salary:1000, cur:'USD', commLabel:'Salary only — no commission until further notice', comm:0},
       {name:'Nihal',   role:'Receptionist',       color:'#c4a8f5', salary:60000,cur:'TL',  commLabel:'Fixed salary only',comm:0}
     ];
 
@@ -17157,7 +17158,7 @@ function rdKasaRepairScan(d){
   return out;
 }
 function rdKasaRepairApply(d, now){
-  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80,Emma:0.40};
+  const RATES={Helen:0,Hannah:0.12,Lissa:0.12,Zara:0.25,Saeideh:0.50,Beyhan:0.80,Emma:0.40,Haley:0};
   const changes=rdKasaRepairScan(d);
   changes.forEach(c=>{
     const h=(d.history||[]).find(x=>x&&x.date===c.date);
@@ -17317,6 +17318,7 @@ function dtDefaultState(){
       {id:2,name:'Lissa',entries:[],active:true},
       {id:3,name:'Zara',entries:[],active:true},
       {id:7,name:'Emma',entries:[],active:true},
+      {id:8,name:'Haley',entries:[],active:true},
       {id:5,name:'Saeideh',entries:[],active:true},
       {id:6,name:'Beyhan',entries:[],active:true},
     ],
@@ -17379,6 +17381,10 @@ function dtLoadState(){
     // has no card for her until this puts one there.
     if(!d.operators.find(function(x){return x.name==='Emma';})) d.operators.push({id:7,name:'Emma',entries:[],active:true});
     (function(){ var e=d.operators.find(function(x){return x && x.name==='Emma';}); if(e) e.active=true; })();
+    // Haley, from 7 Kasım 2026 — same again for a device that already holds a
+    // takings record and so has no card for her.
+    if(!d.operators.find(function(x){return x.name==='Haley';})) d.operators.push({id:8,name:'Haley',entries:[],active:true});
+    (function(){ var e=d.operators.find(function(x){return x && x.name==='Haley';}); if(e) e.active=true; })();
     // Deduplicate history - if same date appears twice, keep only the first (newest save)
     var seen={};
     d.history = (d.history||[]).filter(function(h){ if(seen[h.date]) return false; seen[h.date]=true; return true; });

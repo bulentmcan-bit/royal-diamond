@@ -112,6 +112,11 @@ var CROWN = {
        hiddenOnBoard keeps her tile off the television; take that flag off once
        there is a photograph and she appears on the wall with the others. */
     { key:'emma',   name:'Emma',   hiddenOnBoard: true, joinedOn: '2026-11-03' },
+    /* Haley, from 6 Kasım 2026 — manikür ve pedikür, Emma'nın yanında, çünkü
+       bu dizi sütun sırasıdır. Maaşlı: aylık 1.000 USD, ikinci bir karara
+       kadar komisyon yok — bu yüzden TECH_COMM_RATES'te oranı sıfırdır ve
+       DED_RATES'te (Crown Board'un %12 düzeni) hiç yoktur. */
+    { key:'haley',  name:'Haley',  hiddenOnBoard: true, joinedOn: '2026-11-06' },
     { key:'zara',   name:'Zara',   hiddenOnBoard: true, hiddenOnDash: true, workdays: [1, 4] },
     /* Beyhan — brows and lashes, NOT nails: kas and kirpik in serviceSkill
        below, never manikur, pedikur or agda, so the diary warns, and the
@@ -346,8 +351,8 @@ var CROWN = {
      when the date is past (a past date blocks nothing). */
   staffPrefs: {
     serviceSkill: {
-      manikur: ['helen', 'lissa', 'zara', 'hannah', 'emma'],
-      pedikur: ['helen', 'lissa', 'zara', 'hannah', 'emma'],
+      manikur: ['helen', 'lissa', 'zara', 'hannah', 'emma', 'haley'],
+      pedikur: ['helen', 'lissa', 'zara', 'hannah', 'emma', 'haley'],
       // Beyhan is in neither list: she carries her own `services` map above,
       // which answers for her instead. She does brow work and the lash LIFT,
       // not lash extensions, and these groups are too coarse to say that.
@@ -360,7 +365,7 @@ var CROWN = {
        hours are the ones worth offering before anybody else's. Move her down
        this list the day that stops being true. (rosterOn still gates it — she
        is not offered on any date before she joined.) */
-    fillOrder: ['emma', 'hannah', 'lissa', 'helen'],
+    fillOrder: ['haley', 'emma', 'hannah', 'lissa', 'helen'],
     notBefore: { hannah: '2026-09-14' }
   },
 

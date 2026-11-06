@@ -191,7 +191,9 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
      shown but to be KNOWN: before 6 Kasım her two June bookings — one of them
      ₺3.500 of completed work — stood against a name the roster had never
      heard of, which made them read as records against a stranger. */
-  is(C.operators.map(o => o.key), ['helen', 'lissa', 'emma', 'zara', 'beyhan', 'hannah', 'saeideh'], 'operators: helen, lissa, emma, zara, beyhan, hannah, saeideh — Emma with the nail technicians, Saeideh kept for her history');
+  /* Haley joined 6 Kasım 2026, straight after Emma: manikür and pedikür,
+     salaried at $1.000 a month with no commission until further notice. */
+  is(C.operators.map(o => o.key), ['helen', 'lissa', 'emma', 'haley', 'zara', 'beyhan', 'hannah', 'saeideh'], 'operators: helen, lissa, emma, haley, zara, beyhan, hannah, saeideh — the nail technicians together, Saeideh kept for her history');
   /* Hannah left on 22 Ekim 2026. Her line stays — her salary, her tills and
      her commission history are all read from it — but she is off the wall and
      off the roster from 23 Ekim. Her old days keep her exactly as they were,
