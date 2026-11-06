@@ -187,7 +187,11 @@ console.log('3. skilledOn / fillOrderOn — and the day-by-day roster under work
   /* Emma joined 3 Kasım 2026 and sits with the other nail technicians, after
      Lissa — the array IS the column order, so this is where her column
      appears on the diary and on reception's grid. */
-  is(C.operators.map(o => o.key), ['helen', 'lissa', 'emma', 'zara', 'beyhan', 'hannah'], 'operators: helen, lissa, emma, zara, beyhan, hannah — Emma with the nail technicians');
+  /* Saeideh is last and left on 30 Haziran 2026. She is in the list not to be
+     shown but to be KNOWN: before 6 Kasım her two June bookings — one of them
+     ₺3.500 of completed work — stood against a name the roster had never
+     heard of, which made them read as records against a stranger. */
+  is(C.operators.map(o => o.key), ['helen', 'lissa', 'emma', 'zara', 'beyhan', 'hannah', 'saeideh'], 'operators: helen, lissa, emma, zara, beyhan, hannah, saeideh — Emma with the nail technicians, Saeideh kept for her history');
   /* Hannah left on 22 Ekim 2026. Her line stays — her salary, her tills and
      her commission history are all read from it — but she is off the wall and
      off the roster from 23 Ekim. Her old days keep her exactly as they were,

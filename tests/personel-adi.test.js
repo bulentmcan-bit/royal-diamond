@@ -49,7 +49,10 @@ is(CROWN.canonicalStaff('HANNA'), 'Hannah', '…in any case');
 is(CROWN.canonicalStaff('Manager'), '', 'nothing stands behind "Manager"');
 is(CROWN.canonicalStaff('Lissa'), 'Lissa', 'a real name returns itself');
 is(CROWN.isPhantomStaff('Manager'), true, '"Manager" is named as a phantom');
-is(CROWN.isPhantomStaff('Saeideh'), false, 'Saeideh is NOT — she is a real person off the list');
+is(CROWN.isPhantomStaff('Saeideh'), false, 'Saeideh is not a phantom — she is a real person');
+is(CROWN.knownStaff('Saeideh'), true, '…and she is now IN the roster, with a leftOn, so her June work is just June work');
+is(CROWN.rosterOn('2026-06-14').some(o => o.name === 'Saeideh'), true, 'she is on the roster the day she did the ₺3.500 job');
+is(CROWN.rosterOn('2026-11-06').some(o => o.name === 'Saeideh'), false, '…and on no day since she left — no column, anywhere');
 
 console.log('2. the three buckets');
 const buckets = (function () {
@@ -68,13 +71,14 @@ const A = (staff, status, price, extra) => Object.assign({ id: Math.random(), st
     A('Hanna', 'confirmed', 0),                          // misspelt, stuck open
     A('Manager', 'confirmed', 0),                        // phantom
     A('Manager', 'confirmed', 0),                        // phantom
-    A('Saeideh', 'completed', 3500),                     // real person, real money
-    A('Saeideh', 'confirmed', 0)                         // real person, no money
+    A('Saeideh', 'completed', 3500),                     // now a known technician
+    A('Nihal', 'confirmed', 0)                           // a name nobody has classified
   ]);
   is(b.rename.length, 2, 'both Hanna bookings are renamed — money or not');
   is(b.rename[0].to, 'Hannah', '…to Hannah');
   is(b.cancel.length, 2, 'both Manager phantoms are cancelled');
-  is(b.leave.length, 2, 'and BOTH Saeideh records are left alone — she is a real person');
+  is(b.leave.length, 1, 'Saeideh no longer appears at all — she is on the roster now');
+  is(String(b.leave[0].staff), 'Nihal', '…and the only thing left is the name nobody has classified');
   is(b.rename.concat(b.cancel).some(x => (x.a || x).staff === 'Helen'), false,
      'a real technician is never touched');
 }

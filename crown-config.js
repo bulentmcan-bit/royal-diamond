@@ -175,7 +175,16 @@ var CROWN = {
        taking it out would take her final pay and her history with it. */
     { key:'hannah', name:'Hannah', photo:'op-hannah.png',
       leftOn: '2026-10-23', hiddenOnBoard: true,
-      commissionPaused: true, commissionPausedSince: '2026-08-01' }
+      commissionPaused: true, commissionPausedSince: '2026-08-01' },
+    /* Saeideh left at the end of June 2026 and was never in this list at all,
+       which made her own two bookings — one of them ₺3.500 of completed work —
+       read as records against a stranger. She belongs here with a leftOn, the
+       same as Hannah: the roster then leaves her out of every day from 30
+       Haziran onward, no column appears anywhere, and her June work is simply
+       June work again instead of something the clean-up has to be told to
+       leave alone. Her 50% rate lives in TECH_COMM_RATES and is untouched. */
+    { key:'saeideh', name:'Saeideh',
+      leftOn: '2026-06-30', hiddenOnBoard: true, hiddenOnDash: true }
   ],
 
   /* ── How long each technician gets ──────────────────────────────────────────
