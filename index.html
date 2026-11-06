@@ -7345,12 +7345,43 @@ function dashEditAppt(id){
            and threw the rebook panel up. Bülent: "when I want to edit
            something it on lots of occasions takes me to check out." It was
            this. The seed stamped above is the answer: unchanged = untouched. */
-        const _prSeed = _prEl ? _prEl.dataset.rdSeed : undefined;
-        const _priceFromRecord = !!(_prEl && _prSeed!=null && _prSeed!==''
-                                    && String(_prEl.value)===String(_prSeed));
-        const _priceUntouched = _priceIsSystemGuess || _priceFromRecord;
-        const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;
-        if(_isCheckout && !_moneyAlready && !live.sat){
+        /* ⚠ 6 Kasım 2026 — MY OWN MISTAKE, TWO DAYS LIVE, PUT RIGHT HERE.
+           On the 4th I stopped an untouched price from checking anybody out,
+           and lumped TWO different numbers together to do it: the figure the
+           system guesses from the service, and the figure already written on
+           the appointment. Only the first is nobody's intention. The second
+           is how the desk actually checks people out — open ✏ Fiyat, the
+           price is already right, press Save — and for two days that did
+           NOTHING AT ALL: no completion, no money, no message, no error.
+           Bülent: "checkout is now not working properly… it's been like this
+           for a couple of days."
+           So: a price read off the record IS a checkout. Only the service's
+           own guess, still untouched, is not — which is all the 15 Ekim rule
+           above ever needed to say. */
+        /* ⚠ AND THE GUESS TEST IS WITHDRAWN TOO — same day, same mistake,
+           one step further down. Bülent: "I want to put the price in at the
+           end, because normally the technicians talk them into doing
+           something extra." So the price IS entered at checkout — and when
+           there was no extra, the number the desk confirms is exactly the
+           service's own figure. _priceIsSystemGuess compares the VALUE to
+           the guess, so a correct price the desk accepted looked identical
+           to one nobody had looked at, and the checkout did nothing. That is
+           not an edge case; on a day without upsells it is every checkout.
+           A price and a technician on an appointment that is not finished is
+           a checkout. Full stop. The "Edit opened only to move an hour"
+           annoyance that the 15 Ekim rule was guarding against comes back
+           with this, and it is the lesser evil by a wide margin — the proper
+           cure is to take the money in the checkout panel itself, where the
+           intention is never in doubt. */
+        const _isCheckout = enteredPrice>0 && !!_staffPick;
+        /* And ask the satisfaction question on BOTH counts, not just the
+           first time money moves: a save that COMPLETES the appointment is a
+           checkout even when its money went to the till on an earlier save.
+           Six of today's jobs completed with no answer on the record through
+           exactly that gap, and each one costs the technician her 12%. */
+        const _willComplete  = _isCheckout && live.status!=='completed';
+        const _willTakeMoney = _isCheckout && !_moneyAlready;
+        if((_willComplete || _willTakeMoney) && !live.sat){
           satAsk(live, function(){ saveBtn.onclick(); });
           return;
         }
@@ -7398,10 +7429,9 @@ function dashEditAppt(id){
         let alreadyRecorded = live._takingsAmount || 0;
         if(!alreadyRecorded && wasCompleted && priorKnown>0) alreadyRecorded = priorKnown;
 
-        // Only a real checkout (or a correction to money already taken) may
-        // complete this appointment or move money — the same _isCheckout test
-        // the satisfaction gate above uses, so the two can never disagree.
-        if(enteredPrice > 0 && live.staff && (_isCheckout || _moneyAlready)){
+        // A price and a technician: that is a checkout, and the satisfaction
+        // gate above has already been through it.
+        if(enteredPrice > 0 && live.staff){
           if(live.status !== 'completed'){
             live.status = 'completed';
             try{ live._ckBy=localStorage.getItem('rdns_device_id_v1')||'anon'; }catch(e){}

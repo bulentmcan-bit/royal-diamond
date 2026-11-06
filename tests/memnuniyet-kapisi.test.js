@@ -146,40 +146,45 @@ ok(!/price>0 && appt\.staff && !appt\._takingsAmount && !appt\.sat/.test(html),
 ok(ck.indexOf('if(!appt.sat)') < ck.indexOf('rdFinalizeCompletion'),
    'the question comes BEFORE the completion, not after');
 
-console.log('4. the Edit / ✏ Fiyat path');
-ok(/const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;/.test(html),
-   'one definition of what a checkout is');
-ok(/if\(_isCheckout && !_moneyAlready && !live\.sat\)\{\s*\n\s*satAsk\(live/.test(html),
-   'the satisfaction gate is driven by it');
-ok(/if\(enteredPrice > 0 && live\.staff && \(_isCheckout \|\| _moneyAlready\)\)\{/.test(html),
-   'and so is the completion — the two can no longer disagree');
-ok(!/if\(enteredPrice > 0 && live\.staff\)\{\s*\n\s*if\(live\.status !== 'completed'\)/.test(html),
-   'the old unguarded completion is gone (this is what checked people out silently)');
-ok(html.indexOf('const _isCheckout =') < html.indexOf('if(enteredPrice > 0 && live.staff && (_isCheckout'),
-   '_isCheckout is in scope at the completion');
+console.log('4. the Edit / ✏ Fiyat path — the desk’s real checkout');
+/* ⚠ BROKEN FOR TWO DAYS by my own changes of 4 Kasım; found and undone on
+   the 6th. Bülent: "I want to put the price in at the end, because normally
+   the technicians talk them into doing something extra." The price is
+   entered AT checkout — and on a day with no extras, the number the desk
+   confirms is exactly the service's own figure. My test compared the VALUE
+   to the system's guess, so a price the desk had looked at and accepted was
+   indistinguishable from one nobody had touched, and the save did nothing at
+   all: no completion, no money, no message, no error. On a quiet day that is
+   every checkout in the salon.
+   A price and a technician on an unfinished appointment is a checkout. The
+   "Edit opened only to move an hour" annoyance returns with this, and it is
+   by far the lesser evil; the proper cure is taking the money in the
+   checkout panel, where the intention is never in doubt. */
+ok(/const _isCheckout = enteredPrice>0 && !!_staffPick;/.test(html),
+   'a price and a technician IS a checkout, wherever the number came from');
+ok(!/_isCheckout = enteredPrice>0 && !!_staffPick && !_priceIsSystemGuess/.test(html),
+   'the guess test no longer blocks it');
+ok(!/const _priceUntouched/.test(html),
+   'and nothing lumps the service guess in with the record figure any more');
+ok(/if\(enteredPrice > 0 && live\.staff\)\{/.test(html),
+   'the completion runs on the same plain test, so the two cannot disagree');
+ok(/const _willComplete  = _isCheckout && live\.status!=='completed';/.test(html),
+   'a save that completes the appointment asks Memnun…');
+ok(/const _willTakeMoney = _isCheckout && !_moneyAlready;/.test(html),
+   '…and so does one that moves its money for the first time');
+ok(/if\(\(_willComplete \|\| _willTakeMoney\) && !live\.sat\)\{/.test(html),
+   'either one asks — six jobs completed unasked through that gap on 6 Kasım');
+ok(html.indexOf('const _isCheckout =') < html.indexOf('if(enteredPrice > 0 && live.staff){'),
+   '_isCheckout is in scope where the completion reads it');
 
-console.log('5. editing must not check anybody out');
-// "when I want to edit something it on lots of occasions takes me to check
-// out" — same root. A price read off the RECORD looked identical to one the
-// girl had typed, so saving a time change completed the job, moved its money
-// and threw up the rebook panel.
-ok(/pr\.dataset\.rdSeed = String\(pr\.value\|\|''\);/.test(html),
-   'the figure loaded from the record is stamped as a seed');
-ok(/const _priceFromRecord = !!\(_prEl && _prSeed!=null && _prSeed!==''/.test(html),
-   'and recognised at save time as "nobody typed this"');
-ok(/const _priceUntouched = _priceIsSystemGuess \|\| _priceFromRecord;/.test(html),
-   'the service guess and the record figure are judged the same way');
-ok(/const _isCheckout = enteredPrice>0 && !!_staffPick && !_priceUntouched;/.test(html),
-   'so neither one counts as a checkout');
-ok(/pr\.value=''; delete pr\.dataset\.rdAuto; delete pr\.dataset\.rdSeed;/.test(html),
-   'a fresh modal carries no stale seed from the last appointment');
-{
-  const open = html.indexOf("pr.dataset.rdSeed = String(pr.value||'');");
-  const read = html.indexOf('const _prSeed = _prEl ? _prEl.dataset.rdSeed : undefined;');
-  ok(open > 0 && read > open, 'the seed is stamped when Edit opens, read when Save runs');
-}
+console.log('5. the ✓ Çıkışı Tamamla panel');
+ok(/if\(!appt\.sat\)\{/.test(html), 'it asks on every checkout, with no price condition');
+ok(/satAsk\(appt, function\(\)\{ rdCheckoutDone\(\); \}\);/.test(html),
+   'and parks the checkout until the answer comes');
+ok(!/price>0 && appt\.staff && !appt\._takingsAmount && !appt\.sat/.test(html),
+   'the old four-part gate is gone — a ₺0 job was finishing in silence');
 
-console.log('6. the rule that punished her is unchanged');
+console.log('7. the rule that punished her is unchanged');
 ok(/if\(COMM_STRICT && \(a\.sat==='not_asked' \|\| !a\.sat\) && day >= COMM_NOEVIDENCE_FROM\) return 'notasked';/.test(html),
    "commVerdict still cancels commission when there is no answer …");
 const cv = html.slice(html.indexOf('function commVerdict(a)'), html.indexOf("return 'notasked';"));
