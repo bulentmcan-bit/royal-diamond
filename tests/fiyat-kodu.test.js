@@ -172,8 +172,15 @@ console.log('11. a price typed by hand is never overwritten — and the system w
   // NB: \s+ between the two statements, not \n — index.html is CRLF on the
   // salon's machine and LF here, and a regex anchored on a bare newline
   // passes in one place and fails in the other.
-  is(/pr\.value = String\(k\.total\);\s+pr\.dataset\.rdAuto = String\(k\.total\);/.test(html), true,
-     'the list price goes in the box, and the system marks it as its own');
+  /* 6 Kasım 2026 — the list price no longer goes in the APPOINTMENT box at
+     all: money left that screen so a booking can never be mistaken for a
+     checkout. The figure now lands in the checkout panel's own box, where
+     the same "the system owns what it wrote" rule applies (rdCkCodeTyped,
+     and tests/para-sonda.test.js). */
+  is(/pr\.value = String\(k\.total\);\s+pr\.dataset\.rdAuto = String\(k\.total\);/.test(html), false,
+     'the list price no longer goes into the appointment box');
+  is(/pr\.dataset\.rdAuto = String\(total\);/.test(html), true,
+     '…and the system still marks its own figure as its own, in the checkout box');
   is(/farklıysa üzerine yazın/.test(html), true, "…and says plainly that it can be written over");
 }
 

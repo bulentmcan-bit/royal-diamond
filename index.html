@@ -5639,7 +5639,26 @@ p, span, div, label, h1, h2, h3, h4 {
            para. Kız hangisini yazdığını kutudan anlayamıyordu. Artık KOD'a
            "2 5 D2" yazılır, lira kendiliğinden yandaki kutuya düşer; FİYAT'a
            elle rakam yazıldığı anda da kod kutusu susar ve ona karışmaz. -->
-      <div class="fg">
+      <!-- 6 Kasım 2026 — PARA BU EKRANDAN KALKTI.
+           Bülent, üç kez: "I want to put the price in at the end, because
+           normally the technicians talk them into doing something extra" ·
+           "I don't want a price to go in it before" · "it's messing up
+           everything." Ve haklıydı. Bu ekran iki iş birden yapıyordu:
+           randevuyu yazmak ve parayı almak. İkisini ayırt etmek için
+           uydurduğumuz her kural — rakamı elle mi yazdılar, sistemin
+           tahminiyle aynı mı, kayıttan mı geldi — niyeti tahmin etmekti ve
+           her biri bir şeyi bozdu: 4 Kasım'da iki gün boyunca çıkışı tamamen
+           durdurdu, ondan önce de sadece saati değiştirmek isteyeni farkında
+           olmadan kasaya soktu.
+           Artık tahmin yok. BU ekran randevudur: kim, ne zaman, hangi iş,
+           hangi personel. Para ✓ Çıkışı Tamamla panelindedir. Randevuda
+           fiyat olamayacağı için düzenleme asla çıkış yapamaz; çıkışta fiyat
+           sorulacağı için de çıkış her zaman çıkıştır.
+           Kutular DOM'da duruyor ama gizli: onlarca fonksiyon onları
+           okuyor ve hiçbirini bu gece kırmaya değmez. Boş kaldıkları için
+           rdApptPriceValue() daima 0 döner, ve 0 fiyat hiçbir şeyi
+           tamamlamaz. -->
+      <div class="fg" id="a-money-row" style="display:none;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div><label class="flabel" id="flabel-a-code">Kod</label>
             <input class="fctrl" type="text" inputmode="text" autocomplete="off" id="a-code"
@@ -5688,6 +5707,22 @@ p, span, div, label, h1, h2, h3, h4 {
          AND today's rates are in; renders itself via rdCkChgRender(). -->
     <div id="ck-change"></div>
     <input type="hidden" id="rb-price">
+    <!-- 💰 PARA BURADA ALINIR. Boş açılır — teknisyen fazladan bir şey
+         yaptırmış olabilir, ve o rakam ancak şimdi bellidir. Altındaki satır
+         hizmetin kendi tutarını söyler, tezgâh ne yazacağını bilsin diye;
+         KOD kutusuna 2, 5, D3 yazmak da lirayı yandaki kutuya düşürür, 9 Ekim
+         akşamı kararlaştırıldığı gibi — ama artık doğru anda. -->
+    <div class="fg" style="margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><label class="flabel">Kod</label>
+          <input class="fctrl" type="text" inputmode="text" autocomplete="off" id="ck-code"
+                 placeholder="" oninput="rdCkCodeTyped()"></div>
+        <div><label class="flabel">Alınan tutar (₺) *</label>
+          <input class="fctrl" type="text" inputmode="decimal" autocomplete="off" id="ck-price"
+                 placeholder="" oninput="rdCkPriceTyped()"></div>
+      </div>
+      <div id="ck-price-hint" style="font-size:0.72rem;color:var(--muted);margin-top:4px;font-weight:600;"></div>
+    </div>
     <div class="fg" style="margin-bottom:6px;">
       <label class="flabel" id="flabel-rb-next">Sonraki randevu *</label>
       <div id="rbk-btns" style="display:flex;gap:8px;margin-top:6px;">
@@ -10972,6 +11007,92 @@ let rebookPending=null;
 // has to tap a day, which is what keeps ✓ Çıkışı Tamamla honest (grey until
 // answered).
 let _ckState=null;
+/* ══ 💰 THE MONEY, AT THE END ════════════════════════════════════════════
+   6 Kasım 2026. The price box used to live on the booking screen, which made
+   every save ambiguous: was that a checkout or somebody moving an hour? Now
+   it lives here, where the question cannot arise.
+   It opens EMPTY on purpose. Bülent: "normally the technicians talk them into
+   doing something extra" — so the figure is only known now, and a number
+   already sitting in the box is a number nobody looked at. The reading line
+   underneath says what the service itself comes to, and the KOD box still
+   turns 2, 5, D3 into lira exactly as it did on the appointment screen. */
+function rdCkExpected(a){
+  try{
+    var names = String((a&&a.service)||'').split('+').map(function(x){ return x.trim(); }).filter(Boolean);
+    var total = 0, parts = [];
+    names.forEach(function(n){
+      for(var k in RD_SVC_CODES){
+        var e = RD_SVC_CODES[k];
+        if(String(e.n).toLocaleLowerCase('tr') === n.toLocaleLowerCase('tr') ||
+           String(e.v).toLocaleLowerCase('tr') === n.toLocaleLowerCase('tr')){
+          total += (e.p||0); parts.push(e.n + ' ' + (e.p||0)); return;
+        }
+      }
+      parts.push(n + ' ?');
+    });
+    return { total: total, parts: parts };
+  }catch(e){ return { total: 0, parts: [] }; }
+}
+function rdCkPriceValue(){
+  var el = document.getElementById('ck-price');
+  if(!el) return 0;
+  try{ return rdParseCode(el.value, '').amount || 0; }catch(e){ return parseInt(el.value)||0; }
+}
+function rdCkMoneySync(){
+  // The hidden rb-price is what the FX strip and the change calculator read.
+  var h = document.getElementById('rb-price');
+  if(h) h.value = rdCkPriceValue() || '';
+  try{ rdCkFxRender(); }catch(e){}
+  try{ if(typeof rdCkChgRender==='function') rdCkChgRender(); }catch(e){}
+  rdCkGate();
+}
+function rdCkPriceTyped(){
+  var el = document.getElementById('ck-price'), hint = document.getElementById('ck-price-hint');
+  if(el && el.dataset) delete el.dataset.rdAuto;      // elle yazıldı: kod artık karışmaz
+  var amt = rdCkPriceValue();
+  if(hint && amt) hint.textContent = '\u2192 \u20BA' + amt.toLocaleString('tr-TR');
+  rdCkMoneySync();
+}
+function rdCkCodeTyped(){
+  var cd = document.getElementById('ck-code'), pr = document.getElementById('ck-price');
+  if(!cd || !pr) return;
+  var raw = String(cd.value||'').trim();
+  if(!raw){ rdCkMoneySync(); return; }
+  // Elle yazılmış bir rakamın üzerine asla yazılmaz — 9 Ekim kuralı.
+  if(pr.value && pr.dataset.rdAuto == null) { rdCkMoneySync(); return; }
+  var total = 0, names = [];
+  raw.split(/[\s,]+/).filter(Boolean).forEach(function(tok){
+    try{
+      var p = rdParseCode(tok, '');
+      if(p && p.amount){ total += p.amount; if(p.name) names.push(p.name); }
+    }catch(e){}
+  });
+  if(!total){ rdCkMoneySync(); return; }
+  pr.value = String(total);
+  pr.dataset.rdAuto = String(total);
+  var hint = document.getElementById('ck-price-hint');
+  if(hint) hint.textContent = (names.length? names.join(' + ') + ' = ' : '\u2192 ') + '\u20BA' + total.toLocaleString('tr-TR');
+  rdCkMoneySync();
+}
+function rdCkMoneyInit(a){
+  var cd = document.getElementById('ck-code'), pr = document.getElementById('ck-price');
+  var hint = document.getElementById('ck-price-hint');
+  if(cd){ cd.value=''; if(cd.dataset) delete cd.dataset.rdAuto; }
+  if(pr){ pr.value=''; if(pr.dataset) delete pr.dataset.rdAuto; }
+  // A price already taken for this visit (a correction, a re-opened checkout)
+  // is the one thing worth putting back in the box — that money is real.
+  var already = (a && ((a._takingsAmount>0 && a._takingsAmount) || (a.price>0 && a.price))) || 0;
+  if(pr && already) pr.value = String(already);
+  var k = rdCkExpected(a);
+  if(hint){
+    hint.textContent = already
+      ? ('\u2713 bu ziyaret i\u00e7in \u20BA' + Number(already).toLocaleString('tr-TR') + ' zaten al\u0131nm\u0131\u015f \u2014 de\u011fi\u015ftiyse \u00fczerine yaz\u0131n')
+      : (k.total ? (String(a&&a.service||'') + ' = \u20BA' + k.total.toLocaleString('tr-TR') + ' \u2014 fazlas\u0131 varsa ekleyin')
+                 : 'Al\u0131nan tutar\u0131 yaz\u0131n (KOD kutusuna 2, 5, D3 de yazabilirsiniz)');
+  }
+  rdCkMoneySync();
+}
+
 function showRebookModal(a, c){
   rebookPending={appt:a,client:c};
   _ckState={sel:null,targetDate:null,source:null,declineReason:null};
@@ -10987,6 +11108,7 @@ function showRebookModal(a, c){
   // figure from a previous rebook sitting in the box).
   const _rbP=document.getElementById("rb-price");
   if(_rbP) _rbP.value = (a.price>0 ? a.price : (a._takingsAmount>0 ? a._takingsAmount : ''));
+  try{ rdCkMoneyInit(a); }catch(e){ console.warn('[checkout money]', e); }
   // 💱 The bill just landed in rb-price — show it converted while the
   // customer is still at the till deciding how to pay.
   try{ rdCkFxRender(); }catch(e){}
@@ -11335,6 +11457,10 @@ function rdCkGate(){
     if(_ckState.sel==='no') ok=!!_ckState.declineReason;
     else if(_ckState.sel) ok=!!_ckState.targetDate;
   }
+  // 6 Kasım 2026 — and the money. The price is taken HERE now, so a checkout
+  // with an empty box is not a checkout; it is the thing that used to leave a
+  // completed job with nothing in the till and a Fark nobody could explain.
+  if(ok && rdCkPriceValue() <= 0) ok=false;
   b.disabled=!ok; b.style.opacity=ok?'1':'.45';
 }
 function rdCkMark(btnId){
@@ -11545,7 +11671,9 @@ function rdCheckoutDone(){
     toast('⛔','KAPALI — çıkış yapılamaz','Saat tutucu kayıt tamamlanamaz; kasaya hiçbir şey yazılmadı.','r');
     closeModal('mRebook'); rebookPending=null; _ckState=null; return;
   }
-  const price=parseInt(document.getElementById('rb-price')?.value)||0;
+  // The figure the desk typed at the end, in the checkout panel's own box.
+  const price=rdCkPriceValue() || parseInt(document.getElementById('rb-price')?.value)||0;
+  if(price>0){ const _h=document.getElementById('rb-price'); if(_h) _h.value=String(price); }
   // 😊 MANDATORY — EVERY checkout, no exceptions. It used to ask only when a
   // price was being written for the FIRST time, so a free job, a zero-price
   // job, or one whose money had already reached the till finished in silence
@@ -22963,8 +23091,12 @@ function rdWrWindow(r, now){
       if(hint) hint.textContent = rdApptPriceGuide();
       return;
     }
-    pr.value = String(k.total);
-    pr.dataset.rdAuto = String(k.total);
+    /* Kutu artık gizli (a-money-row) — randevuya fiyat yazılmaz. Rakamı
+       buraya koymak, kimsenin göremediği bir yere para yazmak olurdu ve
+       kaydet tuşu onu çıkış sanardı. Hesaplanan tutar yalnızca okuma
+       satırında durur; parayı çıkış paneli alır. */
+    if(pr.dataset.rdAuto != null && String(pr.value)===String(pr.dataset.rdAuto)) pr.value='';
+    delete pr.dataset.rdAuto;
     // Kod kutusu da dolar — kız ne yazması gerektiğini görsün, ve isterse
     // üzerine yazsın. Elle yazdıysa dokunulmaz.
     if(cd && (!cd.value.trim() || cd.value === cd.dataset.rdAuto)){

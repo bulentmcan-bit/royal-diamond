@@ -1,31 +1,28 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// FİYAT KUTUSU — randevu alırken ne yazar.  9 Ekim 2026.
+// FİYAT KUTUSU — randevu alırken ne yazar.  9 Ekim 2026 → 6 Kasım 2026.
 //
-// (Dosyanın adı "randevu-fiyatsiz" olarak kaldı: sabah kutu BOŞ kalsın diye
-//  yazılmıştı. Akşam karar döndü, gerekçesiyle birlikte aşağıda duruyor. Adı
-//  tarih olarak değerli; içeriği bugünün kuralıdır.)
+// SABAH (9 Ekim) — "When we are making the initial appointment … I don't want
+// the price to come out at that stage because the technician might be
+// offering them designs." Kutuyu boşalttık.
 //
-// SABAH — "When we are making the initial appointment … I don't want the
-// price to come out at that stage because the technician might be offering
-// them designs." Kutuyu boşalttık; toplamı kutunun ALTINDA ayrı bir satırda
-// gösterdik.
+// AKŞAM (9 Ekim) — "If I press number 2, I want it to come out where it says
+// Çıkışta. I want it to be there, not at the bottom." Kutu geri geldi.
 //
-// AKŞAM, ekranda deneyince — "If I press number 2, I want it to come out
-// where it says Çıkışta. I want it to be there, not at the bottom. That's
-// confusing, not for me, for the others. If I then press number 5 then the
-// figure … to add that on and change the price."
+// 6 KASIM 2026 — ve ikisi de haklıydı, çünkü soru yanlıştı. Mesele rakamın
+// kutuda mı altta mı duracağı değildi; TEK EKRANIN İKİ İŞ YAPMASIYDI. O ekran
+// hem randevu yazıyor hem para alıyordu, ve ikisini ayırmak için uydurduğumuz
+// her kural niyeti tahmin etmekti. 4 Kasım'da o tahminlerden biri çıkışı iki
+// gün boyunca tamamen durdurdu.
 //
-// İkincisi kazandı ve doğrusu da o: rakamın YAZILDIĞI yer ile GÖRÜNDÜĞÜ yer
-// aynı olmalı. Tezgâhın arkasındaki kıza, altta duran ayrı bir rakam ile
-// kutudaki boşluk iki ayrı şey gibi görünüyor.
+// Artık para o ekranda DEĞİL. Randevu ekranı randevudur; fiyat ✓ Çıkışı
+// Tamamla panelindedir ve orada boş açılır. "2'ye bas, lira kutuya düşsün"
+// kuralı yaşıyor — ama çıkış kutusunda, doğru anda. Bu dosya artık randevu
+// tarafının SESSİZ kaldığını doğrular; çıkış tarafı para-sonda.test.js'te.
 //
-// Sabahki endişe yine de karşılıksız değil, ve kuralın ikinci yarısı odur:
-// sistem kendi yazdığı rakamı günceller, ELLE yazılana asla dokunmaz.
-//
-//   1. seçim kutuya düşer, ve her seçimde toplanır
-//   2. seçim geri alınınca rakam da geri gider
-//   3. elle yazılan rakam kutsaldır
-//   4. okuma satırı ne olduğunu kelimeyle söyler
+//   1. seçim kutuya DÜŞMEZ — randevuya fiyat yazılmaz
+//   2. okuma satırı yine ne olduğunu kelimeyle söyler
+//   3. elle yazılan rakam hâlâ kutsaldır
+//   4. toplam tek yerden hesaplanır
 //
 // Çalıştırma:  node tests/randevu-fiyatsiz.test.js
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74,23 +71,23 @@ console.log('1. seçim kutuya düşer ve toplanır');
   const dom = makeDom({ s1: 'Dolgu (Infill)' });
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
-  is(box(dom), '1700', '2\'ye basıldı → kutuda ₺1.700, aşağıda değil KUTUDA');
-  is(line(dom), 'Dolgu = ₺1.700 — farklıysa üzerine yazın.', '…ve altındaki satır neyin ne olduğunu söylüyor');
-  is(dom.el['a-price'].dataset.rdAuto, '1700', '…sistem yazdığı rakamı sahipleniyor, ki sonra güncelleyebilsin');
+  is(box(dom), '', '2\'ye basıldı → randevu kutusu BOŞ kalır (6 Kasım: para bu ekranda değil)');
+  is(line(dom), 'Dolgu = ₺1.700 — farklıysa üzerine yazın.', '…ama altındaki satır tutarı yine söyler');
+  is(dom.el['a-price'].dataset.rdAuto, undefined, '…ve sistem hiçbir rakamı sahiplenmez, çünkü hiçbirini yazmaz');
 }
 {
   const dom = makeDom({ s1: 'Dolgu (Infill)', s2: 'Pedikür' });
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
-  is(box(dom), '3400', '5\'e de basıldı → ₺1.700 + ₺1.700 = ₺3.400, kutudaki rakam DEĞİŞTİ');
+  is(box(dom), '', '5\'e de basıldı → kutu yine boş; toplam yalnızca okuma satırında');
   is(line(dom), 'Dolgu + Pedikür = ₺3.400 — farklıysa üzerine yazın.', '…ve ikisini birden adıyla okuyor');
 }
 {
   const dom = makeDom({ s1: 'Dolgu (Infill)', s2: 'Pedikür', d: 'D2', dp: 600 });
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
-  is(box(dom), '4000', 'tasarım da eklendi → ₺4.000');
-  is(line(dom), 'Dolgu + Pedikür + D2 = ₺4.000 — farklıysa üzerine yazın.', '…üçü birden tek satırda');
+  is(box(dom), '', 'tasarım da eklendi → kutu hâlâ boş');
+  is(line(dom), 'Dolgu + Pedikür + D2 = ₺4.000 — farklıysa üzerine yazın.', '…üçü birden tek satırda, okuma satırında');
 }
 
 console.log('2. seçim geri alınınca rakam da geri gider');
@@ -99,7 +96,7 @@ console.log('2. seçim geri alınınca rakam da geri gider');
   const dom = makeDom({ s1: 'Dolgu (Infill)', price: '4000', dataset: { rdAuto: '4000' } });
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
-  is(box(dom), '1700', 'tasarım ve ikinci iş kaldırıldı → ₺4.000 kutuda UNUTULMADI, ₺1.700 oldu');
+  is(box(dom), '', 'tasarım ve ikinci iş kaldırıldı → kutuda unutulacak bir rakam zaten yok');
 }
 {
   const dom = makeDom({ price: '1700', dataset: { rdAuto: '1700' } });   // hiçbir şey seçili değil
@@ -132,7 +129,7 @@ console.log('4. kaydedilen rakam');
   const dom = makeDom({ s1: 'Dolgu (Infill)', s2: 'Pedikür' });
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
-  is(ctx.rdApptPriceValue(), 3400, 'kutudaki ₺3.400 kayda da ₺3.400 olarak gider');
+  is(ctx.rdApptPriceValue(), 0, 'randevu kaydına fiyat GİTMEZ — çıkış yapmadan para yazılmaz');
   is(ctx.rdApptPickedSum(), { parts: ['Dolgu', 'Pedikür'], codes: ['2','5'], total: 3400 }, 'toplam tek yerden hesaplanıyor — kutu, kod ve satır aynı şeyi söyler');
 }
 
@@ -145,7 +142,8 @@ console.log('5. sayfanın kendisi');
   is(/id="a-code"[\s\S]{0,120}placeholder=""/.test(html), true, 'KOD kutusunun içi boş — dolu sanılacak soluk yazı yok');
   is(/Kod kutusuna duvardaki numaraları yazın — örnek: 2 5 D2/.test(html), true, '…örnek kutunun ALTINDA veriliyor');
   is(/fiyat kutusuna ikisinin toplamı düşer/.test(html), true, '2. hizmet kutusunun altındaki yazı da aynı şeyi söylüyor');
-  is(/pr\.value = String\(k\.total\);/.test(html), true, 'toplam KUTUYA yazılıyor');
+  is(/pr\.value = String\(k\.total\);/.test(html), false, 'toplam artık randevu kutusuna YAZILMIYOR');
+  is(/id="ck-price"/.test(html), true, '…çünkü para kutusu çıkış panelinde (para-sonda.test.js)');
   is(/if\(cur && cur !== mine\)\{ try\{ rdApptPriceEcho\(\); \}catch\(e\)\{\} return; \}/.test(html), true, '…ve elle yazılmışsa hiç dokunulmuyor');
 }
 
@@ -156,7 +154,7 @@ console.log('6. KOD kutusu — "put the code in, and it does the price automatic
   const ctx = load(dom);
   ctx.rdApptAutoPrice();
   is(dom.el['a-code'].value, '2 5 D2', 'seçimler KOD kutusunu da doldurur — kız ne yazacağını görür, ezberlemez');
-  is(box(dom), '4000', '…ve lira yanındaki kutuya düşer');
+  is(box(dom), '', '…ama lira randevu kutusuna düşmez; o iş çıkışta yapılır');
 }
 {
   // Duvardaki listeden okuyup elle yazmak: asıl istenen bu.
