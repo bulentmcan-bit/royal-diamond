@@ -288,6 +288,41 @@
     ov.querySelector('#rd-syncdiag-x').onclick=function(){ clearInterval(iv); ov.remove(); };
     ov.querySelector('#rd-syncdiag-probe').onclick=function(){ try{_rdSyncProbe();}catch(e){} try{syncForceLoad();}catch(e){} };
   };
+  /* ⏱ ONE REDRAW, HOWEVER MANY ARRIVE — 6 Kasım 2026.
+     Nineteen redraws were wired straight to cloud events: every snapshot from
+     every machine redrew the screen the instant it landed, one call per event,
+     blocking. On a quiet morning that is nothing. On a Saturday afternoon with
+     three technicians checking out, the Crown Board writing and reminders
+     going, snapshots arrive in bursts — and the screen redrew once for each
+     one, several times a second, for a picture that had not changed between
+     them.
+     Measured before writing this, so it is not a guess at the cause: the page
+     does not leak (300 full redraw cycles moved the DOM by five elements and
+     the heap by nothing) and the data is not heavy (the whole 1.4 MB book
+     parses in 6 ms). What was left was the sheer NUMBER of redraws.
+     So a burst becomes one redraw, 150 ms later. Nobody can see 150 ms, and a
+     dozen snapshots inside that window now cost what one used to. Anything
+     the user does themselves still redraws at once — this is only for the
+     screen reacting to somebody else's machine. */
+  var RD_SYNC_REDRAW_MS = 150;
+  var _rdRQ = {}, _rdRT = 0;
+  window._rdRedrawStats = { asked: 0, drawn: 0 };
+  function rdSyncRender(name, fn){
+    if(typeof fn !== 'function') return;
+    window._rdRedrawStats.asked++;
+    _rdRQ[name] = fn;
+    if(_rdRT) return;
+    _rdRT = setTimeout(function(){
+      _rdRT = 0;
+      var jobs = _rdRQ; _rdRQ = {};
+      for(var k in jobs){
+        window._rdRedrawStats.drawn++;
+        try{ jobs[k](); }catch(e){ console.warn('[redraw]', k, e); }
+      }
+    }, RD_SYNC_REDRAW_MS);
+  }
+  window.rdSyncRender = rdSyncRender;
+
   function _mainSnapRecheck(){
     if(!_mainSnapMissed) return;
     _mainSnapMissed=false;
@@ -380,10 +415,10 @@
           }
           const pg=document.querySelector('.page.active');
           if(pg){const id=pg.id.replace('page-','');
-            if(id==='dashboard')try{renderDash();}catch(e){}
-            if(id==='appointments')try{renderAppts();}catch(e){}
-            if(id==='clients')try{renderClients();}catch(e){}
-            if(id==='payments')try{renderPayments();}catch(e){}
+            if(id==='dashboard')rdSyncRender('renderDash', renderDash);
+            if(id==='appointments')rdSyncRender('renderAppts', renderAppts);
+            if(id==='clients')rdSyncRender('renderClients', renderClients);
+            if(id==='payments')rdSyncRender('renderPayments', renderPayments);
             if(id==='cashcheck')try{dpRender();}catch(e){}
           }
           try{dpUpdateBadges();}catch(e){}
@@ -484,9 +519,9 @@
           // on the customer's record here too, so every device keeps the answer.
           try{ if(typeof pmSyncApptPay==='function'&&pmSyncApptPay()) saveAll(); }catch(e){}
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-takings')try{dtRender();renderDashTakings();}catch(e){}
-          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
-          if(pg&&pg.id==='page-dashboard')try{renderDashTakings();}catch(e){}
+          if(pg&&pg.id==='page-takings'){ rdSyncRender('dtRender', dtRender); rdSyncRender('renderDashTakings', renderDashTakings); }
+          if(pg&&pg.id==='page-monthly')rdSyncRender('renderMonthly', renderMonthly);
+          if(pg&&pg.id==='page-dashboard')rdSyncRender('renderDashTakings', renderDashTakings);
           showSyncStatus('synced');
         }catch(e){console.warn('takings sync error:',e);}
       });
@@ -499,7 +534,7 @@
           localStorage.setItem('rdns_monthly_costs_v3',JSON.stringify(rObj));
           setTimeout(()=>{_isSyncing['rdns_monthly_costs_v3']=false;},800);
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+          if(pg&&pg.id==='page-monthly')rdSyncRender('renderMonthly', renderMonthly);
         }catch(e){}
       });
       _fbDb.ref('rdns_cancel_log_v1').on('value',snap=>{
@@ -523,7 +558,7 @@
           localStorage.setItem('rdns_cancel_log_v1',JSON.stringify(rObj));
           setTimeout(()=>{_isSyncing['rdns_cancel_log_v1']=false;},800);
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+          if(pg&&pg.id==='page-monthly')rdSyncRender('renderMonthly', renderMonthly);
         }catch(e){console.warn('cancel log sync error:',e);}
       });
       // Takings correction log — append-only, union-merged by id like the
@@ -600,9 +635,9 @@
           setTimeout(()=>{_isSyncing['rdns_deductions_v1']=false;},800);
           if(typeof dedLoad==='function'){ try{ dedState=dedLoad(); }catch(e){} }
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-deductions')try{renderDeductionsPage();}catch(e){}
-          if(pg&&pg.id==='page-salary')try{renderSalaryPage();}catch(e){}
-          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+          if(pg&&pg.id==='page-deductions')rdSyncRender('renderDeductionsPage', renderDeductionsPage);
+          if(pg&&pg.id==='page-salary')rdSyncRender('renderSalaryPage', renderSalaryPage);
+          if(pg&&pg.id==='page-monthly')rdSyncRender('renderMonthly', renderMonthly);
         }catch(e){console.warn('deductions sync error:',e);}
       });
       _fbDb.ref('rdns_advances_v1').on('value',snap=>{
@@ -628,9 +663,9 @@
           setTimeout(()=>{_isSyncing['rdns_advances_v1']=false;},800);
           if(typeof advLoad==='function'){ try{ advState=advLoad(); }catch(e){} }
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-advance')try{renderAdvancePage();}catch(e){}
-          if(pg&&pg.id==='page-salary')try{renderSalaryPage();}catch(e){}
-          if(pg&&pg.id==='page-monthly')try{renderMonthly();}catch(e){}
+          if(pg&&pg.id==='page-advance')rdSyncRender('renderAdvancePage', renderAdvancePage);
+          if(pg&&pg.id==='page-salary')rdSyncRender('renderSalaryPage', renderSalaryPage);
+          if(pg&&pg.id==='page-monthly')rdSyncRender('renderMonthly', renderMonthly);
         }catch(e){console.warn('advances sync error:',e);}
       });
       _fbDb.ref('rdns_r24_sent_log_v1').on('value',snap=>{
@@ -668,7 +703,7 @@
           localStorage.setItem('rdns_fcl_log_v1',JSON.stringify(rObj));
           setTimeout(()=>{_isSyncing['rdns_fcl_log_v1']=false;},800);
           const pg=document.querySelector('.page.active');
-          if(pg&&pg.id==='page-gapreport')try{ if(typeof renderFillCallList==='function') renderFillCallList(); }catch(e){}
+          if(pg&&pg.id==='page-gapreport')rdSyncRender('renderFillCallList', (typeof renderFillCallList==='function')?renderFillCallList:null);
         }catch(e){console.warn('fcl log sync error:',e);}
       });
       // Sonraki randevu (ön randevu) kayıtları — items is an OBJECT keyed by
@@ -688,10 +723,10 @@
           if(localWon){
             setTimeout(()=>{ try{ syncPush('rdns_rebook_v1', JSON.parse(localStorage.getItem('rdns_rebook_v1')||'{"items":{}}')); }catch(e){} }, 1200);
           }
-          try{ if(typeof renderRebookQueue==='function') renderRebookQueue(); }catch(e){}
-          try{ if(typeof renderRebookTiles==='function') renderRebookTiles(); }catch(e){}
+          rdSyncRender('renderRebookQueue', (typeof renderRebookQueue==='function')?renderRebookQueue:null);
+          rdSyncRender('renderRebookTiles', (typeof renderRebookTiles==='function')?renderRebookTiles:null);
           const pg2=document.querySelector('.page.active');
-          if(pg2&&pg2.id==='page-calendar')try{ renderCalendar(); }catch(e){}
+          if(pg2&&pg2.id==='page-calendar')rdSyncRender('renderCalendar', renderCalendar);
         }catch(e){console.warn('rebook sync error:',e);}
       });
       showSyncStatus('synced');
@@ -4521,6 +4556,16 @@ p, span, div, label, h1, h2, h3, h4 {
           Her çalışanın kendi hesabı olmalı. Başka bir hesapla girmek için çıkış yapın —
           salonun verisi bulutta durur, bu telefondan hiçbir şey silinmez.</p>
         <button class="btn" id="rd-signout-btn" onclick="rdSignOut()" style="background:rgba(232,122,122,0.12);border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;">🚪 Çıkış Yap</button>
+      </div>
+
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">🩺 Bu cihazın sağlığı</div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 10px;">
+          Bu sekme açıldığından beri her 3 dakikada bir ölçülen nabız: ekrandaki parça sayısı,
+          kullanılan bellek, çalışan zamanlayıcı ve tarayıcının kaç kez donduğu.
+          <b>Yavaşlık şikâyeti olan bilgisayarda</b> bu düğmeye basın ve ekranın fotoğrafını çekin.</p>
+        <div id="rd-health-box" style="font-size:0.78rem;line-height:1.6;color:var(--muted);overflow-x:auto;"></div>
+        <button class="btn" onclick="rdHealthPanel()" style="font-weight:800;margin-top:10px;">🩺 Nabzı göster</button>
       </div>
 
       <div class="card" style="max-width:560px;">
@@ -27466,6 +27511,42 @@ document.addEventListener('keydown', function(e){
               + '  ·  zamanlayıcı ' + a.tmr + ' → ' + z.tmr
               + '  ·  açık ' + z.open + ' dakika');
     return rows;
+  };
+
+  /* 6 Kasım 2026 — the same figures, ON THE SCREEN. rdPerfReport() in the
+     console was no use at all: asked to run it at reception, the desk typed
+     it into Edge's search bar and got a page about Red Dead Redemption. The
+     machine that is slow is never the machine with the developer tools open,
+     and nobody at a busy desk should be asked to find a console. One button,
+     a table, photograph it. */
+  window.rdHealthPanel = function(){
+    var box = document.getElementById('rd-health-box');
+    if(!box) return;
+    if(!log.length){
+      box.innerHTML = '<div style="color:var(--gold);">Bu sekme ' + Math.round((Date.now()-openedAt)/60e3)
+        + ' dakikadır açık — ilk ölçüm 3 dakikada bir alınır, birazdan burada olacak.</div>';
+      return;
+    }
+    var a = log[0], z = log[log.length-1];
+    var head = '<div style="font-weight:800;color:var(--text);margin-bottom:8px;">'
+      + 'Açık: <b>' + z.open + ' dakika</b> · parça <b>' + a.dom + ' → ' + z.dom + '</b>'
+      + ' · bellek <b>' + a.mb + ' → ' + z.mb + ' MB</b>'
+      + ' · zamanlayıcı <b>' + a.tmr + ' → ' + z.tmr + '</b>'
+      + ' · donma <b>' + log.reduce(function(s2,r){ return s2+(r.lt||0); },0) + '</b>'
+      + ' (' + Math.round(log.reduce(function(s2,r){ return s2+(r.ltms||0); },0)) + ' ms)</div>';
+    var hdr = ['saat','dk','parça','MB','zaman.','donma','ms'];
+    var cell = function(v,b){ return '<td style="padding:3px 8px;border-bottom:1px solid var(--border);'+(b?'font-weight:800;color:var(--text);':'')+'">'+v+'</td>'; };
+    var rows = log.slice(-24).map(function(r){
+      var t = new Date(r.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+      return '<tr>'+cell(t)+cell(r.open)+cell(r.dom)+cell(r.mb==null?'—':r.mb)+cell(r.tmr==null?'—':r.tmr)
+           + cell(r.lt||0)+cell(r.ltms||0)+'</tr>';
+    }).join('');
+    box.innerHTML = head + '<table style="border-collapse:collapse;width:100%;"><tr>'
+      + hdr.map(function(h){ return '<th style="text-align:left;padding:3px 8px;border-bottom:2px solid var(--border);color:var(--text);">'+h+'</th>'; }).join('')
+      + '</tr>' + rows + '</table>'
+      + (window._rdRedrawStats ? '<div style="margin-top:8px;">Bulut çizimleri: <b>'
+          + window._rdRedrawStats.asked + '</b> istendi · <b>' + window._rdRedrawStats.drawn
+          + '</b> çizildi</div>' : '');
   };
 
   /* Is somebody in the middle of something? Anything at all that says yes

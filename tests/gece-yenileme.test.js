@@ -99,5 +99,22 @@ ok(/while\(log\.length > KEEP\) log\.shift\(\);/.test(html),
 ok(/\[\s*'mousedown','keydown','touchstart','wheel'\s*\]/.test(html.replace(/\n/g,'')),
    'four kinds of touch keep the tab alive');
 
+console.log('5. the pulse, on the screen');
+// rdPerfReport() in the console was no use: asked to run it at reception, the
+// desk typed it into Edge's search bar and got a page about Red Dead
+// Redemption. The machine that is slow is never the one with developer tools
+// open. One button, a table, photograph it.
+ok(/window\.rdHealthPanel = function\(\)\{/.test(html), 'there is a button, not a console incantation');
+ok(/id="rd-health-box"/.test(html) && /onclick="rdHealthPanel\(\)"/.test(html),
+   'and it is wired into Ayarlar where anyone can reach it');
+{
+  const h = html.slice(html.indexOf('window.rdHealthPanel = function(){'), html.indexOf('/* Is somebody in the middle of something?'));
+  ok(/if\(!log\.length\)/.test(h), 'a tab too new to have a pulse says so instead of showing nothing');
+  ok(/log\.slice\(-24\)/.test(h), 'it shows the last couple of hours, not twelve hours of rows');
+  ok(/parça/.test(h) && /bellek/.test(h) && /donma/.test(h),
+     'elements, memory and freezes — in Turkish, for the desk');
+  ok(/_rdRedrawStats/.test(h), 'and what the redraw scheduler saved');
+}
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' : '✓ all ') + pass + ' passed');
 process.exit(fail ? 1 : 0);
