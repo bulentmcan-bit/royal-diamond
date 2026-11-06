@@ -16169,11 +16169,51 @@ function renderCashCheck(){
          The first entry for an appointment is the real one. Every one after it
          gets a row of its own, so it can be seen, named in the Fark line, and
          removed from Günü Düzelt. */
+      /* …but two lines for one job are not always a double entry. They are
+         just as often ONE payment written in two pieces: part cash, part card,
+         put in as two rows instead of through ➗ Bölünmüş Ödeme. Dinara
+         Shirnazarova, 5 Kasım — ₺200 kart + ₺1.800 nakit — was exactly the
+         ₺2.000 she was charged, and this screen called the second line a
+         duplicate and invented a ₺1.800 Fark that never existed. Bülent had to
+         be asked which figure was real before anything could be touched, and
+         the answer was: both.
+         The arithmetic tells them apart, and nothing else does. When the lines
+         for one appointment ADD UP to what that appointment says, it is one
+         payment in two pieces — merge them and show the split. When they do
+         not (Kader Bigili, 2 Kasım: ₺1.700 + ₺2.200 against a ₺2.200 job),
+         it is money counted twice, and the second line still gets its own red
+         row to be seen and removed. */
+      const _ccGrp={};
+      (hd.ops||[]).forEach(o=>{(o.entries||[]).forEach(e=>{
+        if(!e||e.apptId==null) return;
+        const k=String(e.apptId);
+        const g=(_ccGrp[k]=_ccGrp[k]||{n:0,sum:0});
+        g.n++; g.sum+=Number(e.amount)||0;
+      });});
+      const _ccSplitSum={};
+      Object.keys(_ccGrp).forEach(k=>{
+        const g=_ccGrp[k]; if(g.n<2) return;
+        const row=rows.find(x=>String(x.apptId)===k);        // its amount is still the APPOINTMENT's
+        if(row && Math.abs(Number(row.amount||0)-g.sum)<0.5) _ccSplitSum[k]=g.sum;
+      });
       const _ccSeen=new Set();
       (hd.ops||[]).forEach(o=>{(o.entries||[]).forEach((e,i)=>{
         if(!e) return;
         if(e.apptId!=null){
           const _k=String(e.apptId);
+          // One payment, several lines: fold them into the appointment's row
+          // and let it show the pieces, exactly as a proper split would.
+          if(_ccSplitSum[_k]!=null){
+            const rs=rows.find(x=>String(x.apptId)===_k);
+            if(rs){
+              rs.amount=_ccSplitSum[_k];
+              rs.splits=(rs.splits&&rs.pay==='split'?rs.splits:[]).concat([{pay:e.pay||'diger', amount:Number(e.amount)||0}]);
+              rs.pay='split';
+              if(e.payNote&&!rs.payNote) rs.payNote=e.payNote;
+              rs.splitRows=(rs.splitRows||0)+1;
+            }
+            return;
+          }
           if(_ccSeen.has(_k)){
             rows.push({rid:"d"+o.name+"_"+i, apptId:null, time:e.time||"",
               client:(e.service||"Çift giriş"),
@@ -16297,6 +16337,7 @@ function renderCashCheck(){
             // The till and the appointment disagreed on the price. The till wins,
             // and the old figure is shown rather than quietly dropped.
             +(r.apptAmount!=null?' <span class="badge" style="font-size:0.6rem;background:rgba(122,170,232,0.18);color:#2f6ea8;border:1px solid rgba(122,170,232,0.5);" title="Kasada girilen tutar randevudaki fiyattan farklı. Kasa esas alınır.">₺ kasada düzeltildi · randevu ₺'+Number(r.apptAmount).toLocaleString()+'</span>':'')
+            +(r.splitRows>1?' <span class="badge" style="font-size:0.6rem;background:rgba(95,203,140,0.16);color:#2f8d5a;border:1px solid rgba(95,203,140,0.45);" title="Bu randevunun parası kasaya '+r.splitRows+' ayrı satır olarak girilmiş ve toplamı randevu tutarını tutuyor — çift giriş değil, bölünmüş ödeme.">'+r.splitRows+' satır · toplamı tutuyor</span>':'')
             +'</td>'
           +'<td style="font-size:0.82rem;">'+r.service+'</td>'
           +'<td style="font-weight:700;color:var(--waDark)">₺'+r.amount.toLocaleString()+'</td>'
