@@ -8247,7 +8247,14 @@ function rdOffRosterBuckets(book){
     if(!s || C.knownStaff(s)) return;
     const real=(typeof C.canonicalStaff==='function')?C.canonicalStaff(s):'';
     if(real){ out.rename.push({a:a, from:s, to:real}); return; }
-    const money=(parseInt(a.price)||0)>0 || (parseInt(a._takingsAmount)||0)>0;
+    /* "Has money been TAKEN?" — not "is there a price on it". A price is the
+       system's own auto-fill from the service, a quote, and every one of the
+       22 Manager phantoms carried one; testing the price left ten of them
+       behind, Çiğdem's 19:22 ghost among them. What settles it is whether a
+       line for this appointment actually reached the till. */
+    const day=String(a.datetime||'').slice(0,10);
+    let money=(parseInt(a._takingsAmount)||0)>0;
+    if(!money){ try{ money=!!(typeof ccTillLineFor==='function' && ccTillLineFor(a.id, day)); }catch(e){ money=true; } }
     const done=(a.status==='completed');
     if(typeof C.isPhantomStaff==='function' && C.isPhantomStaff(s) && !done && !money){
       out.cancel.push(a); return;

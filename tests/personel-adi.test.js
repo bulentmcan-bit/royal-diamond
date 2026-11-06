@@ -82,18 +82,23 @@ const A = (staff, status, price, extra) => Object.assign({ id: Math.random(), st
   is(b.rename.concat(b.cancel).some(x => (x.a || x).staff === 'Helen'), false,
      'a real technician is never touched');
 }
-console.log('3. it never cancels money');
+console.log('3. it never cancels money — but a PRICE is not money');
 {
   const b = buckets([A('Manager', 'completed', 2000)]);
   is([b.cancel.length, b.leave.length], [0, 1], 'a phantom that COMPLETED is left for a human to look at');
 }
 {
-  const b = buckets([A('Manager', 'confirmed', 1700)]);
-  is([b.cancel.length, b.leave.length], [0, 1], 'a phantom with a price on it is left alone');
+  const b = buckets([A('Manager', 'confirmed', 0, { _takingsAmount: 900 })]);
+  is([b.cancel.length, b.leave.length], [0, 1], 'a phantom whose money reached the till is left alone');
 }
 {
-  const b = buckets([A('Manager', 'confirmed', 0, { _takingsAmount: 900 })]);
-  is([b.cancel.length, b.leave.length], [0, 1], '…and so is one whose money reached the till');
+  /* The first draft refused anything with a price, and left ten of the
+     twenty-two Manager phantoms behind — Çiğdem's 19:22 ghost among them.
+     A price is the system's own auto-fill from the service, a quote nobody
+     has paid. Never completed and nothing in the till means no money. */
+  const b = buckets([A('Manager', 'confirmed', 1700)]);
+  is([b.cancel.length, b.leave.length], [1, 0],
+     'a phantom carrying only an auto-filled price IS cancelled — a quote is not a payment');
 }
 {
   const b = buckets([A('Nihal', 'confirmed', 0)]);
