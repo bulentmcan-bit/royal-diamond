@@ -4522,6 +4522,17 @@ p, span, div, label, h1, h2, h3, h4 {
           salonun verisi bulutta durur, bu telefondan hiçbir şey silinmez.</p>
         <button class="btn" id="rd-signout-btn" onclick="rdSignOut()" style="background:rgba(232,122,122,0.12);border:1px solid rgba(232,122,122,0.45);color:#e87a7a;font-weight:800;">🚪 Çıkış Yap</button>
       </div>
+
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">🧹 Personel adı temizliği</div>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:8px 0 10px;">
+          Personel listesinde olmayan bir isme yazılmış randevular hiçbir sütunda görünmez —
+          ama defterde dururlar, saati tutarlar ve müşterinin o günkü tek WhatsApp
+          hatırlatmasını yutabilirler. Önce tarayın, ne yapılacağını görün, sonra düzeltin.</p>
+        <div id="rd-offroster-report" style="font-size:0.82rem;line-height:1.7;margin-bottom:12px;color:var(--muted);">Henüz taranmadı.</div>
+        <button class="btn" onclick="rdOffRosterScan()" style="font-weight:800;">🔍 Tara</button>
+        <button class="btn btn-gold" id="rd-offroster-fix" onclick="rdFixOffRoster()" style="display:none;font-weight:800;margin-left:8px;">🧹 Düzelt</button>
+      </div>
     </div>
 
     <!-- ════ SALARY PAGE ════ -->
@@ -7192,6 +7203,27 @@ function dashEditAppt(id){
     if(saveBtn){
       saveBtn.textContent = '✓ Update';
       saveBtn.onclick = function(){
+        /* 🚪 6 Kasım 2026 — THE DOOR. Until today an appointment could be
+           saved against any name at all, and 87 of them were: "Manager" (22,
+           never once completed) and "Hanna" (63, Hannah misspelt). A name
+           with no column is invisible on the diary but entirely real in the
+           book — it holds the hour and it can swallow the customer's one
+           reminder. Nothing gets in that way again. A misspelling of a real
+           technician is corrected on the spot rather than refused. */
+        {
+          const _st=String((document.getElementById('a-staff')||{}).value||'').trim();
+          if(_st && window.CROWN && typeof CROWN.knownStaff==='function' && !CROWN.knownStaff(_st)){
+            const _real=(typeof CROWN.canonicalStaff==='function')?CROWN.canonicalStaff(_st):'';
+            if(_real){
+              document.getElementById('a-staff').value=_real;
+              toast('✍️','İsim düzeltildi', _st+' → '+_real, '');
+            }else{
+              toast('⛔','Böyle bir teknisyen yok',
+                    '"'+_st+'" personel listesinde değil. Randevu kaydedilmedi — listeden birini seçin.','r');
+              return;
+            }
+          }
+        }
         // Always write to the LIVE appointment object held in the array right
         // now — not the one captured when the popup opened. A cloud sync can
         // swap the whole appointments array out from under us while this popup
@@ -8188,6 +8220,88 @@ function ownerPin(){
   if(rdVerify(p)) return true;
   alert('❌ Yanlış şifre — işlem iptal edildi.');
   return false;
+}
+
+/* ══ 🧹 PERSONEL ADI TEMİZLİĞİ ═════════════════════════════════════════════
+   6 Kasım 2026. 87 appointments stood against names that are not in the
+   roster at all. Three different problems wearing one face, and only one of
+   them is safe to delete:
+
+     "Hanna"   63, all June, 53 completed, ₺90.100 of real work — Hannah
+               misspelt. RENAMED. Deleting these would tear a hole in June.
+     "Manager" 22, June to November, not one ever completed or took a lira —
+               never appointments at all. CANCELLED.
+     "Saeideh"  2 — a real person simply missing from the roster list. LEFT
+               ALONE and reported, because her money is real and the fix is
+               to add her to crown-config, not to touch her bookings.
+
+   Nothing with a price on it, and nothing already completed, is ever
+   cancelled here. Everything this cannot classify is listed and left. */
+function rdOffRosterBuckets(book){
+  const out={rename:[], cancel:[], leave:[]};
+  const C=window.CROWN;
+  if(!C || typeof C.knownStaff!=='function') return out;
+  ((book||appointments)||[]).forEach(function(a){
+    if(!a) return;
+    const s=String(a.staff||'').trim();
+    if(!s || C.knownStaff(s)) return;
+    const real=(typeof C.canonicalStaff==='function')?C.canonicalStaff(s):'';
+    if(real){ out.rename.push({a:a, from:s, to:real}); return; }
+    const money=(parseInt(a.price)||0)>0 || (parseInt(a._takingsAmount)||0)>0;
+    const done=(a.status==='completed');
+    if(typeof C.isPhantomStaff==='function' && C.isPhantomStaff(s) && !done && !money){
+      out.cancel.push(a); return;
+    }
+    out.leave.push(a);
+  });
+  return out;
+}
+function rdOffRosterScan(){
+  const b=rdOffRosterBuckets();
+  const el=document.getElementById('rd-offroster-report');
+  const btn=document.getElementById('rd-offroster-fix');
+  if(!el) return b;
+  const tally=function(list, get){ const m={}; list.forEach(function(x){ const k=get(x); m[k]=(m[k]||0)+1; }); 
+    return Object.keys(m).sort().map(function(k){ return k+' ('+m[k]+')'; }).join(', '); };
+  if(!b.rename.length && !b.cancel.length && !b.leave.length){
+    el.innerHTML='✅ Personel listesi dışında randevu yok.';
+    if(btn) btn.style.display='none';
+    return b;
+  }
+  el.innerHTML=
+     (b.rename.length?'<div>✍️ <b>'+b.rename.length+'</b> randevunun adı düzeltilecek — '+dtEscHtml(tally(b.rename,function(x){return x.from+' → '+x.to;}))+'</div>':'')
+    +(b.cancel.length?'<div>🗑 <b>'+b.cancel.length+'</b> hayalet randevu iptal edilecek — '+dtEscHtml(tally(b.cancel,function(a){return String(a.staff||'');}))+' · hiçbiri tamamlanmamış, hiçbirinde para yok</div>':'')
+    +(b.leave.length?'<div>🤚 <b>'+b.leave.length+'</b> kayda dokunulmayacak — '+dtEscHtml(tally(b.leave,function(a){return String(a.staff||'');}))+' · parası olan veya tanınmayan isimler, elle bakın</div>':'');
+  if(btn) btn.style.display=(b.rename.length||b.cancel.length)?'':'none';
+  return b;
+}
+function rdFixOffRoster(){
+  const b=rdOffRosterBuckets();
+  if(!b.rename.length && !b.cancel.length){ toast('ℹ','Yapılacak bir şey yok','',''); return; }
+  if(!confirm('Personel adı temizliği\n\n'
+    +'✍️ '+b.rename.length+' randevunun adı düzeltilecek\n'
+    +'🗑 '+b.cancel.length+' hayalet randevu iptal edilecek (hiçbiri tamamlanmamış, hiçbirinde para yok)\n'
+    +'🤚 '+b.leave.length+' kayda dokunulmayacak\n\nDevam edilsin mi?')) return;
+  if(typeof ownerPin==='function' && !ownerPin()) return;
+  const now=Date.now();
+  b.rename.forEach(function(x){
+    x.a.rdStaffWas=x.from;           // what it said before, so this is traceable
+    x.a.staff=x.to;
+    try{ apptTouch(x.a); }catch(e){}
+  });
+  b.cancel.forEach(function(a){
+    a.rdStaffWas=String(a.staff||'');
+    a.status='cancelled';
+    a.rdGhostCleared=now;
+    try{ apptTouch(a); }catch(e){}
+    try{ if(typeof cancelLogAdd==='function') cancelLogAdd(a,'otomatik · personel listesinde olmayan isim'); }catch(e){}
+    try{ if(typeof rdWaCancel==='function') rdWaCancel(a); }catch(e){}
+  });
+  try{ saveAll(); }catch(e){}
+  toast('🧹','Temizlendi', b.rename.length+' isim düzeltildi · '+b.cancel.length+' hayalet iptal edildi','g');
+  rdOffRosterScan();
+  try{ if(typeof renderDiary==='function') renderDiary(); }catch(e){}
+  try{ if(typeof renderDash==='function') renderDash(); }catch(e){}
 }
 
 // ── 🔑 RESEPSİYON ŞİFRESİ — sadece randevu iptali için ──────────
@@ -13670,12 +13784,26 @@ function rdWaGroupKey(a, cls){
   const ph=(typeof normalizeWaPhone==='function')?normalizeWaPhone(raw):raw.replace(/\D/g,'');
   return (ph && ph.length>=10) ? ('p'+ph) : ('c'+String(a.clientId));
 }
+/* A booking against a name that is not a technician at all. It has no column,
+   nobody is doing it, and it must NEVER be the booking that carries — or, by
+   carrying, swallows — the customer's one WhatsApp message of the day.
+   Çiğdem Yaşar Çankaya, 5 Kasım 2026: a "Manager" booking at 19:22 became the
+   carrier and took the message her real 17:00 appointment should have had.
+   An empty staff is not a ghost — a booking simply may not have a technician
+   picked yet, and that customer still deserves her reminder. */
+function rdWaOffRoster(a){
+  try{
+    var s=String((a&&a.staff)||'').trim();
+    if(!s) return false;
+    return !(window.CROWN && typeof CROWN.knownStaff==='function' && CROWN.knownStaff(s));
+  }catch(e){ return false; }
+}
 // The visit `of` belongs to: every same-day booking that answers to the same
 // phone (or, phoneless, the same client), earliest first.
 function rdWaGroup(of, dayISO, book, cls){
   const key=rdWaGroupKey(of, cls);
   return ((book||appointments)||[]).filter(function(a){
-    return a && a.status!=='cancelled' && rdWaDayOf(a)===dayISO && rdWaGroupKey(a, cls)===key;
+    return a && a.status!=='cancelled' && !rdWaOffRoster(a) && rdWaDayOf(a)===dayISO && rdWaGroupKey(a, cls)===key;
   }).sort(function(x,y){
     const c=String(x.datetime).localeCompare(String(y.datetime));
     return c || (String(x.id)<String(y.id)?-1:1);

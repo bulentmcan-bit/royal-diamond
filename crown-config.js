@@ -947,6 +947,66 @@ var CROWN = {
   // diary, the booking page, Uygun Saat Bul, the fill-call list and the
   // worker's gap-filler ask about who works; the money screens read
   // `operators` whole and never come through here.
+  /* ── WHO IS ACTUALLY A TECHNICIAN ─────────────────────────────────────────
+     6 Kasım 2026. The book carried 87 appointments against names that are not
+     in `operators` at all:
+       "Hanna"   63, all June, 53 of them completed — ₺90.100 of real work.
+                 Hannah, misspelt. The money is hers; only the name is wrong.
+       "Manager" 22, June to November, and NOT ONE ever completed or took a
+                 lira. These were never appointments at all.
+       "Saeideh"  2, June — a real person who is simply not in this list.
+
+     A name with no column is invisible on the diary and on the wall, but it
+     is entirely real in the data: it holds the hour, and worst of all it can
+     become the carrier of the customer's one WhatsApp reminder of the day.
+     Çiğdem Yaşar Çankaya, 5 Kasım: a "Manager" booking at 19:22 took the
+     message her real 17:00 appointment should have had, and she was never
+     reminded. That is what this list exists to stop.
+
+     `staffAliases` are misspellings of a real technician — correct the name
+     and the work goes back where it belongs. `staffPhantoms` were never a
+     technician. Anything else off the roster is LEFT ALONE and listed, never
+     guessed at, because somebody's money may be attached to it. */
+  staffAliases:  { 'hanna': 'Hannah' },
+  staffPhantoms: ['Manager'],
+
+  /* Is this a name the salon employs, ever? This is NOT "is she working that
+     day" — that is rosterOn, and asking it here would refuse every edit to a
+     booking made before somebody joined or after she left. */
+  knownStaff: function(name){
+    var s = String(name == null ? '' : name).trim().toLocaleLowerCase('tr');
+    if (!s) return false;
+    for (var i = 0; i < this.operators.length; i++){
+      if (String(this.operators[i].name || '').toLocaleLowerCase('tr') === s) return true;
+    }
+    return false;
+  },
+
+  /* The real technician behind a name — herself, or the one a misspelling
+     points at. '' when there is nobody behind it. */
+  canonicalStaff: function(name){
+    var s = String(name == null ? '' : name).trim();
+    if (!s) return '';
+    var low = s.toLocaleLowerCase('tr'), i;
+    for (i = 0; i < this.operators.length; i++){
+      var n = String(this.operators[i].name || '');
+      if (n.toLocaleLowerCase('tr') === low) return n;
+    }
+    var a = (this.staffAliases || {})[low];
+    return a ? String(a) : '';
+  },
+
+  // A name that was never a technician, however many bookings carry it.
+  isPhantomStaff: function(name){
+    var s = String(name == null ? '' : name).trim().toLocaleLowerCase('tr');
+    if (!s) return false;
+    var list = this.staffPhantoms || [];
+    for (var i = 0; i < list.length; i++){
+      if (String(list[i]).toLocaleLowerCase('tr') === s) return true;
+    }
+    return false;
+  },
+
   rosterOn: function(date){
     var d, self = this;
     if (date instanceof Date && !isNaN(date)) {
