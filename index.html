@@ -2875,7 +2875,9 @@
       console.log('[OB] appointment created:',a);
       _fbDb.ref('rdns_booking_requests/'+id).update({handled:'booked',handledAt:Date.now(),apptId:a.id}).catch(e=>{console.warn('[OB] handled-flag write DENIED (rules update missing?):',e);try{toast('⚠️','KURAL GÜNCELLEMESİ EKSİK','Randevu kaydedildi ama Firebase Rules güncellemesi yayınlanmamış — çift kayıt riskine karşı Rules ekranını güncelleyin.','r');}catch(_){}} );
       try{toast('🌐','ONLINE RANDEVU KAYDEDİLDİ! 🎉',cl.name+' — '+req.date+' '+req.time+(staffPick?' · '+staffPick:'')+(req.service?' · '+req.service:''),'g');}catch(e){}
-      try{renderAppts();renderDash();updateApptBadge();buildWAQueue();updateWACounts();renderWA();}catch(e){}
+      try{ if(typeof rdSyncRender==='function'){ rdSyncRender('renderAppts', renderAppts); rdSyncRender('renderDash', renderDash); }
+           else { renderAppts(); renderDash(); }
+           updateApptBadge();buildWAQueue();updateWACounts();renderWA();}catch(e){}
       publishAvailability();
     }).catch(e=>console.warn('OB recheck error:',e));
   }
@@ -2952,8 +2954,8 @@
       if(apptsKept||_apptMoneyKept||clientsKept||dpKept||ccKept){
         setTimeout(()=>{ try{ syncPush('rdns_main_v1', JSON.parse(localStorage.getItem('rdns_main_v1')||'{}')); }catch(e){} }, 1200);
       }
-      try{renderDash();}catch(e){}
-      try{renderAppts();}catch(e){}
+      if(typeof rdSyncRender==='function'){ rdSyncRender('renderDash', renderDash); rdSyncRender('renderAppts', renderAppts); }
+      else { try{renderDash();}catch(e){} try{renderAppts();}catch(e){} }
       try{dpUpdateBadges();}catch(e){}
       try{if(typeof dpCheckReminders==='function')dpCheckReminders();}catch(e){}
       showSyncStatus('synced');
@@ -8078,8 +8080,16 @@ function commCrownListen(){
       const v = snap.val()||{};
       commSessions = Object.keys(v).map(function(k){ const x=v[k]||{}; x.id=x.id||k; x.startAt=Number(x.startAt)||0; return x; });
       commSessionsLoaded = true;
-      try{ renderDash(); }catch(e){}
-      try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+      // 7 Kasım 2026 — through the scheduler like every other cloud redraw.
+      // These two were the last ones calling the heaviest render in the app
+      // straight off a Firebase event.
+      if(typeof rdSyncRender==='function'){
+        rdSyncRender('renderDash', renderDash);
+        if(typeof dtRender==='function') rdSyncRender('dtRender', dtRender);
+      }else{
+        try{ renderDash(); }catch(e){}
+        try{ if(typeof dtRender==='function') dtRender(); }catch(e){}
+      }
     }, function(e){ console.warn('[comm] sessions read denied:', e); });
     _fbDb.ref('timers/ops').on('value', function(snap){ commOps = snap.val()||{}; });
   }catch(e){ commCrownListen._on = false; console.warn('[comm] listen error:', e); }
@@ -27631,6 +27641,39 @@ document.addEventListener('keydown', function(e){
 
   // Long tasks — the browser's own word for "this froze". Counted since the
   // previous sample, so a row says what that three minutes actually felt like.
+  /* 7 Kasım 2026 — WHICH redraw. Reception's own figures finally arrived and
+     they are brutal: nine minutes open, 368 freezes, 283.7 SECONDS of blocked
+     main thread — about half of every three minutes with the machine unable
+     to answer a click. The watchdog could say THAT it froze; it could not say
+     what froze it, and I have guessed wrong enough times this week.
+     So every heavy redraw is timed by name. The health panel then prints the
+     worst of them, and the next reading answers the question instead of
+     starting another argument. Pure measurement: each wrapper calls the real
+     function, returns what it returned, and adds up the milliseconds. */
+  var _rdFn = {};
+  window.__rdFnStats = _rdFn;
+  setTimeout(function(){
+    ['renderDash','renderAppts','renderClients','renderCalendar','dtRender',
+     'renderCashCheck','renderDashTakings','renderMonthly','renderWA',
+     'buildWAQueue','renderDiary','renderReviewCard','w20Check','renderDash24h'
+    ].forEach(function(n){
+      try{
+        var f = window[n];
+        if(typeof f !== 'function' || f.__rdTimed) return;
+        var wrapped = function(){
+          var t0 = performance.now();
+          try{ return f.apply(this, arguments); }
+          finally{
+            var st = _rdFn[n] || (_rdFn[n] = { n:0, ms:0 });
+            st.n++; st.ms += performance.now() - t0;
+          }
+        };
+        wrapped.__rdTimed = true;
+        window[n] = wrapped;
+      }catch(e){}
+    });
+  }, 6000);
+
   var ltN = 0, ltMs = 0;
   try{
     new PerformanceObserver(function(list){
@@ -27714,7 +27757,16 @@ document.addEventListener('keydown', function(e){
       + '</tr>' + rows + '</table>'
       + (window._rdRedrawStats ? '<div style="margin-top:8px;">Bulut çizimleri: <b>'
           + window._rdRedrawStats.asked + '</b> istendi · <b>' + window._rdRedrawStats.drawn
-          + '</b> çizildi</div>' : '');
+          + '</b> çizildi</div>' : '')
+      + (function(){
+          var k = Object.keys(_rdFn);
+          if(!k.length) return '';
+          k.sort(function(a,b){ return _rdFn[b].ms - _rdFn[a].ms; });
+          return '<div style="margin-top:10px;font-weight:800;color:var(--text);">En çok zaman yiyen çizimler</div>'
+            + '<div>' + k.slice(0,6).map(function(n){
+                return n + ': <b>' + _rdFn[n].n + '</b> kez · <b>' + Math.round(_rdFn[n].ms) + '</b> ms';
+              }).join('<br>') + '</div>';
+        })();
   };
 
   /* Is somebody in the middle of something? Anything at all that says yes

@@ -116,5 +116,31 @@ ok(/id="rd-health-box"/.test(html) && /onclick="rdHealthPanel\(\)"/.test(html),
   ok(/_rdRedrawStats/.test(h), 'and what the redraw scheduler saved');
 }
 
+console.log('6. which redraw — by name');
+/* 7 Kasım 2026. Reception's own figures: nine minutes open, 368 freezes,
+   283.7 SECONDS of blocked main thread — about half of every three minutes
+   unable to answer a click. The watchdog could say THAT it froze and not
+   what froze it, and I have guessed wrong enough times this week. */
+ok(/window\.__rdFnStats = _rdFn;/.test(html), 'every heavy redraw is timed by name');
+{
+  const w = html.slice(html.indexOf("var _rdFn = {};"), html.indexOf('var ltN = 0, ltMs = 0;'));
+  ok(/'renderDash','renderAppts'/.test(w), 'the heavy ones are in the list');
+  ok(/try\{ return f\.apply\(this, arguments\); \}/.test(w),
+     'the wrapper calls the real function and returns what it returned — measurement only');
+  ok(/finally\{/.test(w), '…and counts the milliseconds even when it throws');
+  ok(/if\(typeof f !== 'function' \|\| f\.__rdTimed\) return;/.test(w),
+     'nothing is wrapped twice');
+  ok(/\}, 6000\);/.test(w), 'it waits until the page has finished defining them');
+}
+ok(/En çok zaman yiyen çizimler/.test(html), 'and the health panel names the worst offenders');
+
+console.log('7. the last redraws that bypassed the scheduler');
+{
+  const c = html.slice(html.indexOf("_fbDb.ref('timers/sessions')"), html.indexOf("_fbDb.ref('timers/ops')"));
+  ok(/rdSyncRender\('renderDash', renderDash\)/.test(c),
+     'the Crown Board listener no longer calls the heaviest render straight off a cloud event');
+  ok(/else\{/.test(c), '…with the direct call kept as a fallback if the scheduler is not there yet');
+}
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' : '✓ all ') + pass + ' passed');
 process.exit(fail ? 1 : 0);
