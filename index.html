@@ -9840,7 +9840,67 @@ function diEditDay(date){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
+/* ⏱ 7 Kasım 2026 — THE 2.7-SECOND REDRAW.
+   Reception's own figures, from the health panel on its own screen:
+       renderDash: 14 kez · 37.684 ms
+   Two and a half SECONDS for one dashboard redraw, fourteen of them inside a
+   few minutes — thirty-seven seconds of a frozen till. That is the whole of
+   "dead slow" and "not following commands".
+   It is not the code. With the salon's full load — 3.565 appointments, 879
+   customers, 1.400 Crown Board sessions — this function runs in 59 ms on a
+   healthy machine, and the commission arithmetic inside it accounts for 25 of
+   those. What costs two and a half seconds is the BROWSER: renderDash rewrites
+   the whole dashboard, and that laptop then has to lay out and paint some
+   4.300 elements. Old integrated graphics do that slowly and there is no
+   clever way around it.
+   So the answer is not to make the redraw faster. It is to stop asking for it
+   when the picture has not changed. Every redraw now computes a short
+   signature of what the dashboard actually SHOWS — the day on the grid, today's
+   bookings with the fields that appear on their cards, the till total, the
+   unread count — and if it is identical to the last one, it returns without
+   touching the DOM. A cloud snapshot that changes nothing visible now costs a
+   fraction of a millisecond instead of two and a half seconds.
+   It fails OPEN: anything unexpected, and it redraws. A stale screen would be
+   far worse than a slow one. rdDashForce() redraws regardless, and every hand
+   that writes data already calls renderDash after saveAll, where the signature
+   has genuinely moved on. */
+let _rdDashSig = null;
+function rdDashSignature(){
+  try{
+    // No day, no book — then this cannot describe the screen, and saying so
+    // is the only safe answer. A wrong signature that happens to stay the
+    // same would freeze the dashboard on a stale picture, which is far worse
+    // than redrawing too often. (My own test found this one.)
+    if(typeof dashGridDate==='undefined' || !(dashGridDate instanceof Date) || isNaN(dashGridDate)) return null;
+    if(typeof appointments==='undefined' || !Array.isArray(appointments)) return null;
+    var day = dashGridDate.toDateString();
+    var out = [day, (typeof currentPage!=='undefined'?currentPage:'')];
+    var book = appointments;
+    for(var i=0;i<book.length;i++){
+      var a = book[i]; if(!a) continue;
+      var d = String(a.datetime||'');
+      if(d.slice(0,10) !== (typeof dashGridDate!=='undefined' && dashGridDate ? dtLocal(dashGridDate).slice(0,10) : '')) continue;
+      out.push(a.id, a.status, d, a.staff, a.service, a.price, a.sat, a.noShow?1:0,
+               a._takingsAmount, (a.wa&&a.wa.n)||0, (a.wa&&a.wa.t)||0, a.rvAsked||0);
+      // the NAME is on the card too — correct a customer's spelling and the
+      // grid must follow, or the screen quietly keeps the old one.
+      try{ var _c=(typeof cObj==='function')?cObj(a.clientId):null; out.push(_c?(_c.name+'|'+(_c.phone||'')):''); }catch(e){ out.push('c?'); }
+    }
+    try{ out.push((typeof dtState!=='undefined'&&dtState&&dtState.operators)
+        ? dtState.operators.map(function(o){ return o.name+':'+((o.entries||[]).length)+':'+(o.entries||[]).reduce(function(s2,e){return s2+(e&&e.amount||0);},0); }).join(',')
+        : ''); }catch(e){ out.push('dt?'); }
+    try{ out.push(typeof commSessions!=='undefined' ? commSessions.length : 0); }catch(e){}
+    // a new customer (the birthday banner) or a new booking anywhere
+    try{ out.push((typeof clients!=='undefined'?clients.length:0)+'/'+book.length); }catch(e){}
+    try{ out.push(typeof rdWrUnread==='function' ? rdWrUnread() : ''); }catch(e){}
+    return out.join('|');
+  }catch(e){ return null; }   // cannot tell → always redraw
+}
+function rdDashForce(){ _rdDashSig = null; renderDash(); }
 function renderDash(){
+  var _sig = rdDashSignature();
+  if(_sig !== null && _sig === _rdDashSig) return;    // nothing on screen has moved
+  _rdDashSig = _sig;
   try{ applyPriceOverrides(appointments); }catch(e){}
   // The stripped top of the page: two numbers, then the day's waiting jobs.
   try{ rdDashTiles(); }catch(e){}
