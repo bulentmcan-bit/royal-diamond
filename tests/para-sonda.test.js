@@ -95,5 +95,27 @@ console.log('5. the hidden rb-price still feeds the old machinery');
      '…so the £/€/$ strip and the change calculator keep working');
 }
 
+console.log('6. ✕ Vazgeç — a way out');
+/* 7 Kasım 2026. There was no way out of the checkout panel. Open it by
+   mistake, or on the wrong customer, and the only exits were finishing a
+   checkout you did not mean to make, or reloading the page. Bülent sent a
+   photograph of himself stuck in it.
+   Driven in a browser: open the panel, type ₺2.500, press Vazgeç — the
+   appointment is still confirmed with no price, no till line and no Memnun
+   on it, and the panel reopens with an empty box. */
+ok(/id="btn-checkout-abandon" onclick="rdCkAbandon\(\)"/.test(html), 'the button exists, beside ✓ Çıkışı Tamamla');
+ok(/function rdCkAbandon\(\)\{/.test(html), 'and has its own function');
+{
+  const a = html.slice(html.indexOf('function rdCkAbandon(){'), html.indexOf('function rdCkDropNewAppt(){'));
+  ok(/rdCkDropNewAppt\(\)/.test(a),
+     'a provisional next booking the calendar already made is removed');
+  ok(/rebookPending=null; _ckState=null;/.test(a), 'and the checkout state is cleared');
+  ok(!/saveAll\(\)/.test(a) && !/diAutoAdd/.test(a) && !/rdFinalizeCompletion/.test(a),
+     'it writes NOTHING — no save, no till entry, no completion');
+  ok(/rbkCalOv/.test(a), 'and the date picker closes with it, if it was open');
+}
+ok(html.indexOf('id="btn-checkout-abandon"') < html.indexOf('id="btn-checkout-done"'),
+   'the way out sits to the left of the way on, where a cancel belongs');
+
 console.log('\n' + (fail ? '✗ ' + fail + ' FAILED, ' : '✓ all ') + pass + ' passed');
 process.exit(fail ? 1 : 0);

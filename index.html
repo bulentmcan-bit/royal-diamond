@@ -5744,8 +5744,9 @@ p, span, div, label, h1, h2, h3, h4 {
         <input id="rbk-decline-note" maxlength="120" placeholder="Kısa not…" style="display:none;margin-top:8px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-family:inherit;font-size:.85rem;background:var(--card);color:var(--text);">
       </div>
     </div>
-    <div class="mfoot">
-      <button class="btn btn-green" id="btn-checkout-done" onclick="rdCheckoutDone()" disabled style="width:100%;opacity:.45;">✓ Çıkışı Tamamla</button>
+    <div class="mfoot" style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" id="btn-checkout-abandon" onclick="rdCkAbandon()" style="flex:0 0 auto;">✕ Vazgeç</button>
+      <button class="btn btn-green" id="btn-checkout-done" onclick="rdCheckoutDone()" disabled style="flex:1;opacity:.45;">✓ Çıkışı Tamamla</button>
     </div>
   </div>
 </div>
@@ -11608,6 +11609,24 @@ function rdCkShowTimes(ds){
 }
 // A time was tapped (the appointment exists) and then the answer changed —
 // the freshly created booking must not stay behind as an orphan.
+/* ✕ VAZGEÇ — 7 Kasım 2026. There was no way out of this panel. Open it by
+   mistake, or on the wrong customer, and the only exits were finishing a
+   checkout you did not mean to make or reloading the page. Bülent sent a
+   photograph of himself stuck in it.
+   It writes nothing. The appointment is left exactly as it was — still
+   confirmed, no price, no till line — and a provisional next booking that
+   the calendar may already have created is removed, the same as changing
+   the answer does. The ONE thing it cannot undo is the satisfaction
+   question: once 😊 or 😕 is pressed that answer is on the record and the
+   checkout has already run, so this button is gone by then anyway. */
+function rdCkAbandon(){
+  try{ rdCkDropNewAppt(); }catch(e){}
+  try{ closeModal('mRebook'); }catch(e){}
+  try{ const ov=document.getElementById('rbkCalOv'); if(ov) ov.style.display='none'; }catch(e){}
+  rebookPending=null; _ckState=null;
+  try{ toast('✕','Vazgeçildi','Randevuya hiçbir şey yazılmadı.',''); }catch(e){}
+}
+
 function rdCkDropNewAppt(){
   try{
     if(!_ckState||!_ckState.newApptId) return;
