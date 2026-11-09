@@ -189,9 +189,28 @@ var CROWN = {
        same as Hannah: the roster then leaves her out of every day from 30
        Haziran onward, no column appears anywhere, and her June work is simply
        June work again instead of something the clean-up has to be told to
-       leave alone. Her 50% rate lives in TECH_COMM_RATES and is untouched. */
+       leave alone. Her 50% rate lives in TECH_COMM_RATES and is untouched.
+
+       BACK FOR ONE DAY — Cumartesi 14 Kasım 2026, at the owner's word on
+       9 Kasım. joinedOn and leftOn now fence exactly that one date:
+       rosterOn lets her in on the 14th and out again on the 15th, so she
+       has a column on reception's dashboard for that Saturday and on no
+       other day. hiddenOnDash is gone — that flag was the second thing
+       keeping her off the grid. hiddenOnBoard STAYS: she has no
+       photograph, so the television would show an empty tile.
+       THE COST, written down rather than discovered: a line holds one
+       spell, not two. joinedOn now also shuts her out of June, so her
+       two June bookings lose their diary column — the money screens
+       never ask rosterOn, so the ₺3.500 is untouched on every page that
+       counts it. After Saturday, put leftOn back to '2026-06-30', drop
+       joinedOn and restore hiddenOnDash, and June is itself again.
+       HER SKILLS: she is in no serviceSkill list and carries no services
+       map of her own, which is right — her work is facials and beauty
+       treatments, and canDo rule 3 leaves those open to her. A manicure
+       or a pedicure would be REFUSED: those two groups name their
+       technicians and she is not among them. */
     { key:'saeideh', name:'Saeideh',
-      leftOn: '2026-06-30', hiddenOnBoard: true, hiddenOnDash: true }
+      joinedOn: '2026-11-14', leftOn: '2026-11-15', hiddenOnBoard: true }
   ],
 
   /* ── How long each technician gets ──────────────────────────────────────────
