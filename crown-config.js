@@ -115,8 +115,10 @@ var CROWN = {
     /* Haley, from 6 Kasım 2026 — manikür ve pedikür, Emma'nın yanında, çünkü
        bu dizi sütun sırasıdır. Maaşlı: aylık 1.000 USD, ikinci bir karara
        kadar komisyon yok — bu yüzden TECH_COMM_RATES'te oranı sıfırdır ve
-       DED_RATES'te (Crown Board'un %12 düzeni) hiç yoktur. */
-    { key:'haley',  name:'Haley',  hiddenOnBoard: true, joinedOn: '2026-11-06' },
+       DED_RATES'te (Crown Board'un %12 düzeni) hiç yoktur.
+       Fotoğrafı 9 Kasım 2026'da geldi, bu yüzden hiddenOnBoard kalktı ve
+       duvardaki televizyonda Hannah'nın yanında görünüyor. */
+    { key:'haley',  name:'Haley',  photo:'op-haley.png', joinedOn: '2026-11-06' },
     { key:'zara',   name:'Zara',   hiddenOnBoard: true, hiddenOnDash: true, workdays: [1, 4] },
     /* Beyhan — brows and lashes, NOT nails: kas and kirpik in serviceSkill
        below, never manikur, pedikur or agda, so the diary warns, and the
