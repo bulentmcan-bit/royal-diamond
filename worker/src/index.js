@@ -302,6 +302,7 @@ const PIYZI = 'https://api.piyzi.com/api/v1';
    copied to an outbox key the app polls and acknowledges, which is how the
    answer reaches reception's dashboard and the Gap Report. */
 import { R_PAGE } from './rpage.js';
+import { handleMcp } from './mcp.js';
 
 const R_ID = /^\d{6,20}$/;
 
@@ -2438,6 +2439,7 @@ export default {
     const url = new URL(req.url);
     // Piyzi's webhook is the one /wa/ address WITHOUT the shared key — Piyzi
     // holds none; its signature is the door. Routed before the keyed routes.
+    if (url.pathname === '/mcp') return handleMcp(req, env, ctx, url);
     if (url.pathname === '/wa/hook') return handleHook(req, env, ctx, url);
     if (url.pathname.startsWith('/wa/')) return handleWa(req, env, ctx, url);
     // The robot confirmation call (demo). See handleCall.
