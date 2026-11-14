@@ -296,11 +296,17 @@ function sameKey(a, b){
   return d === 0;
 }
 
-function presentedKey(req, url){
+/* A HEADER, NEVER THE ADDRESS. The /wa/ routes accept their key as ?k= too,
+   and that habit nearly came along for the ride. A key in a URL is written
+   into Cloudflare's logs, the browser's history and any proxy in between —
+   and behind this one is every customer's name and telephone number. So the
+   query string is not read here at all, and `url` is taken only to keep the
+   signature the router uses. */
+function presentedKey(req, _url){
   const h = req.headers.get('authorization') || '';
   const m = /^Bearer\s+(.+)$/i.exec(h.trim());
   if (m) return m[1].trim();
-  return req.headers.get('x-rd-key') || url.searchParams.get('k') || '';
+  return req.headers.get('x-rd-key') || '';
 }
 
 const CORS = {

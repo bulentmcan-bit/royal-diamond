@@ -110,6 +110,20 @@ test('the key check is length-safe and constant time', async () => {
   assert.strictEqual(m.__test.sameKey('abc', 'abd'), false);
 });
 
+test('a key in the URL is NOT accepted — logs must never hold it', async () => {
+  const m = await fresh();
+  const r = await m.handleMcp(
+    post({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    ENV, null, new URL('https://w.example/mcp?k=test-key-0123456789'));
+  assert.strictEqual(r.status, 401, 'the query string must not open the door');
+});
+
+test('the source never reads a key out of the query string', () => {
+  const src = fs.readFileSync(SRC, 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/searchParams/.test(code), 'mcp.js must not read the query string for credentials');
+});
+
 test('GET and DELETE are refused, not silently ignored', async () => {
   const m = await fresh();
   const r = await m.handleMcp(new Request('https://w.example/mcp', { method: 'GET' }), ENV, null, new URL('https://w.example/mcp'));
