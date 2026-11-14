@@ -135,7 +135,11 @@ var CROWN = {
        She is on commission only (80% of her own client income, no salary,
        paid monthly) — that is written on the money screens in index.html,
        not here. */
+    /* Cumartesi 14 Kasım 2026: Beyhan bugün de içeride, sahibinin sözüyle.
+       Haftası değişmedi — extraDays yalnız o günü açar, gün geçince kendi
+       kendine kapanır ve geri alınacak bir şey kalmaz. */
     { key:'beyhan', name:'Beyhan', hiddenOnBoard: true, workdays: [2, 4],
+      extraDays: ['2026-11-14'],
       /* HER OWN LIST, with how long each one takes. The owner wrote both out
          on 1 Ekim 2026, and this is the whole of what she renders — she does
          NOT do lash extensions (Klasik Kirpik, Volume/Rus, Kirpik Dolgu,
@@ -970,6 +974,25 @@ var CROWN = {
     }
     return w;
   },
+  // A ONE-OFF DAY, for a technician who is in on a day her workdays do not
+  // cover. Beyhan works Salı and Perşembe; a Cumartesi she comes in for is
+  // not a change to her week, and bolting 6 onto her workdays would give her
+  // a column EVERY Cumartesi until somebody remembered to take it out again.
+  // `extraDays: ['2026-11-14']` says only that date, and the moment it is
+  // past she is off again with nothing to undo. Dates are 'YYYY-MM-DD'.
+  // Same discipline as workdays: anything malformed is ignored rather than
+  // guessed at, and leftOn and joinedOn still come first — a day on this
+  // list can add a technician to her own calendar, never bring back one who
+  // has gone or one who has not started.
+  extraDaysOf: function(o){
+    var x = o && o.extraDays;
+    if (!Array.isArray(x) || !x.length) return null;
+    var out = [];
+    for (var i = 0; i < x.length; i++) {
+      if (typeof x[i] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x[i])) out.push(x[i]);
+    }
+    return out.length ? out : null;
+  },
   // Who is WORKING on the day given — the roster minus anyone whose leftOn is
   // on or before that day, minus anyone whose workdays do not include that
   // weekday. `date` is 'YYYY-MM-DD' (a Date is accepted and read in local
@@ -1066,6 +1089,10 @@ var CROWN = {
       // way — in on the day itself, out on every day before it.
       var joined = String(o.joinedOn || '').slice(0, 10);
       if (joined && d < joined) return false;
+      // An extra day beats the weekly pattern, and only that pattern: both
+      // leftOn and joinedOn have already had their say above.
+      var extra = self.extraDaysOf(o);
+      if (extra && extra.indexOf(d) !== -1) return true;
       var days = self.workdaysOf(o);
       return !days || days.indexOf(wd) !== -1;
     });
